@@ -20,7 +20,7 @@ try:
     _norm = _scipy_norm
     SCIPY_AVAILABLE = True
 except ImportError:
-    pass
+    pass  # scipy is optional; response_time_flagging falls back gracefully
 
 
 def response_time(

@@ -1,6 +1,8 @@
 """IER: Python library for detecting Insufficient Effort Responding in survey data."""
 
 from ._validation import MatrixLike as MatrixLike
+from .acquiescence import acquiescence as acquiescence
+from .acquiescence import acquiescence_flag as acquiescence_flag
 from .composite import composite as composite
 from .composite import composite_flag as composite_flag
 from .composite import composite_probability as composite_probability
@@ -33,14 +35,20 @@ from .response_time import response_time as response_time
 from .response_time import response_time_consistency as response_time_consistency
 from .response_time import response_time_flag as response_time_flag
 from .response_time import response_time_mixture as response_time_mixture
+from .screen import screen as screen
 from .semantic import semantic_ant as semantic_ant
 from .semantic import semantic_syn as semantic_syn
 from .u3_poly import midpoint_responding as midpoint_responding
 from .u3_poly import response_pattern as response_pattern
 from .u3_poly import u3_poly as u3_poly
+from .visualize import plot_distributions as plot_distributions
+from .visualize import plot_flag_counts as plot_flag_counts
+from .visualize import plot_flagged_heatmap as plot_flagged_heatmap
 
 __all__ = [
     "MatrixLike",
+    "acquiescence",
+    "acquiescence_flag",
     "composite",
     "composite_flag",
     "composite_probability",
@@ -68,6 +76,9 @@ __all__ = [
     "onset",
     "onset_flag",
     "person_total",
+    "plot_distributions",
+    "plot_flag_counts",
+    "plot_flagged_heatmap",
     "psychant",
     "psychsyn",
     "response_pattern",
@@ -75,6 +86,7 @@ __all__ = [
     "response_time_consistency",
     "response_time_flag",
     "response_time_mixture",
+    "screen",
     "semantic_ant",
     "semantic_syn",
     "u3_poly",
