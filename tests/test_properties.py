@@ -9,6 +9,7 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
 
+from ier.acquiescence import acquiescence
 from ier.evenodd import evenodd
 from ier.irv import irv
 from ier.longstring import (
@@ -20,6 +21,7 @@ from ier.longstring import (
 )
 from ier.mahad import mahad
 from ier.psychsyn import psychsyn
+from ier.screen import screen
 
 
 def valid_survey_data(
@@ -270,3 +272,35 @@ class TestCrossModuleProperties:
             factors = [data.shape[1]]
             evenodd_result = evenodd(data, factors)
             assert len(evenodd_result) == data.shape[0]
+
+
+class TestAcquiescenceProperties:
+    """Property-based tests for acquiescence index."""
+
+    @given(valid_survey_data())
+    @settings(max_examples=50)
+    def test_acquiescence_bounded_0_1(self, data: np.ndarray) -> None:
+        """Simple mode output should be in [0, 1]."""
+        result = acquiescence(data)
+        valid = result[~np.isnan(result)]
+        assert np.all(valid >= 0.0)
+        assert np.all(valid <= 1.0)
+
+    @given(valid_survey_data())
+    @settings(max_examples=50)
+    def test_acquiescence_output_length(self, data: np.ndarray) -> None:
+        """Output length should match number of respondents."""
+        result = acquiescence(data)
+        assert len(result) == data.shape[0]
+
+
+class TestScreenProperties:
+    """Property-based tests for screen function."""
+
+    @given(valid_survey_data(min_rows=5, max_rows=30, min_cols=4, max_cols=10))
+    @settings(max_examples=20)
+    def test_screen_flag_counts_bounded(self, data: np.ndarray) -> None:
+        """Flag counts should be between 0 and n_indices."""
+        result = screen(data, indices=["irv", "longstring", "acquiescence"])
+        assert np.all(result["flag_counts"] >= 0)
+        assert np.all(result["flag_counts"] <= result["n_indices"])
