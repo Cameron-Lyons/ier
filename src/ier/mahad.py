@@ -27,7 +27,7 @@ try:
     stats = _stats
     SCIPY_AVAILABLE = True
 except ImportError:
-    pass
+    pass  # scipy is optional; mahad_flag and mahad_plot check at call time
 
 
 def mahad(
