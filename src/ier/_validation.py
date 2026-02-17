@@ -1,7 +1,7 @@
 """Shared input validation utilities for careless detection functions."""
 
 from collections.abc import Sequence
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeAlias
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -13,7 +13,7 @@ class SupportsArray(Protocol):
     def __array__(self, dtype: Any | None = None) -> np.ndarray: ...
 
 
-type MatrixLike = (
+MatrixLike: TypeAlias = (
     Sequence[Sequence[float | int]]
     | np.ndarray
     | SupportsArray
