@@ -13,12 +13,7 @@ class SupportsArray(Protocol):
     def __array__(self, dtype: Any | None = None) -> np.ndarray: ...
 
 
-MatrixLike: TypeAlias = (
-    Sequence[Sequence[float | int]]
-    | np.ndarray
-    | SupportsArray
-    | ArrayLike
-)
+MatrixLike: TypeAlias = Sequence[Sequence[float | int]] | np.ndarray | SupportsArray | ArrayLike
 
 
 def validate_matrix_input(

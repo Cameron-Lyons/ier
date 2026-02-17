@@ -303,9 +303,7 @@ class TestComposite(unittest.TestCase):
     def test_return_diagnostics(self) -> None:
         """Test composite can return index diagnostics."""
         data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
-        scores, diagnostics = composite(
-            data, indices=["irv", "mad"], return_diagnostics=True
-        )
+        scores, diagnostics = composite(data, indices=["irv", "mad"], return_diagnostics=True)
         self.assertEqual(len(scores), 2)
         self.assertIn("mad", diagnostics)
 
