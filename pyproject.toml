@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "insufficient-effort"
-version = "1.6.0"
+version = "1.6.1"
 authors = [{ name = "Cameron Lyons", email = "cameron.lyons2@gmail.com" }]
 description = "Python library for detecting Insufficient Effort Responding (IER) in survey data"
 readme = "README.md"
@@ -66,7 +66,7 @@ exclude_lines = [
 show_missing = true
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py311"
 line-length = 100
 src = ["src"]
 
@@ -77,7 +77,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH"]
 known-first-party = ["ier"]
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
