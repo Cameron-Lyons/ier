@@ -39,25 +39,6 @@ _OPTIONAL_INDICES = ["evenodd", "mad", "lz"]
 
 _ALL_INDICES = _DEFAULT_INDICES + _OPTIONAL_INDICES
 
-_HIGH_IS_CARELESS = {
-    "longstring",
-    "longstring_pattern",
-    "mahad",
-    "u3_poly",
-    "midpoint",
-    "acquiescence",
-    "mad",
-}
-
-_LOW_IS_CARELESS = {
-    "irv",
-    "psychsyn",
-    "person_total",
-    "markov",
-    "evenodd",
-    "lz",
-}
-
 
 def screen(
     x: MatrixLike,
@@ -126,106 +107,74 @@ def screen(
     scores: dict[str, np.ndarray] = {}
     errors: dict[str, str] = {}
 
-    if "irv" in indices:
-        try:
-            scores["irv"] = irv(x_array, na_rm=na_rm)
-        except ValueError as err:
-            errors["irv"] = str(err)
+    def _mahad_scores() -> np.ndarray:
+        mahad_result = mahad(x_array, na_rm=na_rm)
+        if not isinstance(mahad_result, np.ndarray):
+            raise ValueError("mahad returned non-array output")
+        return mahad_result
 
-    if "longstring" in indices:
-        try:
-            scores["longstring"] = longstring_scores(x_array, na_rm=na_rm)
-        except ValueError as err:
-            errors["longstring"] = str(err)
+    def _psychsyn_scores() -> np.ndarray:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
+        if not isinstance(psyn_result, np.ndarray):
+            raise ValueError("psychsyn returned non-array output")
+        return psyn_result
 
-    if "longstring_pattern" in indices:
-        try:
-            scores["longstring_pattern"] = longstring_pattern(x_array, na_rm=na_rm)
-        except ValueError as err:
-            errors["longstring_pattern"] = str(err)
+    index_handlers: dict[str, Any] = {
+        "irv": lambda: irv(x_array, na_rm=na_rm),
+        "longstring": lambda: longstring_scores(x_array, na_rm=na_rm),
+        "longstring_pattern": lambda: longstring_pattern(x_array, na_rm=na_rm),
+        "mahad": _mahad_scores,
+        "psychsyn": _psychsyn_scores,
+        "person_total": lambda: person_total(x_array, na_rm=na_rm),
+        "markov": lambda: markov(x_array, na_rm=na_rm),
+        "u3_poly": lambda: u3_poly(x_array, scale_min=scale_min, scale_max=scale_max),
+        "midpoint": lambda: midpoint_responding(x_array, scale_min=scale_min, scale_max=scale_max),
+        "acquiescence": lambda: acquiescence(
+            x_array, scale_min=scale_min, scale_max=scale_max, na_rm=na_rm
+        ),
+        "lz": lambda: lz(x_array, na_rm=na_rm),
+    }
 
-    if "mahad" in indices:
-        try:
-            mahad_result = mahad(x_array, na_rm=na_rm)
-            if isinstance(mahad_result, np.ndarray):
-                scores["mahad"] = mahad_result
-        except ValueError as err:
-            errors["mahad"] = str(err)
+    for idx in indices:
+        if idx == "evenodd":
+            if evenodd_factors is None:
+                errors["evenodd"] = "evenodd_factors must be provided when using evenodd index"
+                continue
+            try:
+                eo_result = evenodd(x_array, factors=evenodd_factors)
+                if isinstance(eo_result, np.ndarray):
+                    scores["evenodd"] = eo_result
+            except ValueError as err:
+                errors["evenodd"] = str(err)
+            continue
 
-    if "psychsyn" in indices:
-        try:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
-            if isinstance(psyn_result, np.ndarray):
-                scores["psychsyn"] = psyn_result
-        except ValueError as err:
-            errors["psychsyn"] = str(err)
+        if idx == "mad":
+            if mad_positive_items is None or mad_negative_items is None:
+                errors["mad"] = (
+                    "mad_positive_items and mad_negative_items must be provided "
+                    "when using mad index"
+                )
+                continue
+            try:
+                scores["mad"] = mad(
+                    x_array,
+                    positive_items=mad_positive_items,
+                    negative_items=mad_negative_items,
+                    scale_max=mad_scale_max,
+                    na_rm=na_rm,
+                )
+            except ValueError as err:
+                errors["mad"] = str(err)
+            continue
 
-    if "person_total" in indices:
+        handler = index_handlers.get(idx)
+        if handler is None:
+            continue
         try:
-            scores["person_total"] = person_total(x_array, na_rm=na_rm)
+            scores[idx] = handler()
         except ValueError as err:
-            errors["person_total"] = str(err)
-
-    if "markov" in indices:
-        try:
-            scores["markov"] = markov(x_array, na_rm=na_rm)
-        except ValueError as err:
-            errors["markov"] = str(err)
-
-    if "u3_poly" in indices:
-        try:
-            scores["u3_poly"] = u3_poly(x_array, scale_min=scale_min, scale_max=scale_max)
-        except ValueError as err:
-            errors["u3_poly"] = str(err)
-
-    if "midpoint" in indices:
-        try:
-            scores["midpoint"] = midpoint_responding(
-                x_array, scale_min=scale_min, scale_max=scale_max
-            )
-        except ValueError as err:
-            errors["midpoint"] = str(err)
-
-    if "acquiescence" in indices:
-        try:
-            scores["acquiescence"] = acquiescence(
-                x_array, scale_min=scale_min, scale_max=scale_max, na_rm=na_rm
-            )
-        except ValueError as err:
-            errors["acquiescence"] = str(err)
-
-    if "evenodd" in indices and evenodd_factors is not None:
-        try:
-            eo_result = evenodd(x_array, factors=evenodd_factors)
-            if isinstance(eo_result, np.ndarray):
-                scores["evenodd"] = eo_result
-        except ValueError as err:
-            errors["evenodd"] = str(err)
-    elif "evenodd" in indices:
-        errors["evenodd"] = "evenodd_factors must be provided when using evenodd index"
-
-    if "mad" in indices and mad_positive_items is not None and mad_negative_items is not None:
-        try:
-            scores["mad"] = mad(
-                x_array,
-                positive_items=mad_positive_items,
-                negative_items=mad_negative_items,
-                scale_max=mad_scale_max,
-                na_rm=na_rm,
-            )
-        except ValueError as err:
-            errors["mad"] = str(err)
-    elif "mad" in indices:
-        errors["mad"] = (
-            "mad_positive_items and mad_negative_items must be provided when using mad index"
-        )
-
-    if "lz" in indices:
-        try:
-            scores["lz"] = lz(x_array, na_rm=na_rm)
-        except ValueError as err:
-            errors["lz"] = str(err)
+            errors[idx] = str(err)
 
     flags: dict[str, np.ndarray] = {}
     for name, score_arr in scores.items():
@@ -239,11 +188,20 @@ def screen(
         flag_arr = np.zeros(n_respondents, dtype=bool)
         valid_mask = ~np.isnan(score_arr)
 
-        if name in _HIGH_IS_CARELESS:
-            flag_arr[valid_mask] = score_arr[valid_mask] > cutoff
-        else:
-            low_cutoff = float(np.percentile(valid_scores, 100.0 - percentile))
-            flag_arr[valid_mask] = score_arr[valid_mask] < low_cutoff
+        match name:
+            case (
+                "longstring"
+                | "longstring_pattern"
+                | "mahad"
+                | "u3_poly"
+                | "midpoint"
+                | "acquiescence"
+                | "mad"
+            ):
+                flag_arr[valid_mask] = score_arr[valid_mask] > cutoff
+            case _:
+                low_cutoff = float(np.percentile(valid_scores, 100.0 - percentile))
+                flag_arr[valid_mask] = score_arr[valid_mask] < low_cutoff
 
         flags[name] = flag_arr
 

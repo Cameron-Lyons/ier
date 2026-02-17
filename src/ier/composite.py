@@ -225,12 +225,15 @@ def composite(
 
     score_matrix = np.column_stack(list(index_scores.values()))
 
-    if combine_method == "mean":
-        result: np.ndarray = np.nanmean(score_matrix, axis=1)
-    elif combine_method == "sum":
-        result = np.nansum(score_matrix, axis=1)
-    else:
-        result = np.nanmax(score_matrix, axis=1)
+    match combine_method:
+        case "mean":
+            result: np.ndarray = np.nanmean(score_matrix, axis=1)
+        case "sum":
+            result = np.nansum(score_matrix, axis=1)
+        case "max":
+            result = np.nanmax(score_matrix, axis=1)
+        case _:
+            raise ValueError("method must be 'mean', 'sum', 'max', or 'best_subset'")
 
     if return_diagnostics:
         return result, diagnostics
