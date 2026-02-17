@@ -266,6 +266,35 @@ def longstring_pattern(
     return result
 
 
+def longstring_scores(
+    x: MatrixLike,
+    na_rm: bool = True,
+) -> np.ndarray:
+    """
+    Compute longest run-length scores directly from matrix rows.
+
+    This avoids value-collisions from string casting (e.g., 1 vs 1.0 vs 1.00)
+    and preserves non-integer response values.
+    """
+    x_array = validate_matrix_input(x, min_columns=1, check_type=False)
+
+    if not na_rm and np.isnan(x_array).any():
+        raise ValueError("data contains missing values. Set na_rm=True to handle them")
+
+    scores = np.zeros(x_array.shape[0], dtype=float)
+
+    for i, row in enumerate(x_array):
+        row_data = row[~np.isnan(row)] if na_rm else row
+        if row_data.size == 0:
+            continue
+
+        change_points = np.flatnonzero(np.diff(row_data) != 0) + 1
+        run_lengths = np.diff(np.concatenate(([0], change_points, [row_data.size])))
+        scores[i] = float(np.max(run_lengths))
+
+    return scores
+
+
 def _longest_repeating_pattern(row: np.ndarray, max_k: int) -> float:
     """Find the longest consecutive repeating sub-pattern in a numeric sequence.
 

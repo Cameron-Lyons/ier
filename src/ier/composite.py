@@ -12,7 +12,6 @@ References:
   Psychological Methods, 17(3), 437-455.
 """
 
-import contextlib
 from typing import Any, Literal
 
 import numpy as np
@@ -20,13 +19,17 @@ import numpy as np
 from ier._validation import MatrixLike, validate_matrix_input
 from ier.evenodd import evenodd
 from ier.irv import irv
-from ier.longstring import longstring, longstring_pattern
+from ier.longstring import longstring_pattern, longstring_scores
 from ier.lz import lz
 from ier.mad import mad
 from ier.mahad import mahad
 from ier.markov import markov
 from ier.person_total import person_total
 from ier.psychsyn import psychsyn
+
+
+def _add_error(errors: dict[str, str], index_name: str, error: Exception) -> None:
+    errors[index_name] = str(error)
 
 
 def composite(
@@ -40,7 +43,8 @@ def composite(
     mad_positive_items: list[int] | None = None,
     mad_negative_items: list[int] | None = None,
     mad_scale_max: int | None = None,
-) -> np.ndarray:
+    return_diagnostics: bool = False,
+) -> np.ndarray | tuple[np.ndarray, dict[str, str]]:
     """
     Calculate a composite IER index combining multiple detection methods.
 
@@ -120,69 +124,89 @@ def composite(
         raise ValueError("method must be 'mean', 'sum', 'max', or 'best_subset'")
 
     index_scores: dict[str, np.ndarray] = {}
+    diagnostics: dict[str, str] = {}
 
     if "irv" in indices:
-        irv_scores = irv(x_array, na_rm=na_rm)
-        index_scores["irv"] = -irv_scores
+        try:
+            index_scores["irv"] = -irv(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "irv", err)
 
     if "longstring" in indices:
-        response_strings = [
-            "".join(str(int(v)) if not np.isnan(v) else "" for v in row) for row in x_array
-        ]
-        ls_results = longstring(response_strings)
-        ls_scores = np.array([r[1] if r is not None else 0 for r in ls_results], dtype=float)
-        index_scores["longstring"] = ls_scores
+        try:
+            index_scores["longstring"] = longstring_scores(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "longstring", err)
 
     if "longstring_pattern" in indices:
-        with contextlib.suppress(ValueError):
-            lsp_scores = longstring_pattern(x_array, na_rm=na_rm)
-            index_scores["longstring_pattern"] = lsp_scores
+        try:
+            index_scores["longstring_pattern"] = longstring_pattern(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "longstring_pattern", err)
 
     if "mahad" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             mahad_result = mahad(x_array, na_rm=na_rm)
             if isinstance(mahad_result, np.ndarray):
                 index_scores["mahad"] = mahad_result
+        except ValueError as err:
+            _add_error(diagnostics, "mahad", err)
 
     if "psychsyn" in indices:
-        with contextlib.suppress(ValueError), np.errstate(divide="ignore", invalid="ignore"):
-            psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
+        try:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
             if isinstance(psyn_result, np.ndarray):
                 index_scores["psychsyn"] = -psyn_result
+        except ValueError as err:
+            _add_error(diagnostics, "psychsyn", err)
 
     if "evenodd" in indices and evenodd_factors is not None:
-        with contextlib.suppress(ValueError):
+        try:
             eo_result = evenodd(x_array, factors=evenodd_factors)
             if isinstance(eo_result, np.ndarray):
                 index_scores["evenodd"] = -eo_result
+        except ValueError as err:
+            _add_error(diagnostics, "evenodd", err)
 
     if "person_total" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             index_scores["person_total"] = -person_total(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "person_total", err)
 
     if "lz" in indices:
-        with contextlib.suppress(ValueError):
-            lz_scores = lz(x_array, na_rm=na_rm)
-            index_scores["lz"] = -lz_scores
+        try:
+            index_scores["lz"] = -lz(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "lz", err)
 
-    if "mad" in indices and mad_positive_items is not None and mad_negative_items is not None:
-        with contextlib.suppress(ValueError):
-            mad_scores = mad(
-                x_array,
-                positive_items=mad_positive_items,
-                negative_items=mad_negative_items,
-                scale_max=mad_scale_max,
-                na_rm=na_rm,
+    if "mad" in indices:
+        if mad_positive_items is None or mad_negative_items is None:
+            diagnostics["mad"] = (
+                "mad_positive_items and mad_negative_items must be provided when using mad index"
             )
-            index_scores["mad"] = mad_scores
+        else:
+            try:
+                index_scores["mad"] = mad(
+                    x_array,
+                    positive_items=mad_positive_items,
+                    negative_items=mad_negative_items,
+                    scale_max=mad_scale_max,
+                    na_rm=na_rm,
+                )
+            except ValueError as err:
+                _add_error(diagnostics, "mad", err)
 
     if "markov" in indices:
-        with contextlib.suppress(ValueError):
-            markov_scores = markov(x_array, na_rm=na_rm)
-            index_scores["markov"] = -markov_scores
+        try:
+            index_scores["markov"] = -markov(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "markov", err)
 
     if len(index_scores) == 0:
-        raise ValueError("no valid indices could be computed from the data")
+        failed = "; ".join(f"{name}: {msg}" for name, msg in sorted(diagnostics.items()))
+        raise ValueError(f"no valid indices could be computed from the data. failures: {failed}")
 
     if standardize:
         standardized_scores = {}
@@ -208,6 +232,8 @@ def composite(
     else:
         result = np.nanmax(score_matrix, axis=1)
 
+    if return_diagnostics:
+        return result, diagnostics
     return result
 
 
@@ -224,7 +250,8 @@ def composite_flag(
     mad_positive_items: list[int] | None = None,
     mad_negative_items: list[int] | None = None,
     mad_scale_max: int | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+    return_diagnostics: bool = False,
+) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, dict[str, str]]:
     """
     Calculate composite IER scores and flag potential careless responders.
 
@@ -252,7 +279,7 @@ def composite_flag(
         >>> print(flags)
         [False, True, False]
     """
-    scores = composite(
+    composite_result = composite(
         x,
         indices=indices,
         method=method,
@@ -263,7 +290,15 @@ def composite_flag(
         mad_positive_items=mad_positive_items,
         mad_negative_items=mad_negative_items,
         mad_scale_max=mad_scale_max,
+        return_diagnostics=return_diagnostics,
     )
+    if return_diagnostics:
+        scores, diagnostics = composite_result
+        assert isinstance(scores, np.ndarray)
+    else:
+        scores = composite_result
+        diagnostics = {}
+        assert isinstance(scores, np.ndarray)
 
     valid_scores = scores[~np.isnan(scores)]
 
@@ -277,6 +312,8 @@ def composite_flag(
     valid_mask = ~np.isnan(scores)
     flags[valid_mask] = scores[valid_mask] > threshold
 
+    if return_diagnostics:
+        return scores, flags, diagnostics
     return scores, flags
 
 
@@ -331,51 +368,65 @@ def composite_summary(
         raise ValueError("evenodd_factors must be provided when using evenodd index")
 
     individual_scores: dict[str, np.ndarray] = {}
+    diagnostics: dict[str, str] = {}
 
     if "irv" in indices:
-        individual_scores["irv"] = irv(x_array, na_rm=na_rm)
+        try:
+            individual_scores["irv"] = irv(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "irv", err)
 
     if "longstring" in indices:
-        response_strings = [
-            "".join(str(int(v)) if not np.isnan(v) else "" for v in row) for row in x_array
-        ]
-        ls_results = longstring(response_strings)
-        individual_scores["longstring"] = np.array(
-            [r[1] if r is not None else 0 for r in ls_results], dtype=float
-        )
+        try:
+            individual_scores["longstring"] = longstring_scores(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "longstring", err)
 
     if "longstring_pattern" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             individual_scores["longstring_pattern"] = longstring_pattern(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "longstring_pattern", err)
 
     if "mahad" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             mahad_result = mahad(x_array, na_rm=na_rm)
             if isinstance(mahad_result, np.ndarray):
                 individual_scores["mahad"] = mahad_result
+        except ValueError as err:
+            _add_error(diagnostics, "mahad", err)
 
     if "psychsyn" in indices:
-        with contextlib.suppress(ValueError), np.errstate(divide="ignore", invalid="ignore"):
-            psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
+        try:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
             if isinstance(psyn_result, np.ndarray):
                 individual_scores["psychsyn"] = psyn_result
+        except ValueError as err:
+            _add_error(diagnostics, "psychsyn", err)
 
     if "evenodd" in indices and evenodd_factors is not None:
-        with contextlib.suppress(ValueError):
+        try:
             eo_result = evenodd(x_array, factors=evenodd_factors)
             if isinstance(eo_result, np.ndarray):
                 individual_scores["evenodd"] = eo_result
+        except ValueError as err:
+            _add_error(diagnostics, "evenodd", err)
 
     if "person_total" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             individual_scores["person_total"] = person_total(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "person_total", err)
 
     if "lz" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             individual_scores["lz"] = lz(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "lz", err)
 
     if "mad" in indices and mad_positive_items is not None and mad_negative_items is not None:
-        with contextlib.suppress(ValueError):
+        try:
             individual_scores["mad"] = mad(
                 x_array,
                 positive_items=mad_positive_items,
@@ -383,12 +434,20 @@ def composite_summary(
                 scale_max=mad_scale_max,
                 na_rm=na_rm,
             )
+        except ValueError as err:
+            _add_error(diagnostics, "mad", err)
+    elif "mad" in indices:
+        diagnostics["mad"] = (
+            "mad_positive_items and mad_negative_items must be provided when using mad index"
+        )
 
     if "markov" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             individual_scores["markov"] = markov(x_array, na_rm=na_rm)
+        except ValueError as err:
+            _add_error(diagnostics, "markov", err)
 
-    composite_scores = composite(
+    composite_scores_result = composite(
         x_array,
         indices=indices,
         method=method,
@@ -400,6 +459,11 @@ def composite_summary(
         mad_negative_items=mad_negative_items,
         mad_scale_max=mad_scale_max,
     )
+    composite_scores = (
+        composite_scores_result[0]
+        if isinstance(composite_scores_result, tuple)
+        else composite_scores_result
+    )
 
     valid_composite = composite_scores[~np.isnan(composite_scores)]
 
@@ -407,6 +471,7 @@ def composite_summary(
         "composite": composite_scores,
         "indices": individual_scores,
         "indices_used": list(individual_scores.keys()),
+        "errors": diagnostics,
         "method": method,
         "standardized": standardize,
         "mean": float(np.nanmean(composite_scores)) if len(valid_composite) > 0 else np.nan,
@@ -454,7 +519,7 @@ def composite_probability(
         >>> data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3], [5, 4, 3, 2, 1]]
         >>> probs = composite_probability(data)
     """
-    z_scores = composite(
+    z_scores_result = composite(
         x,
         indices=indices,
         method=method,
@@ -466,6 +531,7 @@ def composite_probability(
         mad_negative_items=mad_negative_items,
         mad_scale_max=mad_scale_max,
     )
+    z_scores = z_scores_result[0] if isinstance(z_scores_result, tuple) else z_scores_result
 
     result: np.ndarray = 1.0 / (1.0 + np.exp(-z_scores))
     return result

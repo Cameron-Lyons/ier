@@ -5,7 +5,6 @@ Provides a single entry point for computing all available IER indices,
 flagging suspected careless responders, and summarizing results.
 """
 
-import contextlib
 from typing import Any
 
 import numpy as np
@@ -14,7 +13,7 @@ from ier._validation import MatrixLike, validate_matrix_input
 from ier.acquiescence import acquiescence
 from ier.evenodd import evenodd
 from ier.irv import irv
-from ier.longstring import longstring, longstring_pattern
+from ier.longstring import longstring_pattern, longstring_scores
 from ier.lz import lz
 from ier.mad import mad
 from ier.mahad import mahad
@@ -125,69 +124,89 @@ def screen(
                 raise ValueError(f"invalid index '{idx}'. Valid options: {sorted(_ALL_INDICES)}")
 
     scores: dict[str, np.ndarray] = {}
+    errors: dict[str, str] = {}
 
     if "irv" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             scores["irv"] = irv(x_array, na_rm=na_rm)
+        except ValueError as err:
+            errors["irv"] = str(err)
 
     if "longstring" in indices:
-        with contextlib.suppress(ValueError):
-            response_strings = [
-                "".join(str(int(v)) if not np.isnan(v) else "" for v in row) for row in x_array
-            ]
-            ls_results = longstring(response_strings)
-            scores["longstring"] = np.array(
-                [r[1] if r is not None else 0 for r in ls_results], dtype=float
-            )
+        try:
+            scores["longstring"] = longstring_scores(x_array, na_rm=na_rm)
+        except ValueError as err:
+            errors["longstring"] = str(err)
 
     if "longstring_pattern" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             scores["longstring_pattern"] = longstring_pattern(x_array, na_rm=na_rm)
+        except ValueError as err:
+            errors["longstring_pattern"] = str(err)
 
     if "mahad" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             mahad_result = mahad(x_array, na_rm=na_rm)
             if isinstance(mahad_result, np.ndarray):
                 scores["mahad"] = mahad_result
+        except ValueError as err:
+            errors["mahad"] = str(err)
 
     if "psychsyn" in indices:
-        with contextlib.suppress(ValueError), np.errstate(divide="ignore", invalid="ignore"):
-            psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
+        try:
+            with np.errstate(divide="ignore", invalid="ignore"):
+                psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
             if isinstance(psyn_result, np.ndarray):
                 scores["psychsyn"] = psyn_result
+        except ValueError as err:
+            errors["psychsyn"] = str(err)
 
     if "person_total" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             scores["person_total"] = person_total(x_array, na_rm=na_rm)
+        except ValueError as err:
+            errors["person_total"] = str(err)
 
     if "markov" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             scores["markov"] = markov(x_array, na_rm=na_rm)
+        except ValueError as err:
+            errors["markov"] = str(err)
 
     if "u3_poly" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             scores["u3_poly"] = u3_poly(x_array, scale_min=scale_min, scale_max=scale_max)
+        except ValueError as err:
+            errors["u3_poly"] = str(err)
 
     if "midpoint" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             scores["midpoint"] = midpoint_responding(
                 x_array, scale_min=scale_min, scale_max=scale_max
             )
+        except ValueError as err:
+            errors["midpoint"] = str(err)
 
     if "acquiescence" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             scores["acquiescence"] = acquiescence(
                 x_array, scale_min=scale_min, scale_max=scale_max, na_rm=na_rm
             )
+        except ValueError as err:
+            errors["acquiescence"] = str(err)
 
     if "evenodd" in indices and evenodd_factors is not None:
-        with contextlib.suppress(ValueError):
+        try:
             eo_result = evenodd(x_array, factors=evenodd_factors)
             if isinstance(eo_result, np.ndarray):
                 scores["evenodd"] = eo_result
+        except ValueError as err:
+            errors["evenodd"] = str(err)
+    elif "evenodd" in indices:
+        errors["evenodd"] = "evenodd_factors must be provided when using evenodd index"
 
     if "mad" in indices and mad_positive_items is not None and mad_negative_items is not None:
-        with contextlib.suppress(ValueError):
+        try:
             scores["mad"] = mad(
                 x_array,
                 positive_items=mad_positive_items,
@@ -195,10 +214,18 @@ def screen(
                 scale_max=mad_scale_max,
                 na_rm=na_rm,
             )
+        except ValueError as err:
+            errors["mad"] = str(err)
+    elif "mad" in indices:
+        errors["mad"] = (
+            "mad_positive_items and mad_negative_items must be provided when using mad index"
+        )
 
     if "lz" in indices:
-        with contextlib.suppress(ValueError):
+        try:
             scores["lz"] = lz(x_array, na_rm=na_rm)
+        except ValueError as err:
+            errors["lz"] = str(err)
 
     flags: dict[str, np.ndarray] = {}
     for name, score_arr in scores.items():
@@ -251,6 +278,7 @@ def screen(
         "flag_counts": flag_counts,
         "n_indices": len(scores),
         "indices_used": list(scores.keys()),
+        "errors": errors,
         "n_respondents": n_respondents,
         "summary": summary,
     }

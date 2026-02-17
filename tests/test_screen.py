@@ -119,6 +119,7 @@ class TestScreen(unittest.TestCase):
         self.assertIn("flag_counts", result)
         self.assertIn("n_indices", result)
         self.assertIn("indices_used", result)
+        self.assertIn("errors", result)
         self.assertIn("n_respondents", result)
         self.assertIn("summary", result)
         self.assertEqual(result["n_respondents"], 30)
@@ -160,6 +161,11 @@ class TestScreen(unittest.TestCase):
             mad_negative_items=[3, 4, 5],
         )
         self.assertIn("mad", result["indices_used"])
+
+    def test_missing_optional_config_recorded_in_errors(self) -> None:
+        result = screen(self.data, indices=["mad", "evenodd"])
+        self.assertIn("mad", result["errors"])
+        self.assertIn("evenodd", result["errors"])
 
     def test_summary_stats(self) -> None:
         result = screen(self.data, indices=["irv"])

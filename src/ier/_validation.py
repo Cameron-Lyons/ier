@@ -1,10 +1,24 @@
 """Shared input validation utilities for careless detection functions."""
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, Protocol
 
 import numpy as np
+from numpy.typing import ArrayLike
 
-MatrixLike = list[list[float]] | np.ndarray | Any
+
+class SupportsArray(Protocol):
+    """Protocol for objects convertible to numpy arrays (e.g., pandas/polars DataFrame)."""
+
+    def __array__(self, dtype: Any | None = None) -> np.ndarray: ...
+
+
+type MatrixLike = (
+    Sequence[Sequence[float | int]]
+    | np.ndarray
+    | SupportsArray
+    | ArrayLike
+)
 
 
 def validate_matrix_input(
@@ -34,13 +48,13 @@ def validate_matrix_input(
     if x is None:
         raise ValueError("input data cannot be None")
 
-    if check_type and not isinstance(x, (list, np.ndarray)) and not hasattr(x, "__array__"):
-        raise TypeError("input data must be a list, numpy array, or DataFrame")
+    if check_type and not isinstance(x, (list, tuple, np.ndarray)) and not hasattr(x, "__array__"):
+        raise TypeError("input data must be array-like (list, tuple, numpy array, or DataFrame)")
 
     if isinstance(x, np.ndarray) and x.size == 0:
         raise ValueError("input data cannot be empty")
 
-    if isinstance(x, list) and len(x) == 0:
+    if isinstance(x, (list, tuple)) and len(x) == 0:
         raise ValueError("input data cannot be empty")
 
     x_array = np.array(x, dtype=dtype) if dtype is not None else np.asarray(x)
