@@ -9,7 +9,6 @@ This module provides functions for detecting careless responding patterns by ana
 individuals respond to psychometrically similar (synonym) or opposite (antonym) items.
 """
 
-import random
 from typing import Any
 
 import numpy as np
@@ -123,9 +122,7 @@ def psychsyn(
     if not anto and critval < 0:
         raise ValueError("critval should be positive for synonym analysis")
 
-    if random_seed is not None:
-        np.random.seed(random_seed)
-        random.seed(random_seed)
+    rng = np.random.default_rng(random_seed)
 
     item_correlations = np.corrcoef(x_array, rowvar=False)
 
@@ -152,7 +149,7 @@ def psychsyn(
     person_corrs[invalid_pairs] = np.nan
 
     if resample_na:
-        person_corrs = _resample_missing_correlations(person_corrs)
+        person_corrs = _resample_missing_correlations(person_corrs, rng)
 
     scores = np.nanmean(person_corrs, axis=1)
 
@@ -169,7 +166,9 @@ def psychsyn(
     return result
 
 
-def _resample_missing_correlations(person_corrs: np.ndarray) -> np.ndarray:
+def _resample_missing_correlations(
+    person_corrs: np.ndarray, rng: np.random.Generator
+) -> np.ndarray:
     """
     Resample missing correlations based on available data.
 
@@ -196,7 +195,7 @@ def _resample_missing_correlations(person_corrs: np.ndarray) -> np.ndarray:
     overall_mean = np.abs(np.nanmean(result))
     row_means[all_nan_rows] = overall_mean if not np.isnan(overall_mean) else 0.0
 
-    random_signs = np.random.choice([-1, 1], size=total_missing)
+    random_signs = rng.choice([-1, 1], size=total_missing)
 
     if all_nan_rows.any():
         all_nan_count = all_nan_rows.sum() * n_pairs

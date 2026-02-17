@@ -300,6 +300,21 @@ class TestComposite(unittest.TestCase):
         with self.assertRaises(ValueError):
             composite(data, method="invalid")  # type: ignore[arg-type]
 
+    def test_return_diagnostics(self) -> None:
+        """Test composite can return index diagnostics."""
+        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
+        scores, diagnostics = composite(
+            data, indices=["irv", "mad"], return_diagnostics=True
+        )
+        self.assertEqual(len(scores), 2)
+        self.assertIn("mad", diagnostics)
+
+    def test_noninteger_longstring_not_truncated(self) -> None:
+        """Test longstring index does not truncate non-integer values."""
+        data = [[1.1, 1.9, 1.1, 1.9]]
+        result = composite(data, indices=["longstring"], standardize=False)
+        np.testing.assert_array_equal(result, np.array([1.0]))
+
 
 class TestMAD(unittest.TestCase):
     """Tests for Mean Absolute Difference functions."""

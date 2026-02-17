@@ -62,21 +62,3 @@ jobs:
           body_path: CHANGELOG.md
           files: dist/*
           generate_release_notes: true
-
-  publish-pypi:
-    name: Publish to PyPI
-    runs-on: ubuntu-latest
-    needs: [build, github-release]
-    environment:
-      name: pypi
-      url: https://pypi.org/p/careless
-
-    steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v7
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1

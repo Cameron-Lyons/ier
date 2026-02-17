@@ -467,6 +467,20 @@ class TestPsychometricFunctions(unittest.TestCase):
         scores2: npt.NDArray[np.float64] = psychsyn(self.data, resample_na=True, random_seed=42)
         np.testing.assert_array_equal(scores1, scores2)
 
+    def test_psychsyn_random_seed_does_not_mutate_global_rng(self) -> None:
+        """Test psychsyn random_seed does not affect global numpy RNG state."""
+        data = self.data.astype(float).copy()
+        data[0, 0] = np.nan
+
+        np.random.seed(123)
+        expected_next = np.random.random()
+
+        np.random.seed(123)
+        psychsyn(data, resample_na=True, random_seed=7)
+        actual_next = np.random.random()
+
+        self.assertAlmostEqual(expected_next, actual_next)
+
     def test_psychsyn_critval(self) -> None:
         """Test critical value calculation returns tuples with indices and correlations."""
         results: list[tuple[int, int, float]] = psychsyn_critval(self.data)
