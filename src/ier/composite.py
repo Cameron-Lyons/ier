@@ -297,7 +297,6 @@ def composite_flag(
         assert isinstance(scores, np.ndarray)
     else:
         scores = composite_result
-        diagnostics = {}
         assert isinstance(scores, np.ndarray)
 
     valid_scores = scores[~np.isnan(scores)]
