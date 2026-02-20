@@ -15,8 +15,9 @@ from typing import Any
 
 import numpy as np
 
+from ier._flagging import threshold_flags
 from ier._summary import calculate_summary_stats
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, iter_rows, validate_matrix_input
 
 
 def markov(
@@ -62,10 +63,7 @@ def markov(
     n_rows = x_array.shape[0]
     result = np.zeros(n_rows, dtype=float)
 
-    for i in range(n_rows):
-        row = x_array[i, :]
-        if na_rm:
-            row = row[~np.isnan(row)]
+    for i, row in enumerate(iter_rows(x_array, na_rm)):
         if len(row) < 2:
             result[i] = np.nan
             continue
@@ -100,17 +98,9 @@ def markov_flag(
     """
     scores = markov(x, na_rm=na_rm)
 
-    valid_scores = scores[~np.isnan(scores)]
-
-    if threshold is None:
-        if len(valid_scores) == 0:
-            threshold = 0.0
-        else:
-            threshold = float(np.percentile(valid_scores, percentile))
-
-    flags = np.zeros(len(scores), dtype=bool)
-    valid_mask = ~np.isnan(scores)
-    flags[valid_mask] = scores[valid_mask] <= threshold
+    flags = threshold_flags(
+        scores, threshold=threshold, percentile=percentile, direction="low", inclusive=True
+    )
 
     return scores, flags
 

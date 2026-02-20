@@ -13,6 +13,7 @@ References:
 
 import numpy as np
 
+from ier._flagging import threshold_flags
 from ier._validation import MatrixLike, validate_matrix_input
 
 
@@ -100,6 +101,51 @@ def mad(
     return result
 
 
+def run_mad_index(
+    x: MatrixLike,
+    positive_items: list[int] | None,
+    negative_items: list[int] | None,
+    scale_max: int | None,
+    na_rm: bool,
+) -> np.ndarray:
+    """Compute MAD with shared validation for optional screen/composite configurations."""
+    if positive_items is None or negative_items is None:
+        raise ValueError(
+            "mad_positive_items and mad_negative_items must be provided when using mad index"
+        )
+
+    return mad(
+        x,
+        positive_items=positive_items,
+        negative_items=negative_items,
+        scale_max=scale_max,
+        na_rm=na_rm,
+    )
+
+
+def add_mad_index_result(
+    scores: dict[str, np.ndarray],
+    errors: dict[str, str],
+    x: MatrixLike,
+    positive_items: list[int] | None,
+    negative_items: list[int] | None,
+    scale_max: int | None,
+    na_rm: bool,
+    index_name: str = "mad",
+) -> None:
+    """Populate score/error containers for MAD in orchestration-style APIs."""
+    try:
+        scores[index_name] = run_mad_index(
+            x,
+            positive_items=positive_items,
+            negative_items=negative_items,
+            scale_max=scale_max,
+            na_rm=na_rm,
+        )
+    except ValueError as err:
+        errors[index_name] = str(err)
+
+
 def mad_flag(
     x: MatrixLike,
     positive_items: list[int] | None = None,
@@ -143,16 +189,6 @@ def mad_flag(
         na_rm=na_rm,
     )
 
-    valid_scores = scores[~np.isnan(scores)]
-
-    if threshold is None:
-        if len(valid_scores) == 0:
-            threshold = 0.0
-        else:
-            threshold = float(np.percentile(valid_scores, percentile))
-
-    flags = np.zeros(len(scores), dtype=bool)
-    valid_mask = ~np.isnan(scores)
-    flags[valid_mask] = scores[valid_mask] > threshold
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="high")
 
     return scores, flags

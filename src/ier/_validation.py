@@ -1,6 +1,6 @@
 """Shared input validation utilities for careless detection functions."""
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any, Protocol, TypeAlias
 
 import numpy as np
@@ -14,6 +14,12 @@ class SupportsArray(Protocol):
 
 
 MatrixLike: TypeAlias = Sequence[Sequence[float | int]] | np.ndarray | SupportsArray | ArrayLike
+
+
+def iter_rows(x_array: np.ndarray, na_rm: bool) -> Iterator[np.ndarray]:
+    """Yield rows with optional NaN removal for repeated row-wise index routines."""
+    for row in x_array:
+        yield row[~np.isnan(row)] if na_rm else row
 
 
 def validate_matrix_input(

@@ -16,6 +16,7 @@ from typing import Any
 
 import numpy as np
 
+from ier._optional_imports import require_matplotlib_pyplot
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -265,13 +266,7 @@ def mahad_qqplot(
     theoretical: np.ndarray = stats.chi2.ppf(probabilities, df=p)
 
     if plot:
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError as exc:
-            raise RuntimeError(
-                "matplotlib is required for plotting. "
-                "Install with: pip install insufficient-effort[plot]"
-            ) from exc
+        plt = require_matplotlib_pyplot()
 
         _fig, ax = plt.subplots(1, 1)
         ax.scatter(theoretical, observed_sq, edgecolors="black", facecolors="none")
