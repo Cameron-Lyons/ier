@@ -15,7 +15,7 @@ from ier.evenodd import evenodd
 from ier.irv import irv
 from ier.longstring import longstring_pattern, longstring_scores
 from ier.lz import lz
-from ier.mad import mad
+from ier.mad import add_mad_index_result
 from ier.mahad import mahad
 from ier.markov import markov
 from ier.person_total import person_total
@@ -150,22 +150,15 @@ def screen(
             continue
 
         if idx == "mad":
-            if mad_positive_items is None or mad_negative_items is None:
-                errors["mad"] = (
-                    "mad_positive_items and mad_negative_items must be provided "
-                    "when using mad index"
-                )
-                continue
-            try:
-                scores["mad"] = mad(
-                    x_array,
-                    positive_items=mad_positive_items,
-                    negative_items=mad_negative_items,
-                    scale_max=mad_scale_max,
-                    na_rm=na_rm,
-                )
-            except ValueError as err:
-                errors["mad"] = str(err)
+            add_mad_index_result(
+                scores,
+                errors,
+                x_array,
+                mad_positive_items,
+                mad_negative_items,
+                mad_scale_max,
+                na_rm,
+            )
             continue
 
         handler = index_handlers.get(idx)

@@ -11,7 +11,7 @@ from typing import Literal, overload
 
 import numpy as np
 
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, iter_rows, validate_matrix_input
 
 
 def run_length_encode(message: str) -> list[tuple[str, int]]:
@@ -253,11 +253,7 @@ def longstring_pattern(
     n_rows = x_array.shape[0]
     result = np.zeros(n_rows, dtype=float)
 
-    for i in range(n_rows):
-        row = x_array[i, :]
-        if na_rm:
-            row = row[~np.isnan(row)]
-
+    for i, row in enumerate(iter_rows(x_array, na_rm)):
         if len(row) < 4:
             continue
 

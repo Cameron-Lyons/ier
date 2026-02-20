@@ -92,7 +92,7 @@ def lz(
             if len(a) != x_array.shape[1]:
                 raise ValueError("discrimination length must match number of items")
         else:
-            a = _estimate_discrimination(x_binary, b, na_rm=na_rm)
+            a = _estimate_discrimination(x_binary, na_rm=na_rm)
     else:
         a = np.ones(x_array.shape[1])
 
@@ -173,7 +173,7 @@ def _estimate_difficulty(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
     return b
 
 
-def _estimate_discrimination(x: np.ndarray, b: np.ndarray, na_rm: bool = True) -> np.ndarray:
+def _estimate_discrimination(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
     """Estimate item discrimination using point-biserial correlation."""
     n_items = x.shape[1]
     a = np.ones(n_items)

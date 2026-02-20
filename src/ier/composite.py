@@ -16,12 +16,13 @@ from typing import Any, Literal
 
 import numpy as np
 
+from ier._flagging import threshold_flags
 from ier._validation import MatrixLike, validate_matrix_input
 from ier.evenodd import evenodd
 from ier.irv import irv
 from ier.longstring import longstring_pattern, longstring_scores
 from ier.lz import lz
-from ier.mad import mad
+from ier.mad import add_mad_index_result
 from ier.mahad import mahad
 from ier.markov import markov
 from ier.person_total import person_total
@@ -30,6 +31,26 @@ from ier.psychsyn import psychsyn
 
 def _add_error(errors: dict[str, str], index_name: str, error: Exception) -> None:
     errors[index_name] = str(error)
+
+
+def _add_mad_score(
+    scores: dict[str, np.ndarray],
+    errors: dict[str, str],
+    x: np.ndarray,
+    positive_items: list[int] | None,
+    negative_items: list[int] | None,
+    scale_max: int | None,
+    na_rm: bool,
+) -> None:
+    add_mad_index_result(
+        scores=scores,
+        errors=errors,
+        x=x,
+        positive_items=positive_items,
+        negative_items=negative_items,
+        scale_max=scale_max,
+        na_rm=na_rm,
+    )
 
 
 def composite(
@@ -182,21 +203,15 @@ def composite(
             _add_error(diagnostics, "lz", err)
 
     if "mad" in indices:
-        if mad_positive_items is None or mad_negative_items is None:
-            diagnostics["mad"] = (
-                "mad_positive_items and mad_negative_items must be provided when using mad index"
-            )
-        else:
-            try:
-                index_scores["mad"] = mad(
-                    x_array,
-                    positive_items=mad_positive_items,
-                    negative_items=mad_negative_items,
-                    scale_max=mad_scale_max,
-                    na_rm=na_rm,
-                )
-            except ValueError as err:
-                _add_error(diagnostics, "mad", err)
+        _add_mad_score(
+            scores=index_scores,
+            errors=diagnostics,
+            x=x_array,
+            positive_items=mad_positive_items,
+            negative_items=mad_negative_items,
+            scale_max=mad_scale_max,
+            na_rm=na_rm,
+        )
 
     if "markov" in indices:
         try:
@@ -302,17 +317,7 @@ def composite_flag(
         scores = composite_result
         assert isinstance(scores, np.ndarray)
 
-    valid_scores = scores[~np.isnan(scores)]
-
-    if threshold is None:
-        if len(valid_scores) == 0:
-            threshold = 0.0
-        else:
-            threshold = float(np.percentile(valid_scores, percentile))
-
-    flags = np.zeros(len(scores), dtype=bool)
-    valid_mask = ~np.isnan(scores)
-    flags[valid_mask] = scores[valid_mask] > threshold
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="high")
 
     if return_diagnostics:
         return scores, flags, diagnostics
@@ -427,20 +432,15 @@ def composite_summary(
         except ValueError as err:
             _add_error(diagnostics, "lz", err)
 
-    if "mad" in indices and mad_positive_items is not None and mad_negative_items is not None:
-        try:
-            individual_scores["mad"] = mad(
-                x_array,
-                positive_items=mad_positive_items,
-                negative_items=mad_negative_items,
-                scale_max=mad_scale_max,
-                na_rm=na_rm,
-            )
-        except ValueError as err:
-            _add_error(diagnostics, "mad", err)
-    elif "mad" in indices:
-        diagnostics["mad"] = (
-            "mad_positive_items and mad_negative_items must be provided when using mad index"
+    if "mad" in indices:
+        _add_mad_score(
+            scores=individual_scores,
+            errors=diagnostics,
+            x=x_array,
+            positive_items=mad_positive_items,
+            negative_items=mad_negative_items,
+            scale_max=mad_scale_max,
+            na_rm=na_rm,
         )
 
     if "markov" in indices:

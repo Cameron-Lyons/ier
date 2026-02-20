@@ -9,6 +9,8 @@ from typing import Any
 
 import numpy as np
 
+from ier._optional_imports import require_matplotlib_pyplot
+
 
 def plot_distributions(
     screen_result: dict[str, Any],
@@ -34,13 +36,7 @@ def plot_distributions(
         >>> fig = plot_distributions(result)
         >>> fig.savefig("distributions.png")
     """
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError as exc:
-        raise RuntimeError(
-            "matplotlib is required for plotting. "
-            "Install with: pip install insufficient-effort[plot]"
-        ) from exc
+    plt = require_matplotlib_pyplot()
 
     scores: dict[str, np.ndarray] = screen_result["scores"]
     n_indices = len(scores)
@@ -99,13 +95,7 @@ def plot_flagged_heatmap(
         >>> result = screen(data)
         >>> fig = plot_flagged_heatmap(result)
     """
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError as exc:
-        raise RuntimeError(
-            "matplotlib is required for plotting. "
-            "Install with: pip install insufficient-effort[plot]"
-        ) from exc
+    plt = require_matplotlib_pyplot()
 
     flags: dict[str, np.ndarray] = screen_result["flags"]
     index_names = list(flags.keys())
@@ -154,13 +144,7 @@ def plot_flag_counts(
         >>> result = screen(data)
         >>> fig = plot_flag_counts(result)
     """
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError as exc:
-        raise RuntimeError(
-            "matplotlib is required for plotting. "
-            "Install with: pip install insufficient-effort[plot]"
-        ) from exc
+    plt = require_matplotlib_pyplot()
 
     flag_counts: np.ndarray = screen_result["flag_counts"]
     n_indices: int = screen_result["n_indices"]

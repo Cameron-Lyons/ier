@@ -13,6 +13,7 @@ References:
 
 import numpy as np
 
+from ier._flagging import threshold_flags
 from ier._validation import MatrixLike, validate_matrix_input
 
 
@@ -147,16 +148,6 @@ def acquiescence_flag(
         na_rm=na_rm,
     )
 
-    valid_scores = scores[~np.isnan(scores)]
-
-    if threshold is None:
-        if len(valid_scores) == 0:
-            threshold = 0.0
-        else:
-            threshold = float(np.percentile(valid_scores, percentile))
-
-    flags = np.zeros(len(scores), dtype=bool)
-    valid_mask = ~np.isnan(scores)
-    flags[valid_mask] = scores[valid_mask] > threshold
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="high")
 
     return scores, flags
