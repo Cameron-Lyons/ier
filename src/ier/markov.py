@@ -57,18 +57,28 @@ def markov(
         return np.full(x_array.shape[0], np.nan)
 
     categories = np.sort(np.unique(all_valid))
-    cat_map = {v: i for i, v in enumerate(categories)}
     k = len(categories)
 
     n_rows = x_array.shape[0]
-    result = np.zeros(n_rows, dtype=float)
+    if not na_rm:
+        encoded = np.searchsorted(categories, x_array)
+        from_ids = encoded[:, :-1]
+        to_ids = encoded[:, 1:]
+        n_transitions = from_ids.shape[1]
 
-    for i, row in enumerate(iter_rows(x_array, na_rm)):
+        transitions = np.zeros((n_rows, k, k), dtype=float)
+        row_ids = np.repeat(np.arange(n_rows), n_transitions)
+        np.add.at(transitions, (row_ids, from_ids.ravel(), to_ids.ravel()), 1.0)
+        return _transition_entropy_batch(transitions)
+
+    result = np.zeros(n_rows, dtype=float)
+    for i, row in enumerate(iter_rows(x_array, na_rm=True)):
         if len(row) < 2:
             result[i] = np.nan
             continue
 
-        trans = _build_transition_matrix(row, cat_map, k)
+        encoded_row = np.searchsorted(categories, row)
+        trans = _build_transition_matrix(encoded_row, k)
         result[i] = _transition_entropy(trans)
 
     return result
@@ -136,32 +146,56 @@ def markov_summary(
     return summary
 
 
-def _build_transition_matrix(row: np.ndarray, cat_map: dict[float, int], k: int) -> np.ndarray:
-    """Build a first-order transition count matrix from a response sequence."""
-    trans = np.zeros((k, k), dtype=float)
-    for t in range(len(row) - 1):
-        from_idx = cat_map[row[t]]
-        to_idx = cat_map[row[t + 1]]
-        trans[from_idx, to_idx] += 1
-    return trans
+def _build_transition_matrix(encoded_row: np.ndarray, k: int) -> np.ndarray:
+    """Build a first-order transition count matrix from integer-encoded responses."""
+    pair_ids = encoded_row[:-1] * k + encoded_row[1:]
+    counts = np.bincount(pair_ids, minlength=k * k).astype(float, copy=False)
+    return counts.reshape(k, k)
 
 
 def _transition_entropy(trans: np.ndarray) -> float:
-    """Compute Shannon entropy of transition matrix, weighted by row marginals."""
+    """Compute Shannon entropy of one transition matrix, weighted by row marginals."""
     row_sums = trans.sum(axis=1)
-    total = row_sums.sum()
+    total = float(row_sums.sum())
 
     if total == 0:
         return 0.0
 
-    entropy = 0.0
-    for i in range(trans.shape[0]):
-        if row_sums[i] == 0:
-            continue
-        probs = trans[i, :] / row_sums[i]
-        weight = row_sums[i] / total
-        for p in probs:
-            if p > 0:
-                entropy -= weight * p * np.log2(p)
+    probs = np.divide(
+        trans, row_sums[:, np.newaxis], out=np.zeros_like(trans), where=row_sums[:, np.newaxis] != 0
+    )
 
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_probs = np.log2(probs, where=probs > 0, out=np.zeros_like(probs))
+
+    entropy_terms = probs * log_probs
+    weights = row_sums / total
+    entropy = -np.sum(weights[:, np.newaxis] * entropy_terms)
     return float(entropy)
+
+
+def _transition_entropy_batch(transitions: np.ndarray) -> np.ndarray:
+    """Vectorized Shannon entropy for a batch of transition matrices."""
+    row_sums = transitions.sum(axis=2)
+    totals = row_sums.sum(axis=1)
+
+    probs = np.divide(
+        transitions,
+        row_sums[:, :, np.newaxis],
+        out=np.zeros_like(transitions),
+        where=row_sums[:, :, np.newaxis] != 0,
+    )
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_probs = np.log2(probs, where=probs > 0, out=np.zeros_like(probs))
+
+    entropy_terms = probs * log_probs
+    weights = np.divide(
+        row_sums,
+        totals[:, np.newaxis],
+        out=np.zeros_like(row_sums),
+        where=totals[:, np.newaxis] != 0,
+    )
+
+    result: np.ndarray = -np.sum(weights[:, :, np.newaxis] * entropy_terms, axis=(1, 2))
+    return result
