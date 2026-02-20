@@ -331,7 +331,8 @@ mahad_scores = mahad(data, na_rm=True)
 
 ## Contributing
 
-Contributions are welcome! Please open an issue first to discuss changes.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup,
+quality checks, and release instructions.
 
 ## License
 

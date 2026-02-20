@@ -24,6 +24,12 @@ from ier.psychsyn import psychsyn
 from ier.screen import screen
 
 
+def _deterministic_jitter(shape: tuple[int, int], scale: float = 0.1) -> np.ndarray:
+    """Create deterministic noise for property tests."""
+    idx = np.arange(np.prod(shape), dtype=np.float64).reshape(shape)
+    return np.sin(idx + 1.0) * scale
+
+
 def valid_survey_data(
     min_rows: int = 3, max_rows: int = 50, min_cols: int = 2, max_cols: int = 20
 ) -> st.SearchStrategy[np.ndarray]:
@@ -146,7 +152,7 @@ class TestMahadProperties:
     @settings(max_examples=30)
     def test_mahad_non_negative(self, data: np.ndarray) -> None:
         """Mahalanobis distances should always be non-negative."""
-        data = data + np.random.randn(*data.shape) * 0.1
+        data = data + _deterministic_jitter(data.shape)
         assume(data.shape[0] > data.shape[1])
         result = mahad(data)
         assert len(result) == data.shape[0]
@@ -156,7 +162,7 @@ class TestMahadProperties:
     @settings(max_examples=20)
     def test_mahad_flagging_subset(self, data: np.ndarray) -> None:
         """Flagged outliers should be a subset of all observations."""
-        data = data + np.random.randn(*data.shape) * 0.1
+        data = data + _deterministic_jitter(data.shape)
         assume(data.shape[0] > data.shape[1])
         distances, flags = mahad(data, flag=True)
         assert len(flags) == len(distances)
@@ -166,7 +172,7 @@ class TestMahadProperties:
     @settings(max_examples=20)
     def test_mahad_higher_confidence_fewer_outliers(self, data: np.ndarray) -> None:
         """Higher confidence should flag fewer or equal outliers."""
-        data = data + np.random.randn(*data.shape) * 0.1
+        data = data + _deterministic_jitter(data.shape)
         assume(data.shape[0] > data.shape[1])
         _, flags_low = mahad(data, flag=True, confidence=0.90)
         _, flags_high = mahad(data, flag=True, confidence=0.99)
