@@ -75,7 +75,8 @@ def psychsyn(
     resample_na: bool = False,
     random_seed: int | None = None,
     _return_item_info: Literal[False] = False,
-) -> np.ndarray: ...
+) -> np.ndarray:
+    pass
 
 
 @overload
@@ -87,7 +88,8 @@ def psychsyn(
     resample_na: bool = False,
     random_seed: int | None = None,
     _return_item_info: Literal[False] = False,
-) -> tuple[np.ndarray, np.ndarray]: ...
+) -> tuple[np.ndarray, np.ndarray]:
+    pass
 
 
 @overload
@@ -99,7 +101,8 @@ def psychsyn(
     resample_na: bool = False,
     random_seed: int | None = None,
     _return_item_info: Literal[True] = True,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    pass
 
 
 def psychsyn(
@@ -309,7 +312,8 @@ def psychant(
     diag: Literal[False] = False,
     resample_na: bool = False,
     random_seed: int | None = None,
-) -> np.ndarray: ...
+) -> np.ndarray:
+    pass
 
 
 @overload
@@ -319,7 +323,8 @@ def psychant(
     diag: Literal[True] = True,
     resample_na: bool = False,
     random_seed: int | None = None,
-) -> tuple[np.ndarray, np.ndarray]: ...
+) -> tuple[np.ndarray, np.ndarray]:
+    pass
 
 
 def psychant(
