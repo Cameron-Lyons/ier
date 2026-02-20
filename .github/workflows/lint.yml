@@ -43,7 +43,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run mypy
-        run: uv run mypy src/ier --ignore-missing-imports
+        run: uv run mypy src/ier
 
   pylint:
     name: Pylint
@@ -65,4 +65,4 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run Pylint
-        run: uv run pylint src/ier --fail-under=8.0
+        run: uv run pylint src/ier --fail-under=9.0

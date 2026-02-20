@@ -40,6 +40,9 @@ package-dir = { "" = "src" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+ier = ["py.typed"]
+
 [project.urls]
 "Homepage" = "https://github.com/Cameron-Lyons/ier"
 "Bug Tracker" = "https://github.com/Cameron-Lyons/ier/issues"
@@ -64,6 +67,7 @@ exclude_lines = [
   "if TYPE_CHECKING:",
 ]
 show_missing = true
+fail_under = 82
 
 [tool.ruff]
 target-version = "py311"

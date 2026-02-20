@@ -79,6 +79,15 @@ class TestSemanticSyn(unittest.TestCase):
         result = semantic_ant(data, pairs)
         self.assertEqual(len(result), 2)
 
+    def test_zero_variance_rows_are_handled(self) -> None:
+        """Test semantic consistency handles zero-variance respondents deterministically."""
+        data = [[3, 3, 3, 3], [3, 3, 3, 3]]
+        pairs = [(0, 1), (2, 3)]
+        syn = semantic_syn(data, pairs)
+        ant = semantic_ant(data, pairs)
+        np.testing.assert_array_almost_equal(syn, [1.0, 1.0])
+        np.testing.assert_array_almost_equal(ant, [-1.0, -1.0])
+
 
 class TestGuttman(unittest.TestCase):
     """Tests for Guttman error functions."""

@@ -9,7 +9,7 @@ This module provides functions for detecting careless responding patterns by ana
 individuals respond to psychometrically similar (synonym) or opposite (antonym) items.
 """
 
-from typing import Any
+from typing import Any, Literal, overload
 
 import numpy as np
 
@@ -64,6 +64,42 @@ def compute_person_correlations(response_i: np.ndarray, response_j: np.ndarray) 
 
     result: np.ndarray = numerator / denominator
     return result
+
+
+@overload
+def psychsyn(
+    x: MatrixLike,
+    critval: float = 0.60,
+    anto: bool = False,
+    diag: Literal[False] = False,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+    _return_item_info: Literal[False] = False,
+) -> np.ndarray: ...
+
+
+@overload
+def psychsyn(
+    x: MatrixLike,
+    critval: float = 0.60,
+    anto: bool = False,
+    diag: Literal[True] = True,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+    _return_item_info: Literal[False] = False,
+) -> tuple[np.ndarray, np.ndarray]: ...
+
+
+@overload
+def psychsyn(
+    x: MatrixLike,
+    critval: float = 0.60,
+    anto: bool = False,
+    diag: bool = False,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+    _return_item_info: Literal[True] = True,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]: ...
 
 
 def psychsyn(
@@ -266,6 +302,26 @@ def psychsyn_critval(
     return correlation_list
 
 
+@overload
+def psychant(
+    x: MatrixLike,
+    critval: float = -0.60,
+    diag: Literal[False] = False,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+) -> np.ndarray: ...
+
+
+@overload
+def psychant(
+    x: MatrixLike,
+    critval: float = -0.60,
+    diag: Literal[True] = True,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]: ...
+
+
 def psychant(
     x: MatrixLike,
     critval: float = -0.60,
@@ -297,9 +353,26 @@ def psychant(
         >>> print(scores)
         [0.23, 0.18, 0.45]
     """
+    if diag:
+        return psychsyn(
+            x,
+            critval=critval,
+            anto=True,
+            diag=True,
+            resample_na=resample_na,
+            random_seed=random_seed,
+            _return_item_info=False,
+        )
+
     return psychsyn(
-        x, critval=critval, anto=True, diag=diag, resample_na=resample_na, random_seed=random_seed
-    )  # type: ignore[return-value]
+        x,
+        critval=critval,
+        anto=True,
+        diag=False,
+        resample_na=resample_na,
+        random_seed=random_seed,
+        _return_item_info=False,
+    )
 
 
 def psychsyn_summary(x: MatrixLike, critval: float = 0.60, anto: bool = False) -> dict[str, Any]:
@@ -321,8 +394,9 @@ def psychsyn_summary(x: MatrixLike, critval: float = 0.60, anto: bool = False) -
         {'mean_score': 0.75, 'std_score': 0.24, 'item_pairs': 3, ...}
     """
 
-    result = psychsyn(x, critval=critval, anto=anto, diag=True, _return_item_info=True)
-    scores, _, item_pairs = result  # type: ignore[misc]
+    scores, _, item_pairs = psychsyn(
+        x, critval=critval, anto=anto, diag=True, _return_item_info=True
+    )
 
     valid_count = int(np.sum(~np.isnan(scores)))
     summary = calculate_summary_stats(scores, suffix="_score")

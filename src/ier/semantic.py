@@ -66,8 +66,19 @@ def semantic_syn(
     invalid_mask = np.isnan(response_i) | np.isnan(response_j)
     pair_diffs[invalid_mask] = np.nan
 
-    with np.errstate(invalid="ignore"):
-        scores = 1 - np.nanmean(pair_diffs, axis=1) / np.nanstd(x_array, axis=1)
+    pair_mean_diffs = np.nanmean(pair_diffs, axis=1)
+    row_std = np.nanstd(x_array, axis=1)
+    scores = np.full(x_array.shape[0], np.nan, dtype=float)
+
+    valid_rows = ~np.isnan(pair_mean_diffs)
+    nonzero_std = valid_rows & (row_std > 0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        scores[nonzero_std] = 1 - pair_mean_diffs[nonzero_std] / row_std[nonzero_std]
+
+    zero_std = valid_rows & (row_std == 0)
+    if np.any(zero_std):
+        # Zero-variance rows are maximally consistent only when pair differences are zero.
+        scores[zero_std] = np.where(np.isclose(pair_mean_diffs[zero_std], 0.0), 1.0, -1.0)
 
     result: np.ndarray = np.clip(scores, -1, 1)
     return result
