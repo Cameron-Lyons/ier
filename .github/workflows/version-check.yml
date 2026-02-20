@@ -4,12 +4,24 @@ on:
   pull_request:
     branches: [main]
   workflow_call:
+    inputs:
+      skip:
+        description: "Skip version comparison for non-release PRs"
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   version-check:
     name: Check version updated
     runs-on: ubuntu-latest
-    if: github.actor != 'dependabot[bot]'
+    if: >
+      github.actor != 'dependabot[bot]' &&
+      !(
+        (github.event_name == 'workflow_call' && inputs.skip) ||
+        (github.event_name == 'pull_request' &&
+         contains(github.event.pull_request.labels.*.name, 'no-version-bump'))
+      )
 
     steps:
       - name: Checkout repository

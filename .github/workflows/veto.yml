@@ -22,6 +22,8 @@ jobs:
 
   version-check:
     uses: ./.github/workflows/version-check.yml
+    with:
+      skip: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'no-version-bump') }}
 
   veto:
     name: Veto
