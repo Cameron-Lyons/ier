@@ -29,8 +29,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --extra dev
 
+      - name: Export dependencies
+        run: uv export --locked --extra dev --no-hashes --no-emit-project > requirements-audit.txt
+
       - name: Run pip-audit
-        run: uv run pip-audit --strict --desc on
+        run: uv run pip-audit --strict --desc on --no-deps --disable-pip -r requirements-audit.txt
 
   codeql:
     name: CodeQL Analysis
