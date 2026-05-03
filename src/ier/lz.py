@@ -4,7 +4,8 @@ Standardized Log-Likelihood (lz) person-fit statistic for detecting aberrant res
 The lz statistic is an IRT-based person-fit index that measures the discrepancy between
 observed and expected response patterns. Under proper conditions, lz approximately follows
 a standard normal distribution, with negative values indicating responses that are
-inconsistent with the expected pattern.
+inconsistent with the expected pattern. The approximation is strongest when item and person
+parameters come from an appropriate, independently fitted IRT model.
 
 References:
 - Drasgow, F., Levine, M. V., & Williams, E. A. (1985). Appropriateness measurement with
@@ -48,10 +49,17 @@ def lz(
     indicate aberrant or unexpected response patterns, potentially suggesting
     careless or random responding.
 
+    Interpret scores cautiously when parameters are estimated from the same
+    response matrix passed to this function. Those estimates are convenient
+    fallbacks, not replacements for a calibrated IRT model, and can make the
+    usual lz distributional interpretation less reliable. Polytomous responses
+    are dichotomized at the observed midpoint before scoring, which discards
+    category information and may be inappropriate for ordered-rating scales
+    unless that simplification is acceptable for the analysis.
+
     Parameters:
     - x: A matrix of dichotomous data (0/1) where rows are individuals and
-         columns are items. For polytomous data, responses will be dichotomized
-         at the midpoint.
+         columns are items. Polytomous data is dichotomized at the observed midpoint.
     - difficulty: Array of item difficulty parameters (b). If None, estimated from data.
     - discrimination: Array of item discrimination parameters (a). If None and model="2pl",
                      estimated from data. Ignored if model="1pl".
@@ -61,7 +69,8 @@ def lz(
 
     Returns:
     - A numpy array of lz values for each individual. Values significantly below
-      -1.96 may indicate careless responding (at alpha=0.05).
+      -1.96 may indicate careless responding (at alpha=0.05) when the IRT model
+      and parameter estimates support that approximation.
 
     Raises:
     - ValueError: If inputs are invalid.
@@ -155,7 +164,7 @@ def lz_flag(
 
 
 def _dichotomize(x: np.ndarray) -> np.ndarray:
-    """Dichotomize polytomous responses at the midpoint."""
+    """Dichotomize polytomous responses at the observed midpoint."""
     unique_vals = np.unique(x[~np.isnan(x)])
     if len(unique_vals) <= 2 and np.all(np.isin(unique_vals, [0, 1])):
         return x.copy()

@@ -5,39 +5,17 @@ Provides a single entry point for computing all available IER indices,
 flagging suspected careless responders, and summarizing results.
 """
 
-from typing import Any
-
 import numpy as np
 
+from ier._registry import (
+    INDEX_REGISTRY,
+    build_index_options,
+    default_screen_indices,
+    score_registered_indices,
+    validate_index_names,
+)
 from ier._validation import MatrixLike, validate_matrix_input
-from ier.acquiescence import acquiescence
-from ier.evenodd import evenodd
-from ier.irv import irv
-from ier.longstring import longstring_pattern, longstring_scores
-from ier.lz import lz
-from ier.mad import add_mad_index_result
-from ier.mahad import mahad
-from ier.markov import markov
-from ier.person_total import person_total
-from ier.psychsyn import psychsyn
-from ier.u3_poly import midpoint_responding, u3_poly
-
-_DEFAULT_INDICES = [
-    "irv",
-    "longstring",
-    "longstring_pattern",
-    "mahad",
-    "psychsyn",
-    "person_total",
-    "markov",
-    "u3_poly",
-    "midpoint",
-    "acquiescence",
-]
-
-_OPTIONAL_INDICES = ["evenodd", "mad", "lz"]
-
-_ALL_INDICES = _DEFAULT_INDICES + _OPTIONAL_INDICES
+from ier.types import ScreenIndexSummary, ScreenResult
 
 
 def screen(
@@ -52,7 +30,7 @@ def screen(
     mad_scale_max: int | None = None,
     scale_min: float | None = None,
     scale_max: float | None = None,
-) -> dict[str, Any]:
+) -> ScreenResult:
     """
     Screen respondents across multiple IER detection indices.
 
@@ -98,76 +76,21 @@ def screen(
     n_respondents = x_array.shape[0]
 
     if indices is None:
-        indices = list(_DEFAULT_INDICES)
+        indices = default_screen_indices()
     else:
-        for idx in indices:
-            if idx not in _ALL_INDICES:
-                raise ValueError(f"invalid index '{idx}'. Valid options: {sorted(_ALL_INDICES)}")
+        validate_index_names(indices)
 
-    scores: dict[str, np.ndarray] = {}
-    errors: dict[str, str] = {}
-
-    def _mahad_scores() -> np.ndarray:
-        mahad_result = mahad(x_array, na_rm=na_rm)
-        if not isinstance(mahad_result, np.ndarray):
-            raise ValueError("mahad returned non-array output")
-        return mahad_result
-
-    def _psychsyn_scores() -> np.ndarray:
-        with np.errstate(divide="ignore", invalid="ignore"):
-            psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
-        if not isinstance(psyn_result, np.ndarray):
-            raise ValueError("psychsyn returned non-array output")
-        return psyn_result
-
-    index_handlers: dict[str, Any] = {
-        "irv": lambda: irv(x_array, na_rm=na_rm),
-        "longstring": lambda: longstring_scores(x_array, na_rm=na_rm),
-        "longstring_pattern": lambda: longstring_pattern(x_array, na_rm=na_rm),
-        "mahad": _mahad_scores,
-        "psychsyn": _psychsyn_scores,
-        "person_total": lambda: person_total(x_array, na_rm=na_rm),
-        "markov": lambda: markov(x_array, na_rm=na_rm),
-        "u3_poly": lambda: u3_poly(x_array, scale_min=scale_min, scale_max=scale_max),
-        "midpoint": lambda: midpoint_responding(x_array, scale_min=scale_min, scale_max=scale_max),
-        "acquiescence": lambda: acquiescence(
-            x_array, scale_min=scale_min, scale_max=scale_max, na_rm=na_rm
-        ),
-        "lz": lambda: lz(x_array, na_rm=na_rm),
-    }
-
-    for idx in indices:
-        if idx == "evenodd":
-            if evenodd_factors is None:
-                errors["evenodd"] = "evenodd_factors must be provided when using evenodd index"
-                continue
-            try:
-                eo_result = evenodd(x_array, factors=evenodd_factors)
-                if isinstance(eo_result, np.ndarray):
-                    scores["evenodd"] = eo_result
-            except ValueError as err:
-                errors["evenodd"] = str(err)
-            continue
-
-        if idx == "mad":
-            add_mad_index_result(
-                scores,
-                errors,
-                x_array,
-                mad_positive_items,
-                mad_negative_items,
-                mad_scale_max,
-                na_rm,
-            )
-            continue
-
-        handler = index_handlers.get(idx)
-        if handler is None:
-            continue
-        try:
-            scores[idx] = handler()
-        except ValueError as err:
-            errors[idx] = str(err)
+    options = build_index_options(
+        na_rm,
+        psychsyn_critval,
+        evenodd_factors,
+        mad_positive_items,
+        mad_negative_items,
+        mad_scale_max,
+        scale_min=scale_min,
+        scale_max=scale_max,
+    )
+    scores, errors = score_registered_indices(x_array, indices, options)
 
     flags: dict[str, np.ndarray] = {}
     for name, score_arr in scores.items():
@@ -181,20 +104,11 @@ def screen(
         flag_arr = np.zeros(n_respondents, dtype=bool)
         valid_mask = ~np.isnan(score_arr)
 
-        match name:
-            case (
-                "longstring"
-                | "longstring_pattern"
-                | "mahad"
-                | "u3_poly"
-                | "midpoint"
-                | "acquiescence"
-                | "mad"
-            ):
-                flag_arr[valid_mask] = score_arr[valid_mask] > cutoff
-            case _:
-                low_cutoff = float(np.percentile(valid_scores, 100.0 - percentile))
-                flag_arr[valid_mask] = score_arr[valid_mask] < low_cutoff
+        if INDEX_REGISTRY[name].flag_direction == "high":
+            flag_arr[valid_mask] = score_arr[valid_mask] > cutoff
+        else:
+            low_cutoff = float(np.percentile(valid_scores, 100.0 - percentile))
+            flag_arr[valid_mask] = score_arr[valid_mask] < low_cutoff
 
         flags[name] = flag_arr
 
@@ -203,7 +117,7 @@ def screen(
     )
     flag_counts: np.ndarray = np.sum(flag_matrix, axis=1)
 
-    summary: dict[str, dict[str, float]] = {}
+    summary: dict[str, ScreenIndexSummary] = {}
     for name, score_arr in scores.items():
         valid = score_arr[~np.isnan(score_arr)]
         if len(valid) > 0:

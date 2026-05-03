@@ -1,8 +1,4 @@
-"""Property-based tests for the ier library using Hypothesis.
-
-These tests verify mathematical properties and invariants that should hold
-for any valid input, providing more comprehensive coverage than example-based tests.
-"""
+"""Property-based tests for IER invariants using Hypothesis."""
 
 import numpy as np
 from hypothesis import assume, given, settings

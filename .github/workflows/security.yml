@@ -26,11 +26,14 @@ jobs:
       - name: Set up Python
         run: uv python install 3.14
 
+      - name: Install dependencies
+        run: uv sync --locked --extra dev
+
       - name: Export dependencies
-        run: uv export --no-hashes --no-emit-project > requirements.txt
+        run: uv export --locked --extra dev --no-hashes --no-emit-project > requirements-audit.txt
 
       - name: Run pip-audit
-        run: uvx pip-audit --strict --desc on -r requirements.txt
+        run: uv run pip-audit --strict --desc on --no-deps --disable-pip -r requirements-audit.txt
 
   codeql:
     name: CodeQL Analysis
@@ -64,5 +67,11 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --extra dev
+
       - name: Run Bandit
-        run: uvx bandit -r src/ier -c pyproject.toml || uvx bandit -r src/ier -ll
+        run: uv run bandit -r src/ier -c pyproject.toml || uv run bandit -r src/ier -ll

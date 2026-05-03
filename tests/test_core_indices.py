@@ -1,12 +1,9 @@
-"""Unit tests for the ier library.
-
-This module contains comprehensive unit tests for all functions in the ier
-library, including longstring, IRV, MAHAD, even-odd, and psychometric synonym
-detection functions.
-"""
+"""Unit tests for core IER indices and helpers."""
 
 import unittest
+import warnings
 from typing import Any
+from unittest.mock import patch
 
 import numpy as np
 import numpy.typing as npt
@@ -23,6 +20,7 @@ from ier.longstring import (
 )
 from ier.mahad import mahad, mahad_summary
 from ier.psychsyn import (
+    _resample_missing_correlations,
     compute_person_correlations,
     get_highly_correlated_pairs,
     psychant,
@@ -187,6 +185,12 @@ class TestIRV(unittest.TestCase):
         with self.assertRaises(ValueError):
             irv([])
         with self.assertRaises(ValueError):
+            irv([[1, 2, 3]], split=True, num_split=0)
+        with self.assertRaises(ValueError):
+            irv([[1, 2, 3]], split=True, split_points=[0])
+        with self.assertRaises(ValueError):
+            irv([[1, 2, 3]], split=True, split_points=[1, 3])
+        with self.assertRaises(ValueError):
             irv([[1, 2, 3]], split=True, split_points=[0, 5])
         with self.assertRaises(ValueError):
             irv([[1, 2, 3]], split=True, split_points=[0, 2, 1])
@@ -200,6 +204,13 @@ class TestIRV(unittest.TestCase):
         x = np.array([[1, 2, 3], [4, 5, 6]])
         result = irv(x, split=True, num_split=5)
         self.assertEqual(len(result), 2)
+
+    def test_irv_na_rm_false_propagates_nan(self) -> None:
+        """Test IRV preserves NaN behavior when na_rm=False."""
+        x: npt.NDArray[np.float64] = np.array([[1.0, np.nan, 3.0], [1.0, 2.0, 3.0]])
+        result: npt.NDArray[np.float64] = irv(x, na_rm=False)
+        self.assertTrue(np.isnan(result[0]))
+        self.assertFalse(np.isnan(result[1]))
 
 
 class TestMahadFunction(unittest.TestCase):
@@ -276,6 +287,25 @@ class TestMahadFunction(unittest.TestCase):
         """Test Mahalanobis distances are never negative."""
         distances: npt.NDArray[np.float64] = mahad(self.data)
         self.assertTrue((distances >= 0).all())
+
+    def test_singular_covariance_matrix(self) -> None:
+        """Test MAHAD handles singular covariance via pseudo-inverse path."""
+        data: npt.NDArray[np.float64] = np.array(
+            [
+                [1.0, 1.0, 2.0],
+                [2.0, 2.0, 4.0],
+                [3.0, 3.0, 6.0],
+                [4.0, 4.0, 8.0],
+            ]
+        )
+        distances = mahad(data)
+        self.assertTrue(np.all(np.isfinite(distances)))
+        self.assertTrue(np.all(distances >= 0))
+
+    def test_chi2_requires_scipy(self) -> None:
+        """Test chi-square flagging reports missing optional SciPy dependency."""
+        with patch("ier.mahad.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError):
+            mahad(self.data, flag=True, method="chi2")
 
     def test_invalid_confidence(self) -> None:
         """Test MAHAD raises ValueError for invalid confidence values."""
@@ -523,7 +553,44 @@ class TestPsychometricFunctions(unittest.TestCase):
         with self.assertRaises(ValueError):
             psychsyn([[1]])
         with self.assertRaises(ValueError):
+            psychsyn(self.data, critval="high")  # type: ignore[arg-type]
+        with self.assertRaises(ValueError):
+            psychsyn(self.data, critval=-0.5, anto=False)
+        with self.assertRaises(ValueError):
             psychsyn([[1, 2], [3, 4]], critval=0.5, anto=True)
+
+    def test_psychsyn_no_pairs_diagnostics_and_item_info(self) -> None:
+        """Test no-pair branches return diagnostics and item-pair metadata."""
+        data = [[1, 2, 3], [2, 4, 1], [3, 1, 4], [4, 3, 2]]
+        scores, diag = psychsyn(data, critval=1.1, diag=True)
+        self.assertTrue(np.all(np.isnan(scores)))
+        self.assertTrue(np.all(diag == 0))
+
+        info_scores, info_diag, pairs = psychsyn(data, critval=1.1, _return_item_info=True)
+        self.assertTrue(np.all(np.isnan(info_scores)))
+        self.assertTrue(np.all(info_diag == 0))
+        self.assertEqual(pairs.shape[0], 0)
+
+    def test_resample_missing_correlations_edge_cases(self) -> None:
+        """Test missing-correlation resampling covers all-missing and partial rows."""
+        no_missing = np.array([[0.5, -0.5]])
+        np.testing.assert_array_equal(
+            _resample_missing_correlations(no_missing, np.random.default_rng(42)),
+            no_missing,
+        )
+
+        person_corrs = np.array(
+            [
+                [np.nan, np.nan],
+                [0.5, np.nan],
+                [0.25, -0.25],
+            ]
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            result = _resample_missing_correlations(person_corrs, np.random.default_rng(42))
+        self.assertFalse(np.isnan(result).any())
+        np.testing.assert_array_equal(result[2], person_corrs[2])
 
     def test_psychsyn_edge_cases(self) -> None:
         """Test psychsyn handles edge cases like high thresholds and constant data."""

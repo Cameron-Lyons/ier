@@ -12,51 +12,101 @@ References:
   Psychological Methods, 17(3), 437-455.
 """
 
-from typing import Any, Literal
+from typing import Literal
 
 import numpy as np
 
 from ier._flagging import threshold_flags
+from ier._registry import (
+    INDEX_REGISTRY,
+    IndexOptions,
+    build_index_options,
+    composite_index_names,
+    default_composite_indices,
+    score_registered_indices,
+    validate_index_names,
+)
 from ier._validation import MatrixLike, validate_matrix_input
-from ier.evenodd import evenodd
-from ier.irv import irv
-from ier.longstring import longstring_pattern, longstring_scores
-from ier.lz import lz
-from ier.mad import add_mad_index_result
-from ier.mahad import mahad
-from ier.markov import markov
-from ier.person_total import person_total
-from ier.psychsyn import psychsyn
+from ier.types import CompositeMethod, CompositeSummary
 
 
-def _add_error(errors: dict[str, str], index_name: str, error: Exception) -> None:
-    errors[index_name] = str(error)
+def _resolve_composite_indices(
+    indices: list[str] | None,
+    method: Literal["mean", "sum", "max", "best_subset"],
+    mad_positive_items: list[int] | None,
+    mad_negative_items: list[int] | None,
+) -> list[str]:
+    if method == "best_subset":
+        if mad_positive_items is not None and mad_negative_items is not None:
+            return ["mad", "irv", "longstring", "lz"]
+        return ["irv", "longstring", "lz"]
+
+    if indices is None:
+        return default_composite_indices()
+    return indices
 
 
-def _add_mad_score(
-    scores: dict[str, np.ndarray],
-    errors: dict[str, str],
-    x: np.ndarray,
-    positive_items: list[int] | None,
-    negative_items: list[int] | None,
-    scale_max: int | None,
-    na_rm: bool,
-) -> None:
-    add_mad_index_result(
-        scores=scores,
-        errors=errors,
-        x=x,
-        positive_items=positive_items,
-        negative_items=negative_items,
-        scale_max=scale_max,
-        na_rm=na_rm,
-    )
+def _validate_composite_request(
+    indices: list[str],
+    method: Literal["mean", "sum", "max", "best_subset"],
+    options: IndexOptions,
+) -> Literal["mean", "sum", "max"]:
+    validate_index_names(indices, composite_index_names())
+
+    if "evenodd" in indices and options.evenodd_factors is None:
+        raise ValueError("evenodd_factors must be provided when using evenodd index")
+
+    combine_method = "mean" if method == "best_subset" else method
+    if combine_method not in ["mean", "sum", "max"]:
+        raise ValueError("method must be 'mean', 'sum', 'max', or 'best_subset'")
+    return combine_method
+
+
+def _combine_scores(
+    index_scores: dict[str, np.ndarray],
+    diagnostics: dict[str, str],
+    method: Literal["mean", "sum", "max"],
+    standardize: bool,
+) -> np.ndarray:
+    if len(index_scores) == 0:
+        failed = "; ".join(f"{name}: {msg}" for name, msg in sorted(diagnostics.items()))
+        raise ValueError(f"no valid indices could be computed from the data. failures: {failed}")
+
+    if standardize:
+        standardized_scores = {}
+        for name, scores in index_scores.items():
+            valid_mask = ~np.isnan(scores)
+            if np.sum(valid_mask) > 1:
+                mean_val = np.nanmean(scores)
+                std_val = np.nanstd(scores)
+                if std_val > 0:
+                    standardized_scores[name] = (scores - mean_val) / std_val
+                else:
+                    standardized_scores[name] = np.zeros_like(scores)
+            else:
+                standardized_scores[name] = scores
+        index_scores = standardized_scores
+
+    score_matrix = np.column_stack(list(index_scores.values()))
+
+    match method:
+        case "mean":
+            mean_result: np.ndarray = np.nanmean(score_matrix, axis=1)
+            return mean_result
+        case "sum":
+            sum_result: np.ndarray = np.nansum(score_matrix, axis=1)
+            return sum_result
+        case "max":
+            max_result: np.ndarray = np.nanmax(score_matrix, axis=1)
+            return max_result
+
+    raise ValueError("method must be 'mean', 'sum', or 'max'")
 
 
 def composite(
     x: MatrixLike,
     indices: list[str] | None = None,
-    method: Literal["mean", "sum", "max", "best_subset"] = "mean",
+    method: CompositeMethod = "mean",
     standardize: bool = True,
     na_rm: bool = True,
     psychsyn_critval: float = 0.6,
@@ -110,145 +160,26 @@ def composite(
         [-0.7, 1.5, -0.2]
     """
     x_array = validate_matrix_input(x, check_type=False)
+    options = build_index_options(
+        na_rm,
+        psychsyn_critval,
+        evenodd_factors,
+        mad_positive_items,
+        mad_negative_items,
+        mad_scale_max,
+    )
+    selected_indices = _resolve_composite_indices(
+        indices, method, mad_positive_items, mad_negative_items
+    )
+    combine_method = _validate_composite_request(selected_indices, method, options)
 
-    valid_indices = {
-        "irv",
-        "longstring",
-        "mahad",
-        "psychsyn",
-        "evenodd",
-        "person_total",
-        "lz",
-        "mad",
-        "markov",
-        "longstring_pattern",
-    }
-
-    if method == "best_subset":
-        if mad_positive_items is not None and mad_negative_items is not None:
-            indices = ["mad", "irv", "longstring", "lz"]
-        else:
-            indices = ["irv", "longstring", "lz"]
-
-    if indices is None:
-        indices = ["irv", "longstring", "mahad", "psychsyn", "person_total"]
-
-    for idx in indices:
-        if idx not in valid_indices:
-            raise ValueError(f"invalid index '{idx}'. Valid options: {valid_indices}")
-
-    if "evenodd" in indices and evenodd_factors is None:
-        raise ValueError("evenodd_factors must be provided when using evenodd index")
-
-    combine_method = "mean" if method == "best_subset" else method
-    if combine_method not in ["mean", "sum", "max"]:
-        raise ValueError("method must be 'mean', 'sum', 'max', or 'best_subset'")
-
-    index_scores: dict[str, np.ndarray] = {}
-    diagnostics: dict[str, str] = {}
-
-    if "irv" in indices:
-        try:
-            index_scores["irv"] = -irv(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "irv", err)
-
-    if "longstring" in indices:
-        try:
-            index_scores["longstring"] = longstring_scores(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "longstring", err)
-
-    if "longstring_pattern" in indices:
-        try:
-            index_scores["longstring_pattern"] = longstring_pattern(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "longstring_pattern", err)
-
-    if "mahad" in indices:
-        try:
-            mahad_result = mahad(x_array, na_rm=na_rm)
-            if isinstance(mahad_result, np.ndarray):
-                index_scores["mahad"] = mahad_result
-        except ValueError as err:
-            _add_error(diagnostics, "mahad", err)
-
-    if "psychsyn" in indices:
-        try:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
-            if isinstance(psyn_result, np.ndarray):
-                index_scores["psychsyn"] = -psyn_result
-        except ValueError as err:
-            _add_error(diagnostics, "psychsyn", err)
-
-    if "evenodd" in indices and evenodd_factors is not None:
-        try:
-            eo_result = evenodd(x_array, factors=evenodd_factors)
-            if isinstance(eo_result, np.ndarray):
-                index_scores["evenodd"] = -eo_result
-        except ValueError as err:
-            _add_error(diagnostics, "evenodd", err)
-
-    if "person_total" in indices:
-        try:
-            index_scores["person_total"] = -person_total(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "person_total", err)
-
-    if "lz" in indices:
-        try:
-            index_scores["lz"] = -lz(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "lz", err)
-
-    if "mad" in indices:
-        _add_mad_score(
-            scores=index_scores,
-            errors=diagnostics,
-            x=x_array,
-            positive_items=mad_positive_items,
-            negative_items=mad_negative_items,
-            scale_max=mad_scale_max,
-            na_rm=na_rm,
-        )
-
-    if "markov" in indices:
-        try:
-            index_scores["markov"] = -markov(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "markov", err)
-
-    if len(index_scores) == 0:
-        failed = "; ".join(f"{name}: {msg}" for name, msg in sorted(diagnostics.items()))
-        raise ValueError(f"no valid indices could be computed from the data. failures: {failed}")
-
-    if standardize:
-        standardized_scores = {}
-        for name, scores in index_scores.items():
-            valid_mask = ~np.isnan(scores)
-            if np.sum(valid_mask) > 1:
-                mean_val = np.nanmean(scores)
-                std_val = np.nanstd(scores)
-                if std_val > 0:
-                    standardized_scores[name] = (scores - mean_val) / std_val
-                else:
-                    standardized_scores[name] = np.zeros_like(scores)
-            else:
-                standardized_scores[name] = scores
-        index_scores = standardized_scores
-
-    score_matrix = np.column_stack(list(index_scores.values()))
-
-    match combine_method:
-        case "mean":
-            result: np.ndarray = np.nanmean(score_matrix, axis=1)
-        case "sum":
-            result = np.nansum(score_matrix, axis=1)
-        case "max":
-            result = np.nanmax(score_matrix, axis=1)
-        case _:
-            raise ValueError("method must be 'mean', 'sum', 'max', or 'best_subset'")
+    index_scores, diagnostics = score_registered_indices(
+        x_array,
+        selected_indices,
+        options,
+        apply_composite_direction=True,
+    )
+    result = _combine_scores(index_scores, diagnostics, combine_method, standardize)
 
     if return_diagnostics:
         return result, diagnostics
@@ -258,7 +189,7 @@ def composite(
 def composite_flag(
     x: MatrixLike,
     indices: list[str] | None = None,
-    method: Literal["mean", "sum", "max", "best_subset"] = "mean",
+    method: CompositeMethod = "mean",
     threshold: float | None = None,
     percentile: float = 95.0,
     standardize: bool = True,
@@ -327,7 +258,7 @@ def composite_flag(
 def composite_summary(
     x: MatrixLike,
     indices: list[str] | None = None,
-    method: Literal["mean", "sum", "max", "best_subset"] = "mean",
+    method: CompositeMethod = "mean",
     standardize: bool = True,
     na_rm: bool = True,
     psychsyn_critval: float = 0.6,
@@ -335,7 +266,7 @@ def composite_summary(
     mad_positive_items: list[int] | None = None,
     mad_negative_items: list[int] | None = None,
     mad_scale_max: int | None = None,
-) -> dict[str, Any]:
+) -> CompositeSummary:
     """
     Calculate composite scores with detailed summary statistics.
 
@@ -361,111 +292,25 @@ def composite_summary(
         dict_keys(['composite', 'indices', 'mean', 'std', 'min', 'max', ...])
     """
     x_array = validate_matrix_input(x, check_type=False)
-
-    if method == "best_subset":
-        if mad_positive_items is not None and mad_negative_items is not None:
-            indices = ["mad", "irv", "longstring", "lz"]
-        else:
-            indices = ["irv", "longstring", "lz"]
-
-    if indices is None:
-        indices = ["irv", "longstring", "mahad", "psychsyn", "person_total"]
-
-    if "evenodd" in indices and evenodd_factors is None:
-        raise ValueError("evenodd_factors must be provided when using evenodd index")
-
-    individual_scores: dict[str, np.ndarray] = {}
-    diagnostics: dict[str, str] = {}
-
-    if "irv" in indices:
-        try:
-            individual_scores["irv"] = irv(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "irv", err)
-
-    if "longstring" in indices:
-        try:
-            individual_scores["longstring"] = longstring_scores(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "longstring", err)
-
-    if "longstring_pattern" in indices:
-        try:
-            individual_scores["longstring_pattern"] = longstring_pattern(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "longstring_pattern", err)
-
-    if "mahad" in indices:
-        try:
-            mahad_result = mahad(x_array, na_rm=na_rm)
-            if isinstance(mahad_result, np.ndarray):
-                individual_scores["mahad"] = mahad_result
-        except ValueError as err:
-            _add_error(diagnostics, "mahad", err)
-
-    if "psychsyn" in indices:
-        try:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                psyn_result = psychsyn(x_array, critval=psychsyn_critval, resample_na=na_rm)
-            if isinstance(psyn_result, np.ndarray):
-                individual_scores["psychsyn"] = psyn_result
-        except ValueError as err:
-            _add_error(diagnostics, "psychsyn", err)
-
-    if "evenodd" in indices and evenodd_factors is not None:
-        try:
-            eo_result = evenodd(x_array, factors=evenodd_factors)
-            if isinstance(eo_result, np.ndarray):
-                individual_scores["evenodd"] = eo_result
-        except ValueError as err:
-            _add_error(diagnostics, "evenodd", err)
-
-    if "person_total" in indices:
-        try:
-            individual_scores["person_total"] = person_total(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "person_total", err)
-
-    if "lz" in indices:
-        try:
-            individual_scores["lz"] = lz(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "lz", err)
-
-    if "mad" in indices:
-        _add_mad_score(
-            scores=individual_scores,
-            errors=diagnostics,
-            x=x_array,
-            positive_items=mad_positive_items,
-            negative_items=mad_negative_items,
-            scale_max=mad_scale_max,
-            na_rm=na_rm,
-        )
-
-    if "markov" in indices:
-        try:
-            individual_scores["markov"] = markov(x_array, na_rm=na_rm)
-        except ValueError as err:
-            _add_error(diagnostics, "markov", err)
-
-    composite_scores_result = composite(
-        x_array,
-        indices=indices,
-        method=method,
-        standardize=standardize,
-        na_rm=na_rm,
-        psychsyn_critval=psychsyn_critval,
-        evenodd_factors=evenodd_factors,
-        mad_positive_items=mad_positive_items,
-        mad_negative_items=mad_negative_items,
-        mad_scale_max=mad_scale_max,
+    options = build_index_options(
+        na_rm,
+        psychsyn_critval,
+        evenodd_factors,
+        mad_positive_items,
+        mad_negative_items,
+        mad_scale_max,
     )
-    composite_scores = (
-        composite_scores_result[0]
-        if isinstance(composite_scores_result, tuple)
-        else composite_scores_result
+    selected_indices = _resolve_composite_indices(
+        indices, method, mad_positive_items, mad_negative_items
     )
+    combine_method = _validate_composite_request(selected_indices, method, options)
+
+    individual_scores, diagnostics = score_registered_indices(x_array, selected_indices, options)
+    composite_inputs = {
+        name: INDEX_REGISTRY[name].composite_multiplier * scores
+        for name, scores in individual_scores.items()
+    }
+    composite_scores = _combine_scores(composite_inputs, diagnostics, combine_method, standardize)
 
     valid_composite = composite_scores[~np.isnan(composite_scores)]
 
@@ -476,10 +321,10 @@ def composite_summary(
         "errors": diagnostics,
         "method": method,
         "standardized": standardize,
-        "mean": float(np.nanmean(composite_scores)) if len(valid_composite) > 0 else np.nan,
-        "std": float(np.nanstd(composite_scores)) if len(valid_composite) > 0 else np.nan,
-        "min": float(np.nanmin(composite_scores)) if len(valid_composite) > 0 else np.nan,
-        "max": float(np.nanmax(composite_scores)) if len(valid_composite) > 0 else np.nan,
+        "mean": float(np.nanmean(composite_scores)) if len(valid_composite) > 0 else float("nan"),
+        "std": float(np.nanstd(composite_scores)) if len(valid_composite) > 0 else float("nan"),
+        "min": float(np.nanmin(composite_scores)) if len(valid_composite) > 0 else float("nan"),
+        "max": float(np.nanmax(composite_scores)) if len(valid_composite) > 0 else float("nan"),
         "n_total": len(composite_scores),
         "n_valid": int(np.sum(~np.isnan(composite_scores))),
     }
@@ -488,7 +333,7 @@ def composite_summary(
 def composite_probability(
     x: MatrixLike,
     indices: list[str] | None = None,
-    method: Literal["mean", "sum", "max", "best_subset"] = "mean",
+    method: CompositeMethod = "mean",
     na_rm: bool = True,
     psychsyn_critval: float = 0.6,
     evenodd_factors: list[int] | None = None,
@@ -497,10 +342,13 @@ def composite_probability(
     mad_scale_max: int | None = None,
 ) -> np.ndarray:
     """
-    Compute a probabilistic composite IER score using logistic transformation.
+    Compute an uncalibrated logistic composite IER score.
 
-    Computes the standardized composite score and applies a logistic function
-    to produce P(IER) between 0 and 1 per respondent.
+    This function computes the standardized composite score and applies a
+    logistic transformation to map it into the interval [0, 1]. The returned
+    values are sample-relative scores, not calibrated probabilities of IER.
+    They should be interpreted for ranking or screening within a comparable
+    sample unless calibrated against labeled validation data.
 
     Parameters:
     - x: A matrix of data where rows are individuals and columns are item responses.
@@ -514,8 +362,9 @@ def composite_probability(
     - mad_scale_max: Maximum value of the response scale (for MAD index).
 
     Returns:
-    - A numpy array of P(IER) values between 0 and 1 per respondent.
-      Higher values indicate greater probability of careless responding.
+    - A numpy array of uncalibrated logistic composite scores between 0 and 1
+      per respondent. Higher values indicate higher sample-relative IER signal,
+      not a validated probability of careless responding.
 
     Example:
         >>> data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3], [5, 4, 3, 2, 1]]

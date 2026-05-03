@@ -234,9 +234,8 @@ def _em_gaussian_mixture(
 
         row_sums = resp.sum(axis=1, keepdims=True)
         row_sums = np.maximum(row_sums, 1e-300)
+        ll = float(np.sum(np.log(row_sums)))
         resp /= row_sums
-
-        ll = np.sum(np.log(np.maximum(resp.sum(axis=1), 1e-300)))
 
         for j in range(k):
             nj = resp[:, j].sum()

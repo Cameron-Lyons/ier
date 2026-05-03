@@ -1,6 +1,7 @@
-"""Unit tests for new IER detection functions."""
+"""Unit tests for specialized IER indices and composite scorers."""
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -11,11 +12,12 @@ from ier.longstring import longstring_pattern
 from ier.lz import lz, lz_flag
 from ier.mad import mad, mad_flag
 from ier.mahad import mahad_qqplot
-from ier.markov import markov, markov_flag, markov_summary
+from ier.markov import _transition_entropy, markov, markov_flag, markov_summary
 from ier.onset import onset, onset_flag
 from ier.person_total import person_total
 from ier.reliability import individual_reliability, individual_reliability_flag
 from ier.response_time import (
+    _em_gaussian_mixture,
     response_time,
     response_time_consistency,
     response_time_flag,
@@ -315,6 +317,28 @@ class TestComposite(unittest.TestCase):
         scores, diagnostics = composite(data, indices=["irv", "mad"], return_diagnostics=True)
         self.assertEqual(len(scores), 2)
         self.assertIn("mad", diagnostics)
+
+    def test_flag_return_diagnostics(self) -> None:
+        """Test composite_flag returns diagnostics when requested."""
+        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
+        scores, flags, diagnostics = composite_flag(
+            data, indices=["irv", "mad"], return_diagnostics=True
+        )
+        self.assertEqual(len(scores), 2)
+        self.assertEqual(len(flags), 2)
+        self.assertIn("mad", diagnostics)
+
+    def test_no_valid_indices_raises_with_failures(self) -> None:
+        """Test composite reports collected handler failures when no index succeeds."""
+        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
+        with self.assertRaisesRegex(ValueError, "no valid indices"):
+            composite(data, indices=["mad"])
+
+    def test_constant_index_standardizes_to_zero(self) -> None:
+        """Test zero-variance standardized index scores become zero."""
+        data = [[1, 1, 2, 2], [3, 3, 4, 4]]
+        result = composite(data, indices=["longstring"], standardize=True)
+        np.testing.assert_array_equal(result, np.zeros(2))
 
     def test_noninteger_longstring_not_truncated(self) -> None:
         """Test longstring index does not truncate non-integer values."""
@@ -768,6 +792,37 @@ class TestMarkov(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertFalse(np.isnan(result[0]))
 
+    def test_all_missing_rows_return_nan(self) -> None:
+        """Test all-missing data returns missing entropy scores."""
+        data = [[np.nan, np.nan, np.nan], [np.nan, np.nan, np.nan]]
+        result = markov(data, na_rm=True)
+        self.assertTrue(np.all(np.isnan(result)))
+
+    def test_na_rm_false_rejects_missing_values(self) -> None:
+        """Test Markov raises when missing data is present and na_rm=False."""
+        data = [[1, np.nan, 3], [1, 2, 3]]
+        with self.assertRaises(ValueError):
+            markov(data, na_rm=False)
+
+    def test_na_rm_false_uses_vectorized_path(self) -> None:
+        """Test complete data with na_rm=False uses vectorized transition entropy."""
+        data = [[1, 2, 1, 2], [1, 2, 3, 1]]
+        vectorized = markov(data, na_rm=False)
+        rowwise = markov(data, na_rm=True)
+        np.testing.assert_allclose(vectorized, rowwise)
+
+    def test_rows_with_too_few_nonmissing_values_return_nan(self) -> None:
+        """Test rows reduced below one transition return NaN."""
+        data = [[np.nan, 1, np.nan], [1, 2, 3]]
+        result = markov(data, na_rm=True)
+        self.assertTrue(np.isnan(result[0]))
+        self.assertFalse(np.isnan(result[1]))
+
+    def test_zero_transition_matrix_entropy(self) -> None:
+        """Test empty transition matrices have zero entropy."""
+        trans = np.zeros((2, 2), dtype=float)
+        self.assertEqual(_transition_entropy(trans), 0.0)
+
     def test_min_columns_raises(self) -> None:
         """Test that too few columns raises ValueError."""
         data = [[1, 2], [3, 4]]
@@ -832,11 +887,33 @@ class TestResponseTimeMixture(unittest.TestCase):
         r2 = response_time_mixture(times, random_seed=123)
         np.testing.assert_array_almost_equal(r1, r2)
 
+    def test_em_uses_pre_normalization_log_likelihood(self) -> None:
+        """Test EM does not converge just because normalized responsibilities sum to one."""
+        rng = np.random.default_rng(123)
+        data = np.concatenate(
+            [
+                rng.normal(-1.0, 0.45, 30),
+                rng.normal(0.2, 0.55, 35),
+                rng.normal(2.0, 0.7, 30),
+            ]
+        )
+
+        short_run = _em_gaussian_mixture(data, 3, np.random.default_rng(42), max_iter=2, tol=1e-12)
+        full_run = _em_gaussian_mixture(data, 3, np.random.default_rng(42), max_iter=100, tol=1e-12)
+
+        self.assertGreater(float(np.max(np.abs(short_run - full_run))), 0.05)
+
     def test_insufficient_data_raises(self) -> None:
         """Test that insufficient data raises ValueError."""
         times = [[1.0, 2.0, 3.0]]
         with self.assertRaises(ValueError):
             response_time_mixture(times, n_components=2)
+
+    def test_requires_scipy(self) -> None:
+        """Test mixture model reports missing optional SciPy dependency."""
+        times = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        with patch("ier.response_time.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError):
+            response_time_mixture(times)
 
     def test_with_nan(self) -> None:
         """Test handling of NaN values in response times."""

@@ -1,4 +1,4 @@
-"""Unit tests for acquiescence, screen, and visualization functions."""
+"""Unit tests for acquiescence, screening, and visualization functions."""
 
 import unittest
 

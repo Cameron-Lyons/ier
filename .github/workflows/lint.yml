@@ -17,11 +17,17 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        run: uv sync --locked --extra dev
+
       - name: Run Ruff linter
-        run: uvx ruff check --output-format=github .
+        run: uv run ruff check --output-format=github .
 
       - name: Run Ruff formatter check
-        run: uvx ruff format --check .
+        run: uv run ruff format --check .
 
   mypy:
     name: Type Check
@@ -40,7 +46,7 @@ jobs:
         run: uv python install 3.14
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --locked --extra dev
 
       - name: Run mypy
         run: uv run mypy src/ier
@@ -62,7 +68,7 @@ jobs:
         run: uv python install 3.14
 
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --locked --extra dev
 
       - name: Run Pylint
         run: uv run pylint src/ier --fail-under=9.0
