@@ -91,12 +91,16 @@ def _combine_scores(
 
     match method:
         case "mean":
-            result: np.ndarray = np.nanmean(score_matrix, axis=1)
+            mean_result: np.ndarray = np.nanmean(score_matrix, axis=1)
+            return mean_result
         case "sum":
-            result = np.nansum(score_matrix, axis=1)
+            sum_result: np.ndarray = np.nansum(score_matrix, axis=1)
+            return sum_result
         case "max":
-            result = np.nanmax(score_matrix, axis=1)
-    return result
+            max_result: np.ndarray = np.nanmax(score_matrix, axis=1)
+            return max_result
+
+    raise ValueError("method must be 'mean', 'sum', or 'max'")
 
 
 def composite(
