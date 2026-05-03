@@ -38,6 +38,16 @@ from .response_time import response_time_mixture as response_time_mixture
 from .screen import screen as screen
 from .semantic import semantic_ant as semantic_ant
 from .semantic import semantic_syn as semantic_syn
+from .types import BoolArray as BoolArray
+from .types import CompositeMethod as CompositeMethod
+from .types import CompositeSummary as CompositeSummary
+from .types import FloatArray as FloatArray
+from .types import IndexErrorMap as IndexErrorMap
+from .types import IndexFlagMap as IndexFlagMap
+from .types import IndexScoreMap as IndexScoreMap
+from .types import IntArray as IntArray
+from .types import ScreenIndexSummary as ScreenIndexSummary
+from .types import ScreenResult as ScreenResult
 from .u3_poly import midpoint_responding as midpoint_responding
 from .u3_poly import response_pattern as response_pattern
 from .u3_poly import u3_poly as u3_poly
@@ -49,17 +59,25 @@ __all__ = [
     "MatrixLike",
     "acquiescence",
     "acquiescence_flag",
+    "BoolArray",
     "composite",
     "composite_flag",
+    "CompositeMethod",
     "composite_probability",
     "composite_summary",
+    "CompositeSummary",
     "evenodd",
+    "FloatArray",
     "guttman",
     "guttman_flag",
     "individual_reliability",
     "individual_reliability_flag",
     "infrequency",
     "infrequency_flag",
+    "IndexErrorMap",
+    "IndexFlagMap",
+    "IndexScoreMap",
+    "IntArray",
     "irv",
     "longstring",
     "longstring_pattern",
@@ -87,6 +105,8 @@ __all__ = [
     "response_time_flag",
     "response_time_mixture",
     "screen",
+    "ScreenIndexSummary",
+    "ScreenResult",
     "semantic_ant",
     "semantic_syn",
     "u3_poly",

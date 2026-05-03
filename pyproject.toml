@@ -9,7 +9,7 @@ authors = [{ name = "Cameron Lyons", email = "cameron.lyons2@gmail.com" }]
 description = "Python library for detecting Insufficient Effort Responding (IER) in survey data"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["numpy>=1.26.0"]
+dependencies = ["numpy>=1.26.0,<2.4"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
@@ -17,21 +17,24 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-full = ["scipy>=1.11.0"]
-plot = ["matplotlib>=3.8.0"]
+full = ["scipy>=1.11.0,<1.17"]
+plot = ["matplotlib>=3.8.0,<4"]
 dev = [
-    "scipy>=1.16.3",
-    "scipy-stubs>=1.16.3",
-    "matplotlib>=3.8.0",
-    "pytest>=9.0.2",
-    "pytest-cov>=7.0.0",
-    "mypy>=1.19.0",
-    "ruff>=0.14.0",
-    "pylint>=4.0.0",
-    "bandit>=1.9.0",
-    "pip-audit>=2.9.0",
-    "hypothesis>=6.150.0",
-    "pre-commit>=4.0.0",
+    "scipy>=1.16.3,<1.17",
+    "scipy-stubs>=1.16.3,<1.18",
+    "matplotlib>=3.8.0,<4",
+    "pytest>=9.0.3,<10",
+    "pytest-cov>=7.0.0,<8",
+    "mypy>=1.19.0,<2",
+    "ruff>=0.14.0,<1",
+    "pylint>=4.0.0,<5",
+    "bandit>=1.9.0,<2",
+    "pip-audit>=2.9.0,<3",
+    "hypothesis>=6.150.0,<7",
+    "pre-commit>=4.0.0,<5",
+    "pillow>=12.2.0,<13",
+    "pygments>=2.20.0,<3",
+    "requests>=2.33.0,<3",
 ]
 
 [tool.setuptools]
@@ -49,7 +52,7 @@ ier = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py", "unit.py"]
+python_files = ["test_*.py", "*_test.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short -Werror"
 filterwarnings = ["error"]
@@ -67,7 +70,7 @@ exclude_lines = [
   "if TYPE_CHECKING:",
 ]
 show_missing = true
-fail_under = 82
+fail_under = 90
 
 [tool.ruff]
 target-version = "py311"

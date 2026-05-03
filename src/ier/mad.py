@@ -123,29 +123,6 @@ def run_mad_index(
     )
 
 
-def add_mad_index_result(
-    scores: dict[str, np.ndarray],
-    errors: dict[str, str],
-    x: MatrixLike,
-    positive_items: list[int] | None,
-    negative_items: list[int] | None,
-    scale_max: int | None,
-    na_rm: bool,
-    index_name: str = "mad",
-) -> None:
-    """Populate score/error containers for MAD in orchestration-style APIs."""
-    try:
-        scores[index_name] = run_mad_index(
-            x,
-            positive_items=positive_items,
-            negative_items=negative_items,
-            scale_max=scale_max,
-            na_rm=na_rm,
-        )
-    except ValueError as err:
-        errors[index_name] = str(err)
-
-
 def mad_flag(
     x: MatrixLike,
     positive_items: list[int] | None = None,
