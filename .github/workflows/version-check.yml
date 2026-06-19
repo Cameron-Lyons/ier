@@ -1,5 +1,8 @@
 name: Version Check
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     branches: [main]

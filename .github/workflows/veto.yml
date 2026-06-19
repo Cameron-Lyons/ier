@@ -1,13 +1,12 @@
 name: Veto
 
+permissions:
+  contents: read
+
 on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   ci:
