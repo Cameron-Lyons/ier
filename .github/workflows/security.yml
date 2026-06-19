@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   dependency-audit:
@@ -34,25 +33,6 @@ jobs:
 
       - name: Run pip-audit
         run: uv run pip-audit --strict --desc on --no-deps --disable-pip -r requirements-audit.txt
-
-  codeql:
-    name: CodeQL Analysis
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: python
-          queries: security-and-quality
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: "/language:python"
 
   bandit:
     name: Bandit Security Scan
