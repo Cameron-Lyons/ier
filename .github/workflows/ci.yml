@@ -35,17 +35,14 @@ jobs:
         run: uv run pytest tests/ -v --cov=ier --cov-report=xml --cov-report=term-missing --cov-fail-under=90
 
       - name: Upload coverage to Codecov
-        if: >-
-          matrix.os == 'ubuntu-latest' &&
-          matrix.python-version == '3.14' &&
-          secrets.CODECOV_TOKEN != ''
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
-          fail_ci_if_error: true
-          verbose: true
-  build:
+          # Tokenless uploads are rejected; keep CI green when CODECOV_TOKEN is unset.
+          fail_ci_if_error: false
+          verbose: true  build:
     name: Build distribution
     runs-on: ubuntu-latest
     needs: test
