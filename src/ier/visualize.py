@@ -10,10 +10,11 @@ from typing import Any
 import numpy as np
 
 from ier._optional_imports import require_matplotlib_pyplot
+from ier.types import ScreenResult
 
 
 def plot_distributions(
-    screen_result: dict[str, Any],
+    screen_result: ScreenResult,
     figsize: tuple[float, float] | None = None,
     bins: int = 30,
 ) -> Any:
@@ -38,7 +39,7 @@ def plot_distributions(
     """
     plt = require_matplotlib_pyplot()
 
-    scores: dict[str, np.ndarray] = screen_result["scores"]
+    scores = screen_result["scores"]
     n_indices = len(scores)
 
     if n_indices == 0:
@@ -71,7 +72,7 @@ def plot_distributions(
 
 
 def plot_flagged_heatmap(
-    screen_result: dict[str, Any],
+    screen_result: ScreenResult,
     figsize: tuple[float, float] | None = None,
     cmap: str = "Reds",
 ) -> Any:
@@ -97,7 +98,7 @@ def plot_flagged_heatmap(
     """
     plt = require_matplotlib_pyplot()
 
-    flags: dict[str, np.ndarray] = screen_result["flags"]
+    flags = screen_result["flags"]
     index_names = list(flags.keys())
 
     if len(index_names) == 0:
@@ -121,7 +122,7 @@ def plot_flagged_heatmap(
 
 
 def plot_flag_counts(
-    screen_result: dict[str, Any],
+    screen_result: ScreenResult,
     figsize: tuple[float, float] | None = None,
 ) -> Any:
     """
@@ -146,8 +147,8 @@ def plot_flag_counts(
     """
     plt = require_matplotlib_pyplot()
 
-    flag_counts: np.ndarray = screen_result["flag_counts"]
-    n_indices: int = screen_result["n_indices"]
+    flag_counts = screen_result["flag_counts"]
+    n_indices = screen_result["n_indices"]
 
     if figsize is None:
         figsize = (8, 5)

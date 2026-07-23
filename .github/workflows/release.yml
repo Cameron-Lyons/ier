@@ -50,15 +50,28 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Generate changelog
+      - name: Generate release notes
         id: changelog
         run: |
-          echo "## What's Changed" > CHANGELOG.md
-          git log $(git describe --tags --abbrev=0 HEAD^)..HEAD --pretty=format:"* %s (%h)" >> CHANGELOG.md || echo "* Initial release" >> CHANGELOG.md
+          # Write to a temp file — never overwrite the curated CHANGELOG.md
+          NOTES="$(mktemp)"
+          {
+            echo "## What's Changed"
+            echo
+            if PREV="$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null)"; then
+              git log "${PREV}..HEAD" --pretty=format:"* %s (%h)"
+            else
+              echo "* Initial release"
+            fi
+            echo
+            echo
+            echo "See [CHANGELOG.md](https://github.com/Cameron-Lyons/ier/blob/main/CHANGELOG.md) for curated notes."
+          } > "$NOTES"
+          echo "path=$NOTES" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          body_path: CHANGELOG.md
+          body_path: ${{ steps.changelog.outputs.path }}
           files: dist/*
           generate_release_notes: true

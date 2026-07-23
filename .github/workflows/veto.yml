@@ -19,6 +19,9 @@ jobs:
   security:
     uses: ./.github/workflows/security.yml
 
+  docs:
+    uses: ./.github/workflows/docs.yml
+
   version-check:
     uses: ./.github/workflows/version-check.yml
     with:
@@ -27,7 +30,7 @@ jobs:
   veto:
     name: Veto
     runs-on: ubuntu-latest
-    needs: [ci, lint, security, version-check]
+    needs: [ci, lint, security, docs, version-check]
     if: always()
     steps:
       - name: Check results
@@ -35,10 +38,12 @@ jobs:
           if [[ "${{ needs.ci.result }}" != "success" ]] || \
              [[ "${{ needs.lint.result }}" != "success" ]] || \
              [[ "${{ needs.security.result }}" != "success" ]] || \
+             [[ "${{ needs.docs.result }}" != "success" ]] || \
              [[ "${{ needs.version-check.result }}" != "success" && "${{ needs.version-check.result }}" != "skipped" ]]; then
             echo "CI: ${{ needs.ci.result }}"
             echo "Lint: ${{ needs.lint.result }}"
             echo "Security: ${{ needs.security.result }}"
+            echo "Docs: ${{ needs.docs.result }}"
             echo "Version Check: ${{ needs.version-check.result }}"
             exit 1
           fi

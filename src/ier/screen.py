@@ -7,10 +7,12 @@ flagging suspected careless responders, and summarizing results.
 
 import numpy as np
 
+from ier._flagging import threshold_flags
 from ier._registry import (
     INDEX_REGISTRY,
-    build_index_options,
+    IndexOptions,
     default_screen_indices,
+    resolve_index_options,
     score_registered_indices,
     validate_index_names,
 )
@@ -21,8 +23,10 @@ from ier.types import ScreenIndexSummary, ScreenResult
 def screen(
     x: MatrixLike,
     indices: list[str] | None = None,
-    na_rm: bool = True,
+    *,
+    options: IndexOptions | None = None,
     percentile: float = 95.0,
+    na_rm: bool = True,
     psychsyn_critval: float = 0.6,
     psychant_critval: float = -0.6,
     evenodd_factors: list[int] | None = None,
@@ -51,6 +55,9 @@ def screen(
     Computes each requested index, flags outliers using percentile-based
     thresholds (or presence detection for onset), and returns structured results.
 
+    Prefer passing a single ``IndexOptions`` via ``options=``. Legacy keyword
+    arguments remain supported and are used only when ``options`` is omitted.
+
     Default indices are NumPy-only and do not require SciPy. Response-time indices
     are not included here because they use a different input domain; call them
     directly.
@@ -63,29 +70,9 @@ def screen(
               "markov", "u3_poly", "midpoint", "acquiescence", "guttman",
               "individual_reliability", "onset", "evenodd", "mad", "lz",
               "semantic_syn", "semantic_ant", "infrequency".
-    - na_rm: Handle missing values in individual indices.
+    - options: Shared index configuration. When set, overrides individual kwargs.
     - percentile: Percentile cutoff for flagging (default 95th).
-    - psychsyn_critval: Critical correlation value for psychometric synonyms.
-    - psychant_critval: Critical correlation value for psychometric antonyms.
-    - evenodd_factors: Factor lengths for even-odd consistency.
-    - mad_positive_items: Column indices for positively-worded items (for MAD).
-    - mad_negative_items: Column indices for negatively-worded items (for MAD).
-    - mad_scale_max: Maximum value of response scale (for MAD).
-    - scale_min: Minimum value of response scale (for u3_poly, midpoint, acquiescence).
-    - scale_max: Maximum value of response scale (for u3_poly, midpoint, acquiescence).
-    - acquiescence_positive_items: Positive items for balanced-pair acquiescence.
-    - acquiescence_negative_items: Negative items for balanced-pair acquiescence.
-    - longstring_max_pattern_length: Max repeating-pattern length for longstring_pattern.
-    - midpoint_tolerance: Tolerance around scale midpoint for midpoint responding.
-    - guttman_normalize: If True, return Guttman error proportions instead of counts.
-    - onset_window_size: Sliding window size for onset detection.
-    - onset_min_items: Minimum items required for onset detection.
-    - reliability_n_splits: Split-half iterations for individual_reliability.
-    - reliability_random_seed: Optional seed for individual_reliability.
-    - semantic_item_pairs: Item pairs for semantic_syn / semantic_ant.
-    - infrequency_item_indices: Attention-check item column indices.
-    - infrequency_expected_responses: Expected responses for attention checks.
-    - infrequency_proportion: If True, return failure proportions for infrequency.
+    - na_rm / other kwargs: Legacy per-index configuration (see ``IndexOptions``).
 
     Returns:
     - Dictionary with:
@@ -102,8 +89,9 @@ def screen(
     - ValueError: If invalid index names are specified.
 
     Example:
+        >>> from ier import IndexOptions, screen
         >>> data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3], [5, 4, 3, 2, 1]]
-        >>> result = screen(data)
+        >>> result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
         >>> print(result["indices_used"])
         >>> print(result["flag_counts"])
     """
@@ -115,16 +103,17 @@ def screen(
     else:
         validate_index_names(indices)
 
-    options = build_index_options(
-        na_rm,
-        psychsyn_critval,
-        evenodd_factors,
-        mad_positive_items,
-        mad_negative_items,
-        mad_scale_max,
+    resolved = resolve_index_options(
+        options,
+        na_rm=na_rm,
+        psychsyn_critval=psychsyn_critval,
+        psychant_critval=psychant_critval,
+        evenodd_factors=evenodd_factors,
+        mad_positive_items=mad_positive_items,
+        mad_negative_items=mad_negative_items,
+        mad_scale_max=mad_scale_max,
         scale_min=scale_min,
         scale_max=scale_max,
-        psychant_critval=psychant_critval,
         acquiescence_positive_items=acquiescence_positive_items,
         acquiescence_negative_items=acquiescence_negative_items,
         longstring_max_pattern_length=longstring_max_pattern_length,
@@ -139,7 +128,7 @@ def screen(
         infrequency_expected_responses=infrequency_expected_responses,
         infrequency_proportion=infrequency_proportion,
     )
-    scores, errors = score_registered_indices(x_array, indices, options)
+    scores, errors = score_registered_indices(x_array, indices, resolved)
 
     flags: dict[str, np.ndarray] = {}
     for name, score_arr in scores.items():
@@ -148,23 +137,17 @@ def screen(
             flags[name] = ~np.isnan(score_arr)
             continue
 
-        valid_scores = score_arr[~np.isnan(score_arr)]
-        if len(valid_scores) == 0:
-            flags[name] = np.zeros(n_respondents, dtype=bool)
-            continue
-
-        cutoff = float(np.percentile(valid_scores, percentile))
-
-        flag_arr = np.zeros(n_respondents, dtype=bool)
-        valid_mask = ~np.isnan(score_arr)
-
         if spec.flag_direction == "high":
-            flag_arr[valid_mask] = score_arr[valid_mask] > cutoff
+            flags[name] = threshold_flags(
+                score_arr, threshold=None, percentile=percentile, direction="high"
+            )
         else:
-            low_cutoff = float(np.percentile(valid_scores, 100.0 - percentile))
-            flag_arr[valid_mask] = score_arr[valid_mask] < low_cutoff
-
-        flags[name] = flag_arr
+            flags[name] = threshold_flags(
+                score_arr,
+                threshold=None,
+                percentile=100.0 - percentile,
+                direction="low",
+            )
 
     flag_matrix = (
         np.column_stack(list(flags.values())) if flags else np.zeros((n_respondents, 0), dtype=bool)

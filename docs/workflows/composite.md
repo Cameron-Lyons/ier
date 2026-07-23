@@ -4,10 +4,15 @@
 Higher values indicate stronger careless-responding signal **within the sample**.
 
 ```python
-from ier import composite, composite_probability
+from ier import IndexOptions, composite, composite_probability
 
-scores = composite(data, indices=["irv", "longstring", "person_total", "markov"])
-ranks = composite_probability(data, indices=["irv", "longstring"])
+opts = IndexOptions()
+scores = composite(
+    data,
+    indices=["irv", "longstring", "person_total", "markov"],
+    options=opts,
+)
+ranks = composite_probability(data, indices=["irv", "longstring"], options=opts)
 ```
 
 ## Important caveats
@@ -49,3 +54,9 @@ constructs and can dilute pattern/consistency signals.
 
 Direction is handled automatically: low-is-bad indices are sign-flipped before
 combination so that higher composite always means more IER signal.
+
+## CLI
+
+```bash
+ier composite data.csv --indices irv longstring --method mean
+```

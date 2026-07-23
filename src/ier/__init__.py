@@ -1,5 +1,8 @@
 """IER: Python library for detecting Insufficient Effort Responding in survey data."""
 
+from importlib.metadata import PackageNotFoundError, version
+
+from ._registry import IndexOptions as IndexOptions
 from ._validation import MatrixLike as MatrixLike
 from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
@@ -55,8 +58,15 @@ from .visualize import plot_distributions as plot_distributions
 from .visualize import plot_flag_counts as plot_flag_counts
 from .visualize import plot_flagged_heatmap as plot_flagged_heatmap
 
+try:
+    __version__ = version("insufficient-effort")
+except PackageNotFoundError:  # pragma: no cover - editable/uninstalled fallback
+    __version__ = "0.0.0"
+
 __all__ = [
     "MatrixLike",
+    "IndexOptions",
+    "__version__",
     "acquiescence",
     "acquiescence_flag",
     "BoolArray",
