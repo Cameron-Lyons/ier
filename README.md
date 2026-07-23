@@ -9,7 +9,8 @@ For a comprehensive methods review, see
 ## Features
 
 - Multiple detection families: consistency, response patterns, response styles, outliers, response times, attention checks
-- Workflow APIs: `screen()` and `composite()`
+- Workflow APIs: `screen()` and `composite()` with shared `IndexOptions`
+- CLI: `ier screen data.csv` / `ier composite data.csv`
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Soft per-index errors during screening
 - Full type annotations (`py.typed`)
@@ -35,7 +36,7 @@ SciPy is required for `mahad(..., flag=True, method="chi2")` and
 
 ```python
 import numpy as np
-from ier import composite, irv, screen
+from ier import IndexOptions, composite, irv, screen
 
 data = np.array([
     [1, 2, 3, 4, 5, 4],
@@ -46,12 +47,20 @@ data = np.array([
 
 print("IRV:", irv(data))
 
-result = screen(data, scale_min=1, scale_max=5)
+result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print("Indices:", result["indices_used"])
 print("Flag counts:", result["flag_counts"])
 
 scores = composite(data, indices=["irv", "longstring", "person_total", "markov"])
 print("Composite:", scores)
+```
+
+## CLI
+
+```bash
+ier screen data.csv --scale-min 1 --scale-max 5
+ier composite data.csv --indices irv longstring
+ier --version
 ```
 
 ## Documentation

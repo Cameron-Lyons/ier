@@ -3,6 +3,8 @@
 ::: ier
     options:
       members:
+        - IndexOptions
+        - __version__
         - screen
         - composite
         - composite_flag

@@ -69,6 +69,21 @@ irv(data, na_rm=True)
 mahad(data, na_rm=True, method="iqr")
 ```
 
+## Quick screening
+
+```python
+from ier import IndexOptions, screen
+
+result = screen(responses, options=IndexOptions(scale_min=1, scale_max=5))
+print(result["flag_counts"])
+```
+
+Or from the CLI:
+
+```bash
+ier screen responses.csv --scale-min 1 --scale-max 5
+```
+
 ## Next steps
 
 - Run multi-index screening with [`screen()`](workflows/screening.md)

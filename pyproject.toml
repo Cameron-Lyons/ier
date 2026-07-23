@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "insufficient-effort"
-version = "1.7.0"
+version = "1.8.0"
 authors = [{ name = "Cameron Lyons", email = "cameron.lyons2@gmail.com" }]
 description = "Python library for detecting Insufficient Effort Responding (IER) in survey data"
 readme = "README.md"
@@ -54,6 +54,9 @@ dev = [
     "mkdocs-material>=9.5.0,<10",
     "mkdocstrings[python]>=0.26.0,<1",
 ]
+
+[project.scripts]
+ier = "ier.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

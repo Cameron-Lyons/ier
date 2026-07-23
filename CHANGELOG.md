@@ -5,6 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-07-23
+
+### Added
+
+- Public `IndexOptions` config object for `screen()` / `composite()` (preferred
+  over long keyword lists); legacy kwargs remain supported when `options` is omitted.
+- Package `__version__` and `ier` CLI (`ier screen`, `ier composite`).
+- Unified contributor check script (`scripts/check.sh`).
+- Golden IRV / longstring parity fixtures (`tests/test_golden_parity.py`) and a
+  concrete R-package comparison table in the docs.
+- Docs build gated on pull requests via the veto workflow.
+
+### Changed
+
+- `screen()` / `composite()` share the full `IndexOptions` surface (including
+  scale bounds, longstring pattern length, onset, and acquiescence settings).
+- `screen()` reuses shared `threshold_flags` for percentile flagging.
+- `visualize` helpers are typed against `ScreenResult`.
+- Version-check CI requires a bump only when `src/` changes.
+- Pre-commit Ruff pin aligned to 0.15.x; docs workflow uses `actions/checkout@v7`.
+- Package version bumped to 1.8.0.
+
+### Fixed
+
+- Release workflow no longer overwrites curated `CHANGELOG.md` when generating
+  GitHub release notes.
+
 ## [1.7.0] - 2026-07-23
 
 ### Added

@@ -34,7 +34,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Detect whether a version bump is required
+        id: scope
+        run: |
+          git fetch origin main
+          CHANGED="$(git diff --name-only origin/main...HEAD)"
+          echo "Changed files:"
+          echo "$CHANGED"
+          if echo "$CHANGED" | grep -qE '^src/'; then
+            echo "needs_bump=true" >> "$GITHUB_OUTPUT"
+            echo "Source under src/ changed — version bump required."
+          else
+            echo "needs_bump=false" >> "$GITHUB_OUTPUT"
+            echo "No src/ changes — version bump not required."
+          fi
+
       - name: Get version from PR branch
+        if: steps.scope.outputs.needs_bump == 'true'
         id: pr_version
         run: |
           VERSION=$(grep -Po '(?<=^version = ")[^"]+' pyproject.toml)
@@ -42,14 +58,15 @@ jobs:
           echo "PR branch version: $VERSION"
 
       - name: Get version from main branch
+        if: steps.scope.outputs.needs_bump == 'true'
         id: main_version
         run: |
-          git fetch origin main
           VERSION=$(git show origin/main:pyproject.toml | grep -Po '(?<=^version = ")[^"]+')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Main branch version: $VERSION"
 
       - name: Compare versions
+        if: steps.scope.outputs.needs_bump == 'true'
         run: |
           PR_VERSION="${{ steps.pr_version.outputs.version }}"
           MAIN_VERSION="${{ steps.main_version.outputs.version }}"
@@ -58,7 +75,7 @@ jobs:
           echo "Main version: $MAIN_VERSION"
 
           if [ "$PR_VERSION" = "$MAIN_VERSION" ]; then
-            echo "::error::Version has not been updated. Please bump the version in pyproject.toml"
+            echo "::error::Version has not been updated. Please bump the version in pyproject.toml (src/ changed)."
             exit 1
           fi
 

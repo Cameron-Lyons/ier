@@ -55,13 +55,74 @@ class IndexOptions:
     infrequency_proportion: bool = False
 
 
+def resolve_index_options(
+    options: IndexOptions | None = None,
+    *,
+    na_rm: bool = True,
+    psychsyn_critval: float = 0.6,
+    psychant_critval: float = -0.6,
+    evenodd_factors: list[int] | None = None,
+    mad_positive_items: list[int] | None = None,
+    mad_negative_items: list[int] | None = None,
+    mad_scale_max: int | None = None,
+    scale_min: float | None = None,
+    scale_max: float | None = None,
+    acquiescence_positive_items: list[int] | None = None,
+    acquiescence_negative_items: list[int] | None = None,
+    longstring_max_pattern_length: int = 5,
+    midpoint_tolerance: float = 0.0,
+    guttman_normalize: bool = True,
+    onset_window_size: int = 10,
+    onset_min_items: int = 20,
+    reliability_n_splits: int = 100,
+    reliability_random_seed: int | None = None,
+    semantic_item_pairs: list[tuple[int, int]] | None = None,
+    infrequency_item_indices: list[int] | None = None,
+    infrequency_expected_responses: list[float] | None = None,
+    infrequency_proportion: bool = False,
+) -> IndexOptions:
+    """Return ``options`` if provided; otherwise build from keyword arguments.
+
+    Prefer passing a single ``IndexOptions`` instance to ``screen()`` /
+    ``composite()``. Keyword arguments remain supported for backwards
+    compatibility and are ignored when ``options`` is set.
+    """
+    if options is not None:
+        return options
+    return IndexOptions(
+        na_rm=na_rm,
+        psychsyn_critval=psychsyn_critval,
+        psychant_critval=psychant_critval,
+        evenodd_factors=evenodd_factors,
+        mad_positive_items=mad_positive_items,
+        mad_negative_items=mad_negative_items,
+        mad_scale_max=mad_scale_max,
+        scale_min=scale_min,
+        scale_max=scale_max,
+        acquiescence_positive_items=acquiescence_positive_items,
+        acquiescence_negative_items=acquiescence_negative_items,
+        longstring_max_pattern_length=longstring_max_pattern_length,
+        midpoint_tolerance=midpoint_tolerance,
+        guttman_normalize=guttman_normalize,
+        onset_window_size=onset_window_size,
+        onset_min_items=onset_min_items,
+        reliability_n_splits=reliability_n_splits,
+        reliability_random_seed=reliability_random_seed,
+        semantic_item_pairs=semantic_item_pairs,
+        infrequency_item_indices=infrequency_item_indices,
+        infrequency_expected_responses=infrequency_expected_responses,
+        infrequency_proportion=infrequency_proportion,
+    )
+
+
+# Backwards-compatible alias
 def build_index_options(
-    na_rm: bool,
-    psychsyn_critval: float,
-    evenodd_factors: list[int] | None,
-    mad_positive_items: list[int] | None,
-    mad_negative_items: list[int] | None,
-    mad_scale_max: int | None,
+    na_rm: bool = True,
+    psychsyn_critval: float = 0.6,
+    evenodd_factors: list[int] | None = None,
+    mad_positive_items: list[int] | None = None,
+    mad_negative_items: list[int] | None = None,
+    mad_scale_max: int | None = None,
     *,
     scale_min: float | None = None,
     scale_max: float | None = None,
@@ -80,8 +141,12 @@ def build_index_options(
     infrequency_expected_responses: list[float] | None = None,
     infrequency_proportion: bool = False,
 ) -> IndexOptions:
-    """Build shared option state for registered index scorers."""
-    return IndexOptions(
+    """Build shared option state for registered index scorers.
+
+    .. deprecated:: 1.8.0
+        Prefer ``IndexOptions(...)`` or ``resolve_index_options(...)``.
+    """
+    return resolve_index_options(
         na_rm=na_rm,
         psychsyn_critval=psychsyn_critval,
         psychant_critval=psychant_critval,

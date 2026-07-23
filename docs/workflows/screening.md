@@ -3,14 +3,20 @@
 `screen()` runs multiple IER indices, applies flagging rules, and returns a
 structured result.
 
-```python
-from ier import screen
+Prefer a single `IndexOptions` object for configuration:
 
-result = screen(data, scale_min=1, scale_max=5)
+```python
+from ier import IndexOptions, screen
+
+result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print(result["indices_used"])
 print(result["flag_counts"])
 print(result["errors"])
 ```
+
+Legacy keyword arguments (`scale_min=...`, `evenodd_factors=...`, etc.) still
+work when `options` is omitted. When `options` is provided, those kwargs are
+ignored.
 
 ## Result keys
 
@@ -39,15 +45,19 @@ when you call `mahad(..., flag=True, method="chi2")` directly.
 Pass configuration to include indices that need survey metadata:
 
 ```python
+from ier import IndexOptions, screen
+
 result = screen(
     data,
     indices=["evenodd", "mad", "semantic_syn", "infrequency"],
-    evenodd_factors=[5, 5],
-    mad_positive_items=[0, 1, 2],
-    mad_negative_items=[3, 4, 5],
-    semantic_item_pairs=[(0, 1), (2, 3)],
-    infrequency_item_indices=[9],
-    infrequency_expected_responses=[5],
+    options=IndexOptions(
+        evenodd_factors=[5, 5],
+        mad_positive_items=[0, 1, 2],
+        mad_negative_items=[3, 4, 5],
+        semantic_item_pairs=[(0, 1), (2, 3)],
+        infrequency_item_indices=[9],
+        infrequency_expected_responses=[5],
+    ),
 )
 ```
 
@@ -70,4 +80,11 @@ directly rather than through `screen()`.
 from ier import response_time_flag
 
 flags = response_time_flag(times, cutoff_percentile=5)
+```
+
+## CLI
+
+```bash
+ier screen data.csv --scale-min 1 --scale-max 5 --indices irv longstring
+ier --version
 ```

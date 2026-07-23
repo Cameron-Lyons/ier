@@ -22,7 +22,15 @@ python -m pip install -e ".[dev]"
 
 ## Run Quality Checks
 
-Run these before opening a PR:
+Run the unified suite before opening a PR:
+
+```bash
+./scripts/check.sh
+```
+
+Skip the docs build with `SKIP_DOCS=1 ./scripts/check.sh`.
+
+Or run checks individually:
 
 ```bash
 pytest tests/ -v --cov=ier --cov-report=term-missing
@@ -31,11 +39,6 @@ ruff format --check .
 mypy src/ier
 pylint src/ier
 bandit -r src/ier -c pyproject.toml
-```
-
-Optional docs build:
-
-```bash
 uv run mkdocs build --strict
 ```
 
@@ -49,8 +52,10 @@ uv run python benchmarks/bench_screen.py
 
 - Add or update tests for behavioral changes.
 - Keep public docs/examples aligned with API changes.
-- Keep CI green (tests, lint, security workflows).
+- Keep CI green (tests, lint, security, docs workflows).
 - Open an issue first for large API or behavior changes.
+- Version bumps in `pyproject.toml` are required when `src/` changes
+  (docs/CI-only PRs do not need a bump; use the `no-version-bump` label to skip).
 
 ## Release Process
 
