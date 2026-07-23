@@ -54,4 +54,4 @@ jobs:
         run: uv sync --locked --extra dev
 
       - name: Run Bandit
-        run: uv run bandit -r src/ier -c pyproject.toml || uv run bandit -r src/ier -ll
+        run: uv run bandit -r src/ier -c pyproject.toml

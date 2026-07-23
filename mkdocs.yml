@@ -1,0 +1,59 @@
+site_name: IER
+site_description: Detect Insufficient Effort Responding in survey data
+site_url: https://cameron-lyons.github.io/ier/
+repo_url: https://github.com/Cameron-Lyons/ier
+repo_name: Cameron-Lyons/ier
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - content.code.copy
+    - search.suggest
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Workflows:
+      - Screening: workflows/screening.md
+      - Composite Scores: workflows/composite.md
+  - Index Catalog: indices.md
+  - Threshold Guidance: thresholds.md
+  - R Package Notes: r-comparison.md
+  - Changelog: changelog.md
+  - API Reference: api.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: google
+            show_source: false
+            members_order: source
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.snippets:
+      base_path: [., ..]
+      check_paths: true
+  - pymdownx.superfences
+  - tables
+  - toc:
+      permalink: true

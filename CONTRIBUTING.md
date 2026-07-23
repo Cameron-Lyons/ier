@@ -30,6 +30,19 @@ ruff check .
 ruff format --check .
 mypy src/ier
 pylint src/ier
+bandit -r src/ier -c pyproject.toml
+```
+
+Optional docs build:
+
+```bash
+uv run mkdocs build --strict
+```
+
+Optional screen benchmark:
+
+```bash
+uv run python benchmarks/bench_screen.py
 ```
 
 ## Pull Request Expectations

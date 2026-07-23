@@ -62,7 +62,7 @@ def mahad(
     Raises:
     - ValueError: If inputs are invalid (empty data, invalid confidence, etc.)
     - TypeError: If input is not a list or numpy array
-    - RuntimeError: If scipy is required but not available
+    - RuntimeError: If chi2 flagging is requested but SciPy is unavailable
 
     Example:
         >>> import numpy as np
@@ -84,8 +84,12 @@ def mahad(
     if method not in ["chi2", "iqr", "zscore"]:
         raise ValueError("method must be one of: 'chi2', 'iqr', 'zscore'")
 
-    if method == "chi2" and not SCIPY_AVAILABLE:
-        raise RuntimeError("scipy is required for chi2 method. Install with: pip install scipy")
+    # Distances are NumPy-only; SciPy is only needed for chi-squared flagging.
+    if flag and method == "chi2" and not SCIPY_AVAILABLE:
+        raise RuntimeError(
+            "scipy is required for chi2 flagging. "
+            "Install with: pip install 'insufficient-effort[full]'"
+        )
 
     if na_rm:
         all_nan_mask = np.isnan(x_array).all(axis=1)

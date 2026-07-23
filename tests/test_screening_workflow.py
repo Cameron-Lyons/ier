@@ -1,10 +1,13 @@
 """Unit tests for acquiescence, screening, and visualization functions."""
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 from ier.acquiescence import acquiescence, acquiescence_flag
+from ier.mahad import mahad
 from ier.screen import screen
 from ier.visualize import plot_distributions, plot_flag_counts, plot_flagged_heatmap
 
@@ -186,6 +189,74 @@ class TestScreen(unittest.TestCase):
         result = screen(self.data)
         for name, flags in result["flags"].items():
             self.assertEqual(len(flags), 30, f"flag length mismatch for {name}")
+
+    def test_default_includes_guttman_and_mahad(self) -> None:
+        result = screen(self.data)
+        self.assertIn("guttman", result["indices_used"])
+        self.assertIn("mahad", result["indices_used"])
+        self.assertEqual(result["errors"], {})
+
+    def test_new_registered_indices_with_config(self) -> None:
+        result = screen(
+            self.data,
+            indices=["guttman", "semantic_syn", "infrequency", "individual_reliability"],
+            semantic_item_pairs=[(0, 1), (2, 3)],
+            infrequency_item_indices=[0],
+            infrequency_expected_responses=[3.0],
+            reliability_n_splits=5,
+            reliability_random_seed=0,
+        )
+        self.assertEqual(
+            set(result["indices_used"]),
+            {"guttman", "semantic_syn", "infrequency", "individual_reliability"},
+        )
+        self.assertEqual(result["errors"], {})
+
+    def test_missing_semantic_and_infrequency_config_in_errors(self) -> None:
+        result = screen(self.data, indices=["semantic_syn", "infrequency"])
+        self.assertIn("semantic_syn", result["errors"])
+        self.assertIn("infrequency", result["errors"])
+
+    def test_onset_present_flag_mode(self) -> None:
+        rng = np.random.default_rng(0)
+        attentive = rng.choice([1, 2, 3, 4, 5], size=(5, 20))
+        careless = np.full((5, 20), 3.0)
+        data = np.hstack([attentive, careless])
+        result = screen(
+            data,
+            indices=["onset"],
+            onset_window_size=5,
+            onset_min_items=10,
+        )
+        self.assertIn("onset", result["indices_used"])
+        self.assertEqual(result["flags"]["onset"].dtype, bool)
+
+    def test_mahad_distances_without_scipy(self) -> None:
+        with patch("ier.mahad.SCIPY_AVAILABLE", False):
+            distances = mahad(self.data, method="chi2")
+        self.assertEqual(len(distances), 30)
+
+
+class TestDataFrameInputs(unittest.TestCase):
+    """Smoke tests for pandas/polars array-compatible inputs."""
+
+    def test_pandas_dataframe(self) -> None:
+        pd = pytest.importorskip("pandas")
+        from ier import irv, screen
+
+        df = pd.DataFrame(np.array([[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]], dtype=float))
+        scores = irv(df)
+        self.assertEqual(len(scores), 2)
+        result = screen(df, indices=["irv", "longstring"])
+        self.assertEqual(result["n_respondents"], 2)
+
+    def test_polars_dataframe(self) -> None:
+        pl = pytest.importorskip("polars")
+        from ier import irv
+
+        df = pl.DataFrame({"a": [1.0, 3.0], "b": [2.0, 3.0], "c": [3.0, 3.0], "d": [4.0, 3.0]})
+        scores = irv(df.to_numpy())
+        self.assertEqual(len(scores), 2)
 
 
 class TestPlotDistributions(unittest.TestCase):

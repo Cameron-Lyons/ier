@@ -4,25 +4,40 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "insufficient-effort"
-version = "1.6.3"
+version = "1.7.0"
 authors = [{ name = "Cameron Lyons", email = "cameron.lyons2@gmail.com" }]
 description = "Python library for detecting Insufficient Effort Responding (IER) in survey data"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["numpy>=1.26.0,<2.5"]
 classifiers = [
-  "Programming Language :: Python :: 3",
+  "Development Status :: 5 - Production/Stable",
+  "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Typing :: Typed",
 ]
 
 [project.optional-dependencies]
 full = ["scipy>=1.11.0,<1.18"]
 plot = ["matplotlib>=3.8.0,<4"]
+docs = [
+    "mkdocs>=1.6.0,<2",
+    "mkdocs-material>=9.5.0,<10",
+    "mkdocstrings[python]>=0.26.0,<1",
+]
 dev = [
     "scipy>=1.16.3,<1.18",
     "scipy-stubs>=1.16.3,<1.18",
     "matplotlib>=3.8.0,<4",
+    "pandas>=2.2.0,<3",
+    "polars>=1.0.0,<2",
     "pytest>=9.0.3,<10",
     "pytest-cov>=7.0.0,<8",
     "mypy>=1.19.0,<3",
@@ -35,6 +50,9 @@ dev = [
     "pillow>=12.2.0,<13",
     "pygments>=2.20.0,<3",
     "requests>=2.33.0,<3",
+    "mkdocs>=1.6.0,<2",
+    "mkdocs-material>=9.5.0,<10",
+    "mkdocstrings[python]>=0.26.0,<1",
 ]
 
 [tool.setuptools]
@@ -49,6 +67,8 @@ ier = ["py.typed"]
 [project.urls]
 "Homepage" = "https://github.com/Cameron-Lyons/ier"
 "Bug Tracker" = "https://github.com/Cameron-Lyons/ier/issues"
+"Changelog" = "https://github.com/Cameron-Lyons/ier/blob/main/CHANGELOG.md"
+"Documentation" = "https://cameron-lyons.github.io/ier/"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
