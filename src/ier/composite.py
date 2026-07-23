@@ -103,6 +103,41 @@ def _combine_scores(
     raise ValueError("method must be 'mean', 'sum', or 'max'")
 
 
+def _composite_options(
+    na_rm: bool,
+    psychsyn_critval: float,
+    evenodd_factors: list[int] | None,
+    mad_positive_items: list[int] | None,
+    mad_negative_items: list[int] | None,
+    mad_scale_max: int | None,
+    *,
+    psychant_critval: float = -0.6,
+    guttman_normalize: bool = True,
+    reliability_n_splits: int = 100,
+    reliability_random_seed: int | None = None,
+    semantic_item_pairs: list[tuple[int, int]] | None = None,
+    infrequency_item_indices: list[int] | None = None,
+    infrequency_expected_responses: list[float] | None = None,
+    infrequency_proportion: bool = False,
+) -> IndexOptions:
+    return build_index_options(
+        na_rm,
+        psychsyn_critval,
+        evenodd_factors,
+        mad_positive_items,
+        mad_negative_items,
+        mad_scale_max,
+        psychant_critval=psychant_critval,
+        guttman_normalize=guttman_normalize,
+        reliability_n_splits=reliability_n_splits,
+        reliability_random_seed=reliability_random_seed,
+        semantic_item_pairs=semantic_item_pairs,
+        infrequency_item_indices=infrequency_item_indices,
+        infrequency_expected_responses=infrequency_expected_responses,
+        infrequency_proportion=infrequency_proportion,
+    )
+
+
 def composite(
     x: MatrixLike,
     indices: list[str] | None = None,
@@ -110,10 +145,18 @@ def composite(
     standardize: bool = True,
     na_rm: bool = True,
     psychsyn_critval: float = 0.6,
+    psychant_critval: float = -0.6,
     evenodd_factors: list[int] | None = None,
     mad_positive_items: list[int] | None = None,
     mad_negative_items: list[int] | None = None,
     mad_scale_max: int | None = None,
+    guttman_normalize: bool = True,
+    reliability_n_splits: int = 100,
+    reliability_random_seed: int | None = None,
+    semantic_item_pairs: list[tuple[int, int]] | None = None,
+    infrequency_item_indices: list[int] | None = None,
+    infrequency_expected_responses: list[float] | None = None,
+    infrequency_proportion: bool = False,
     return_diagnostics: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, dict[str, str]]:
     """
@@ -123,24 +166,38 @@ def composite(
     and combines them into a single composite score. Higher composite scores
     indicate greater likelihood of careless responding.
 
+    The composite score is a sample-relative signal, not a calibrated probability
+    of careless responding. Prefer multi-index agreement and substantive review
+    over any single cutoff.
+
     Parameters:
     - x: A matrix of data where rows are individuals and columns are item responses.
-    - indices: List of indices to include. Options: "irv", "longstring", "mahad",
-              "psychsyn", "evenodd", "person_total", "lz", "mad", "markov",
-              "longstring_pattern". Default includes all except evenodd (which
-              requires factor specification) and mad (which requires item info).
+    - indices: List of indices to include. Options include: "irv", "longstring",
+              "mahad", "psychsyn", "psychant", "evenodd", "person_total", "lz",
+              "mad", "markov", "longstring_pattern", "guttman",
+              "individual_reliability", "semantic_syn", "semantic_ant",
+              "infrequency". Default includes NumPy-safe indices that do not
+              require extra config.
     - method: How to combine indices. "mean" (default), "sum", "max", or
               "best_subset" (overrides indices to ["mad", "irv", "longstring", "lz"],
               falling back to ["irv", "longstring", "lz"] if MAD item info not provided).
     - standardize: If True (default), standardize each index to z-scores before combining.
     - na_rm: Handle missing values in individual indices.
     - psychsyn_critval: Critical correlation value for psychometric synonyms (default 0.6).
+    - psychant_critval: Critical correlation value for psychometric antonyms (default -0.6).
     - evenodd_factors: Factor lengths for even-odd consistency. Required if "evenodd"
                       is in indices. List of integers where each integer is the number
                       of items in that factor (e.g., [5, 5, 5] for three 5-item scales).
     - mad_positive_items: Column indices for positively-worded items (for MAD index).
     - mad_negative_items: Column indices for negatively-worded items (for MAD index).
     - mad_scale_max: Maximum value of the response scale (for MAD index).
+    - guttman_normalize: If True, use Guttman error proportions instead of counts.
+    - reliability_n_splits: Split-half iterations for individual_reliability.
+    - reliability_random_seed: Optional seed for individual_reliability.
+    - semantic_item_pairs: Item pairs for semantic_syn / semantic_ant.
+    - infrequency_item_indices: Attention-check item column indices.
+    - infrequency_expected_responses: Expected responses for attention checks.
+    - infrequency_proportion: If True, return failure proportions for infrequency.
 
     Returns:
     - A numpy array of composite scores for each individual. Higher scores indicate
@@ -160,13 +217,21 @@ def composite(
         [-0.7, 1.5, -0.2]
     """
     x_array = validate_matrix_input(x, check_type=False)
-    options = build_index_options(
+    options = _composite_options(
         na_rm,
         psychsyn_critval,
         evenodd_factors,
         mad_positive_items,
         mad_negative_items,
         mad_scale_max,
+        psychant_critval=psychant_critval,
+        guttman_normalize=guttman_normalize,
+        reliability_n_splits=reliability_n_splits,
+        reliability_random_seed=reliability_random_seed,
+        semantic_item_pairs=semantic_item_pairs,
+        infrequency_item_indices=infrequency_item_indices,
+        infrequency_expected_responses=infrequency_expected_responses,
+        infrequency_proportion=infrequency_proportion,
     )
     selected_indices = _resolve_composite_indices(
         indices, method, mad_positive_items, mad_negative_items
@@ -195,10 +260,18 @@ def composite_flag(
     standardize: bool = True,
     na_rm: bool = True,
     psychsyn_critval: float = 0.6,
+    psychant_critval: float = -0.6,
     evenodd_factors: list[int] | None = None,
     mad_positive_items: list[int] | None = None,
     mad_negative_items: list[int] | None = None,
     mad_scale_max: int | None = None,
+    guttman_normalize: bool = True,
+    reliability_n_splits: int = 100,
+    reliability_random_seed: int | None = None,
+    semantic_item_pairs: list[tuple[int, int]] | None = None,
+    infrequency_item_indices: list[int] | None = None,
+    infrequency_expected_responses: list[float] | None = None,
+    infrequency_proportion: bool = False,
     return_diagnostics: bool = False,
 ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, dict[str, str]]:
     """
@@ -213,10 +286,18 @@ def composite_flag(
     - standardize: Standardize indices to z-scores before combining.
     - na_rm: Handle missing values.
     - psychsyn_critval: Critical value for psychometric synonyms.
+    - psychant_critval: Critical value for psychometric antonyms.
     - evenodd_factors: Factor structure for even-odd consistency.
     - mad_positive_items: Column indices for positively-worded items (for MAD index).
     - mad_negative_items: Column indices for negatively-worded items (for MAD index).
     - mad_scale_max: Maximum value of the response scale (for MAD index).
+    - guttman_normalize: If True, use Guttman error proportions instead of counts.
+    - reliability_n_splits: Split-half iterations for individual_reliability.
+    - reliability_random_seed: Optional seed for individual_reliability.
+    - semantic_item_pairs: Item pairs for semantic_syn / semantic_ant.
+    - infrequency_item_indices: Attention-check item column indices.
+    - infrequency_expected_responses: Expected responses for attention checks.
+    - infrequency_proportion: If True, return failure proportions for infrequency.
 
     Returns:
     - Tuple of (composite_scores, flags) where flags is True for suspected
@@ -235,10 +316,18 @@ def composite_flag(
         standardize=standardize,
         na_rm=na_rm,
         psychsyn_critval=psychsyn_critval,
+        psychant_critval=psychant_critval,
         evenodd_factors=evenodd_factors,
         mad_positive_items=mad_positive_items,
         mad_negative_items=mad_negative_items,
         mad_scale_max=mad_scale_max,
+        guttman_normalize=guttman_normalize,
+        reliability_n_splits=reliability_n_splits,
+        reliability_random_seed=reliability_random_seed,
+        semantic_item_pairs=semantic_item_pairs,
+        infrequency_item_indices=infrequency_item_indices,
+        infrequency_expected_responses=infrequency_expected_responses,
+        infrequency_proportion=infrequency_proportion,
         return_diagnostics=return_diagnostics,
     )
     if return_diagnostics:
@@ -262,10 +351,18 @@ def composite_summary(
     standardize: bool = True,
     na_rm: bool = True,
     psychsyn_critval: float = 0.6,
+    psychant_critval: float = -0.6,
     evenodd_factors: list[int] | None = None,
     mad_positive_items: list[int] | None = None,
     mad_negative_items: list[int] | None = None,
     mad_scale_max: int | None = None,
+    guttman_normalize: bool = True,
+    reliability_n_splits: int = 100,
+    reliability_random_seed: int | None = None,
+    semantic_item_pairs: list[tuple[int, int]] | None = None,
+    infrequency_item_indices: list[int] | None = None,
+    infrequency_expected_responses: list[float] | None = None,
+    infrequency_proportion: bool = False,
 ) -> CompositeSummary:
     """
     Calculate composite scores with detailed summary statistics.
@@ -277,10 +374,18 @@ def composite_summary(
     - standardize: Standardize before combining.
     - na_rm: Handle missing values.
     - psychsyn_critval: Critical value for psychometric synonyms.
+    - psychant_critval: Critical value for psychometric antonyms.
     - evenodd_factors: Factor structure for even-odd consistency.
     - mad_positive_items: Column indices for positively-worded items (for MAD index).
     - mad_negative_items: Column indices for negatively-worded items (for MAD index).
     - mad_scale_max: Maximum value of the response scale (for MAD index).
+    - guttman_normalize: If True, use Guttman error proportions instead of counts.
+    - reliability_n_splits: Split-half iterations for individual_reliability.
+    - reliability_random_seed: Optional seed for individual_reliability.
+    - semantic_item_pairs: Item pairs for semantic_syn / semantic_ant.
+    - infrequency_item_indices: Attention-check item column indices.
+    - infrequency_expected_responses: Expected responses for attention checks.
+    - infrequency_proportion: If True, return failure proportions for infrequency.
 
     Returns:
     - Dictionary with composite scores, individual index scores, and statistics.
@@ -292,13 +397,21 @@ def composite_summary(
         dict_keys(['composite', 'indices', 'mean', 'std', 'min', 'max', ...])
     """
     x_array = validate_matrix_input(x, check_type=False)
-    options = build_index_options(
+    options = _composite_options(
         na_rm,
         psychsyn_critval,
         evenodd_factors,
         mad_positive_items,
         mad_negative_items,
         mad_scale_max,
+        psychant_critval=psychant_critval,
+        guttman_normalize=guttman_normalize,
+        reliability_n_splits=reliability_n_splits,
+        reliability_random_seed=reliability_random_seed,
+        semantic_item_pairs=semantic_item_pairs,
+        infrequency_item_indices=infrequency_item_indices,
+        infrequency_expected_responses=infrequency_expected_responses,
+        infrequency_proportion=infrequency_proportion,
     )
     selected_indices = _resolve_composite_indices(
         indices, method, mad_positive_items, mad_negative_items
@@ -336,10 +449,18 @@ def composite_probability(
     method: CompositeMethod = "mean",
     na_rm: bool = True,
     psychsyn_critval: float = 0.6,
+    psychant_critval: float = -0.6,
     evenodd_factors: list[int] | None = None,
     mad_positive_items: list[int] | None = None,
     mad_negative_items: list[int] | None = None,
     mad_scale_max: int | None = None,
+    guttman_normalize: bool = True,
+    reliability_n_splits: int = 100,
+    reliability_random_seed: int | None = None,
+    semantic_item_pairs: list[tuple[int, int]] | None = None,
+    infrequency_item_indices: list[int] | None = None,
+    infrequency_expected_responses: list[float] | None = None,
+    infrequency_proportion: bool = False,
 ) -> np.ndarray:
     """
     Compute an uncalibrated logistic composite IER score.
@@ -356,10 +477,18 @@ def composite_probability(
     - method: How to combine indices ("mean", "sum", "max", or "best_subset").
     - na_rm: Handle missing values.
     - psychsyn_critval: Critical value for psychometric synonyms.
+    - psychant_critval: Critical value for psychometric antonyms.
     - evenodd_factors: Factor structure for even-odd consistency.
     - mad_positive_items: Column indices for positively-worded items (for MAD index).
     - mad_negative_items: Column indices for negatively-worded items (for MAD index).
     - mad_scale_max: Maximum value of the response scale (for MAD index).
+    - guttman_normalize: If True, use Guttman error proportions instead of counts.
+    - reliability_n_splits: Split-half iterations for individual_reliability.
+    - reliability_random_seed: Optional seed for individual_reliability.
+    - semantic_item_pairs: Item pairs for semantic_syn / semantic_ant.
+    - infrequency_item_indices: Attention-check item column indices.
+    - infrequency_expected_responses: Expected responses for attention checks.
+    - infrequency_proportion: If True, return failure proportions for infrequency.
 
     Returns:
     - A numpy array of uncalibrated logistic composite scores between 0 and 1
@@ -377,10 +506,18 @@ def composite_probability(
         standardize=True,
         na_rm=na_rm,
         psychsyn_critval=psychsyn_critval,
+        psychant_critval=psychant_critval,
         evenodd_factors=evenodd_factors,
         mad_positive_items=mad_positive_items,
         mad_negative_items=mad_negative_items,
         mad_scale_max=mad_scale_max,
+        guttman_normalize=guttman_normalize,
+        reliability_n_splits=reliability_n_splits,
+        reliability_random_seed=reliability_random_seed,
+        semantic_item_pairs=semantic_item_pairs,
+        infrequency_item_indices=infrequency_item_indices,
+        infrequency_expected_responses=infrequency_expected_responses,
+        infrequency_proportion=infrequency_proportion,
     )
     z_scores = z_scores_result[0] if isinstance(z_scores_result, tuple) else z_scores_result
 
