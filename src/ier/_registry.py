@@ -386,7 +386,6 @@ def score_registered_indices(
     options: IndexOptions,
     *,
     apply_composite_direction: bool = False,
-    raise_missing_config: bool = False,
 ) -> tuple[dict[str, np.ndarray], dict[str, str]]:
     """Compute registered indices and collect per-index validation failures."""
     scores: dict[str, np.ndarray] = {}
@@ -396,8 +395,6 @@ def score_registered_indices(
         spec = INDEX_REGISTRY[name]
         required_error = spec.required_error(options) if spec.required_error is not None else None
         if required_error is not None:
-            if raise_missing_config:
-                raise ValueError(required_error)
             errors[name] = required_error
             continue
 

@@ -10,17 +10,16 @@ from typing import Any
 
 import numpy as np
 
+from ier._optional_imports import require_scipy
 from ier._validation import MatrixLike, validate_matrix_input
 
-SCIPY_AVAILABLE = False
 _norm: Any = None
 try:
     from scipy.stats import norm as _scipy_norm
 
     _norm = _scipy_norm
-    SCIPY_AVAILABLE = True
 except ImportError:
-    pass  # scipy is optional; response_time_flagging falls back gracefully
+    pass  # scipy is optional; mixture path requires it at call time
 
 
 def response_time(
@@ -170,10 +169,8 @@ def response_time_mixture(
         >>> times = [[5.0, 6.0, 4.0], [0.5, 0.6, 0.4], [4.5, 5.5, 5.0]]
         >>> probs = response_time_mixture(times, random_seed=42)
     """
-    if not SCIPY_AVAILABLE:
-        raise RuntimeError(
-            "scipy is required for response_time_mixture. Install with: pip install scipy"
-        )
+    require_scipy("response_time_mixture")
+    assert _norm is not None
 
     if n_components < 2:
         raise ValueError("n_components must be at least 2")

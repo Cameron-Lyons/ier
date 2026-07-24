@@ -27,6 +27,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Architecture: architecture.md
   - Workflows:
       - Screening: workflows/screening.md
       - Composite Scores: workflows/composite.md

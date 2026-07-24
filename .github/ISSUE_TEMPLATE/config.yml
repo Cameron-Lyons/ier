@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://cameron-lyons.github.io/ier/
+    about: Getting started, workflows, thresholds, and API reference
+  - name: Security advisory
+    url: https://github.com/Cameron-Lyons/ier/security/advisories/new
+    about: Report a vulnerability privately (see SECURITY.md)

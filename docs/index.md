@@ -22,7 +22,7 @@ Base install is NumPy-only. Default `screen()` and `composite()` work without Sc
 
 ```python
 import numpy as np
-from ier import composite, screen
+from ier import IndexOptions, composite, screen
 
 data = np.array([
     [1, 2, 3, 4, 5, 4],
@@ -30,7 +30,7 @@ data = np.array([
     [1, 5, 1, 5, 1, 5],
 ], dtype=float)
 
-result = screen(data, scale_min=1, scale_max=5)
+result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print(result["flag_counts"])
 
 scores = composite(data, indices=["irv", "longstring", "person_total"])

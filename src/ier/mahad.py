@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 
-from ier._optional_imports import require_matplotlib_pyplot
+from ier._optional_imports import require_matplotlib_pyplot, require_scipy, scipy_install_hint
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -28,7 +28,7 @@ try:
     stats = _stats
     SCIPY_AVAILABLE = True
 except ImportError:
-    pass  # scipy is optional; mahad_flag and mahad_plot check at call time
+    pass  # scipy is optional; chi2 / qqplot paths check at call time
 
 
 def mahad(
@@ -86,10 +86,7 @@ def mahad(
 
     # Distances are NumPy-only; SciPy is needed for chi2 / zscore flagging.
     if flag and method in ("chi2", "zscore") and not SCIPY_AVAILABLE:
-        raise RuntimeError(
-            f"scipy is required for {method} flagging. "
-            "Install with: pip install 'insufficient-effort[full]'"
-        )
+        raise RuntimeError(scipy_install_hint(f"{method} flagging"))
 
     if na_rm:
         all_nan_mask = np.isnan(x_array).all(axis=1)
@@ -252,8 +249,8 @@ def mahad_qqplot(
         >>> data = [[1, 2], [3, 4], [5, 6], [7, 8]]
         >>> theoretical, observed = mahad_qqplot(data)
     """
-    if not SCIPY_AVAILABLE:
-        raise RuntimeError("scipy is required for mahad_qqplot. Install with: pip install scipy")
+    require_scipy("mahad_qqplot")
+    assert stats is not None
 
     distances = mahad(x, flag=False, na_rm=na_rm)
     assert isinstance(distances, np.ndarray)

@@ -1,0 +1,57 @@
+{
+  "description": "Hand-verified IRV / longstring; IRV uses population std (ddof=0).",
+  "r_notes": "Compare to careless::irv / careless::longstring with matching NA policy.",
+  "matrix": [
+    [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    [
+      1.0,
+      2.0,
+      3.0,
+      4.0,
+      5.0
+    ],
+    [
+      5.0,
+      5.0,
+      5.0,
+      1.0,
+      2.0
+    ],
+    [
+      1.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0
+    ],
+    [
+      1.0,
+      2.0,
+      1.0,
+      2.0,
+      1.0
+    ]
+  ],
+  "expected": {
+    "irv": [
+      0.0,
+      1.4142135623730951,
+      1.7435595774162693,
+      0.4000000000000001,
+      0.4898979485566356
+    ],
+    "longstring": [
+      5.0,
+      1.0,
+      3.0,
+      4.0,
+      1.0
+    ]
+  }
+}

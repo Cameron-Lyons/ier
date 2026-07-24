@@ -304,13 +304,15 @@ class TestMahadFunction(unittest.TestCase):
 
     def test_chi2_requires_scipy(self) -> None:
         """Test chi-square flagging reports missing optional SciPy dependency."""
-        with patch("ier.mahad.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError):
+        with patch("ier.mahad.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError) as ctx:
             mahad(self.data, flag=True, method="chi2")
+        self.assertIn("insufficient-effort[full]", str(ctx.exception))
 
     def test_zscore_requires_scipy(self) -> None:
         """Test z-score flagging reports missing optional SciPy dependency."""
-        with patch("ier.mahad.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError):
+        with patch("ier.mahad.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError) as ctx:
             mahad(self.data, flag=True, method="zscore")
+        self.assertIn("insufficient-effort[full]", str(ctx.exception))
 
     def test_invalid_confidence(self) -> None:
         """Test MAHAD raises ValueError for invalid confidence values."""

@@ -1,0 +1,28 @@
+name: Methods question
+description: Ask about thresholds, flagging policy, NA handling, or R parity
+title: "[Methods]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for scientific / psychometric questions. Score differences vs R
+        packages are often option mismatches rather than bugs — see
+        [R package notes](https://cameron-lyons.github.io/ier/r-comparison/).
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Scale type, sample size, which indices, and what you already tried.
+  - type: textarea
+    id: options
+    attributes:
+      label: Options used
+      description: Relevant IndexOptions / function kwargs (scale bounds, critval, etc.).
+      render: python
