@@ -18,6 +18,7 @@ from .infrequency import infrequency_flag as infrequency_flag
 from .irv import irv as irv
 from .longstring import longstring as longstring
 from .longstring import longstring_pattern as longstring_pattern
+from .longstring import longstring_scores as longstring_scores
 from .lz import lz as lz
 from .lz import lz_flag as lz_flag
 from .mad import mad as mad
@@ -91,6 +92,7 @@ __all__ = [
     "irv",
     "longstring",
     "longstring_pattern",
+    "longstring_scores",
     "lz",
     "lz_flag",
     "mad",

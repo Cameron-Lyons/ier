@@ -5,6 +5,48 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-24
+
+### Breaking
+
+- `screen()` / `composite()` / `composite_flag()` / `composite_summary()` /
+  `composite_probability()` accept configuration only via `options=IndexOptions(...)`.
+  Legacy per-index keyword arguments were removed.
+- Removed deprecated `build_index_options()`.
+- String run-length helpers in `ier.longstring` are private
+  (`_run_length_encode`, `_run_length_decode`, `_longstr_message`,
+  `_avgstr_message`). Prefer `longstring()` / `longstring_scores()`.
+- `mahad(..., flag=True, method="zscore")` requires SciPy (same as `chi2`);
+  it no longer silently falls back to a hardcoded threshold of `2.0`.
+
+### Added
+
+- CLI JSON/CSV export (`--format json|csv`, optional `--output`), plus
+  IndexOptions knobs (`--evenodd-factors`, MAD/semantic/infrequency lists, etc.).
+- Clearer jagged-CSV error when loading CLI matrices.
+- Golden parity fixtures for `longstring_pattern`, `mahad` (iqr), `psychsyn`,
+  and `evenodd`.
+- Public export of `longstring_scores`.
+- `SECURITY.md` and `.github/CODEOWNERS`.
+- Release and PyPI publish workflows run the full CI test suite before shipping.
+- CI also runs on pushes to `main`.
+
+### Changed
+
+- `composite()` soft-fails missing index config (e.g. evenodd without factors),
+  matching `screen()`; if no index succeeds, it still raises.
+- Local `scripts/check.sh` pylint uses `--fail-under=9.0` to match CI.
+- Version-check workflow is callable-only (no duplicate PR trigger).
+- Response-time helpers documented as intentionally out of the registry.
+- Specialized tests split into `test_composite.py`, `test_response_time.py`,
+  and a smaller `test_specialized_indices.py`.
+- Package version bumped to 2.0.0.
+
+### Fixed
+
+- Changelog no longer claims Codecov fails the job on upload error; uploads stay
+  non-blocking when `CODECOV_TOKEN` is unset.
+
 ## [1.8.0] - 2026-07-23
 
 ### Added
@@ -54,8 +96,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mahad(..., flag=True, method="chi2")` (and related SciPy-only helpers).
 - `score_registered_indices` soft-catches `ValueError`, `RuntimeError`, and
   `TypeError` into per-index `errors`.
-- CI coverage gate aligned to 90%; Codecov upload fails the job on error;
-  Bandit no longer falls back to a looser severity filter.
+- CI coverage gate aligned to 90%; Codecov upload remains non-blocking when a
+  token is unset; Bandit no longer falls back to a looser severity filter.
 - Package version bumped to 1.7.0.
 
 ### Fixed

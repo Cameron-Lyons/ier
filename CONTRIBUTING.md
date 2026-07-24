@@ -61,8 +61,10 @@ uv run python benchmarks/bench_screen.py
 
 The repository supports two release paths:
 
-- Tag-based GitHub release workflow (`vX.Y.Z`) to produce artifacts.
-- Publish workflow (`Publish to PyPI`) for TestPyPI/PyPI upload.
+- Tag-based GitHub release workflow (`vX.Y.Z`) — runs the full CI suite, then
+  produces artifacts and a GitHub Release.
+- Publish workflow (`Publish to PyPI`) — runs tests, builds, then uploads to
+  TestPyPI/PyPI.
 
 ### Publish to TestPyPI
 

@@ -12,11 +12,11 @@ import scipy.stats as stats
 from ier.evenodd import calculate_correlations, evenodd
 from ier.irv import irv
 from ier.longstring import (
-    avgstr_message,
-    longstr_message,
+    _avgstr_message,
+    _longstr_message,
+    _run_length_decode,
+    _run_length_encode,
     longstring,
-    run_length_decode,
-    run_length_encode,
 )
 from ier.mahad import mahad, mahad_summary
 from ier.psychsyn import (
@@ -40,60 +40,60 @@ class TestLongstring(unittest.TestCase):
     def test_run_length_encode(self) -> None:
         """Test run-length encoding produces correct character-count tuples."""
         self.assertEqual(
-            run_length_encode("AAABBBCCDAA"),
+            _run_length_encode("AAABBBCCDAA"),
             [("A", 3), ("B", 3), ("C", 2), ("D", 1), ("A", 2)],
         )
-        self.assertEqual(run_length_encode("A"), [("A", 1)])
-        self.assertEqual(run_length_encode(""), [])
+        self.assertEqual(_run_length_encode("A"), [("A", 1)])
+        self.assertEqual(_run_length_encode(""), [])
 
     def test_run_length_encode_validation(self) -> None:
         """Test run-length encoding raises TypeError for invalid inputs."""
         with self.assertRaises(TypeError):
-            run_length_encode(123)
+            _run_length_encode(123)
         with self.assertRaises(TypeError):
-            run_length_encode(None)
+            _run_length_encode(None)
 
     def test_run_length_decode(self) -> None:
         """Test run-length decoding reconstructs original string correctly."""
         self.assertEqual(
-            run_length_decode([("A", 3), ("B", 3), ("C", 2), ("D", 1), ("A", 2)]),
+            _run_length_decode([("A", 3), ("B", 3), ("C", 2), ("D", 1), ("A", 2)]),
             "AAABBBCCDAA",
         )
-        self.assertEqual(run_length_decode([("A", 1)]), "A")
-        self.assertEqual(run_length_decode([]), "")
+        self.assertEqual(_run_length_decode([("A", 1)]), "A")
+        self.assertEqual(_run_length_decode([]), "")
 
     def test_run_length_decode_validation(self) -> None:
         """Test run-length decoding raises TypeError for invalid inputs."""
         with self.assertRaises(TypeError):
-            run_length_decode("not a list")
+            _run_length_decode("not a list")
         with self.assertRaises(TypeError):
-            run_length_decode(None)
+            _run_length_decode(None)
 
     def test_longstr_message(self) -> None:
         """Test longest string message returns correct character and length."""
-        self.assertEqual(longstr_message("AAAABBBCCDAA"), ("A", 4))
-        self.assertEqual(longstr_message("A"), ("A", 1))
-        self.assertEqual(longstr_message(""), None)
+        self.assertEqual(_longstr_message("AAAABBBCCDAA"), ("A", 4))
+        self.assertEqual(_longstr_message("A"), ("A", 1))
+        self.assertEqual(_longstr_message(""), None)
 
     def test_longstr_message_validation(self) -> None:
         """Test longest string message raises TypeError for invalid inputs."""
         with self.assertRaises(TypeError):
-            longstr_message(123)
+            _longstr_message(123)
         with self.assertRaises(TypeError):
-            longstr_message(None)
+            _longstr_message(None)
 
     def test_avgstr_message(self) -> None:
         """Test average string length calculation returns correct values."""
-        self.assertAlmostEqual(avgstr_message("AAABBBCCDAA"), 2.2)
-        self.assertEqual(avgstr_message("A"), 1.0)
-        self.assertEqual(avgstr_message(""), 0.0)
+        self.assertAlmostEqual(_avgstr_message("AAABBBCCDAA"), 2.2)
+        self.assertEqual(_avgstr_message("A"), 1.0)
+        self.assertEqual(_avgstr_message(""), 0.0)
 
     def test_avgstr_message_validation(self) -> None:
         """Test average string message raises TypeError for invalid inputs."""
         with self.assertRaises(TypeError):
-            avgstr_message(123)
+            _avgstr_message(123)
         with self.assertRaises(TypeError):
-            avgstr_message(None)
+            _avgstr_message(None)
 
     def test_longstring(self) -> None:
         """Test main longstring function with single strings and lists."""
@@ -306,6 +306,11 @@ class TestMahadFunction(unittest.TestCase):
         """Test chi-square flagging reports missing optional SciPy dependency."""
         with patch("ier.mahad.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError):
             mahad(self.data, flag=True, method="chi2")
+
+    def test_zscore_requires_scipy(self) -> None:
+        """Test z-score flagging reports missing optional SciPy dependency."""
+        with patch("ier.mahad.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError):
+            mahad(self.data, flag=True, method="zscore")
 
     def test_invalid_confidence(self) -> None:
         """Test MAHAD raises ValueError for invalid confidence values."""

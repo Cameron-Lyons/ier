@@ -6,6 +6,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from ier import IndexOptions
 from ier.acquiescence import acquiescence, acquiescence_flag
 from ier.mahad import mahad
 from ier.screen import screen
@@ -153,15 +154,21 @@ class TestScreen(unittest.TestCase):
             screen(self.data, indices=["nonexistent"])
 
     def test_evenodd_included_with_factors(self) -> None:
-        result = screen(self.data, indices=["evenodd"], evenodd_factors=[5, 5])
+        result = screen(
+            self.data,
+            indices=["evenodd"],
+            options=IndexOptions(evenodd_factors=[5, 5]),
+        )
         self.assertIn("evenodd", result["indices_used"])
 
     def test_mad_included_with_items(self) -> None:
         result = screen(
             self.data,
             indices=["mad"],
-            mad_positive_items=[0, 1, 2],
-            mad_negative_items=[3, 4, 5],
+            options=IndexOptions(
+                mad_positive_items=[0, 1, 2],
+                mad_negative_items=[3, 4, 5],
+            ),
         )
         self.assertIn("mad", result["indices_used"])
 
@@ -200,11 +207,13 @@ class TestScreen(unittest.TestCase):
         result = screen(
             self.data,
             indices=["guttman", "semantic_syn", "infrequency", "individual_reliability"],
-            semantic_item_pairs=[(0, 1), (2, 3)],
-            infrequency_item_indices=[0],
-            infrequency_expected_responses=[3.0],
-            reliability_n_splits=5,
-            reliability_random_seed=0,
+            options=IndexOptions(
+                semantic_item_pairs=[(0, 1), (2, 3)],
+                infrequency_item_indices=[0],
+                infrequency_expected_responses=[3.0],
+                reliability_n_splits=5,
+                reliability_random_seed=0,
+            ),
         )
         self.assertEqual(
             set(result["indices_used"]),
@@ -225,8 +234,7 @@ class TestScreen(unittest.TestCase):
         result = screen(
             data,
             indices=["onset"],
-            onset_window_size=5,
-            onset_min_items=10,
+            options=IndexOptions(onset_window_size=5, onset_min_items=10),
         )
         self.assertIn("onset", result["indices_used"])
         self.assertEqual(result["flags"]["onset"].dtype, bool)

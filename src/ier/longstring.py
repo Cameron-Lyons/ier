@@ -14,98 +14,44 @@ import numpy as np
 from ier._validation import MatrixLike, iter_rows, validate_matrix_input
 
 
-def run_length_encode(message: str) -> list[tuple[str, int]]:
-    """
-    Run-length encoding. Converts a string into a list of tuples, where each tuple contains
-    the character and the length of consecutive occurrences.
-
-    Parameters:
-    - message: Input string to encode
-
-    Returns:
-    - List of tuples (character, count) representing consecutive character runs
-
-    Example:
-        >>> run_length_encode("aaabbbcc")
-        [('a', 3), ('b', 3), ('c', 2)]
-    """
+def _run_length_encode(message: str) -> list[tuple[str, int]]:
+    """Run-length encode a string into ``(character, count)`` runs."""
     if not isinstance(message, str):
         raise TypeError("message must be a string")
 
     return [(char, len(list(group))) for char, group in groupby(message)]
 
 
-def run_length_decode(encoded_data: list[tuple[str, int]]) -> str:
-    """
-    Decode run-length encoded data back to original string.
-
-    Parameters:
-    - encoded_data: List of tuples (character, count) from run_length_encode
-
-    Returns:
-    - Original string
-
-    Example:
-        >>> encoded = [('a', 3), ('b', 3), ('c', 2)]
-        >>> run_length_decode(encoded)
-        'aaabbbcc'
-    """
+def _run_length_decode(encoded_data: list[tuple[str, int]]) -> str:
+    """Decode run-length encoded ``(character, count)`` runs back to a string."""
     if not isinstance(encoded_data, list):
         raise TypeError("encoded_data must be a list")
 
     return "".join([char * count for char, count in encoded_data])
 
 
-def longstr_message(message: str) -> tuple[str, int] | None:
-    """
-    Return the longest sequence of identical characters in a string.
-
-    Parameters:
-    - message: Input string to analyze
-
-    Returns:
-    - Tuple of (character, length) for the longest run, or None if string is empty
-
-    Example:
-        >>> longstr_message("aaabbbcc")
-        ('a', 3)
-        >>> longstr_message("")
-        None
-    """
+def _longstr_message(message: str) -> tuple[str, int] | None:
+    """Return ``(character, length)`` for the longest identical run, or None."""
     if not isinstance(message, str):
         raise TypeError("message must be a string")
 
     if not message:
         return None
 
-    encoded = run_length_encode(message)
+    encoded = _run_length_encode(message)
     longest_run = max(encoded, key=lambda x: x[1])
     return longest_run
 
 
-def avgstr_message(message: str) -> float:
-    """
-    Return average length of uninterrupted strings of identical characters in a string.
-
-    Parameters:
-    - message: Input string to analyze
-
-    Returns:
-    - Average length of consecutive character runs
-
-    Example:
-        >>> avgstr_message("aaabbbcc")
-        2.67
-        >>> avgstr_message("")
-        0.0
-    """
+def _avgstr_message(message: str) -> float:
+    """Return average length of uninterrupted identical-character runs."""
     if not isinstance(message, str):
         raise TypeError("message must be a string")
 
     if not message:
         return 0.0
 
-    rle_list = run_length_encode(message)
+    rle_list = _run_length_encode(message)
     if not rle_list:
         return 0.0
 
@@ -178,9 +124,9 @@ def longstring(
 
     if isinstance(messages, str):
         if avg:
-            return avgstr_message(messages)
+            return _avgstr_message(messages)
         else:
-            return longstr_message(messages)
+            return _longstr_message(messages)
 
     if isinstance(messages, list):
         if not messages:
@@ -190,9 +136,9 @@ def longstring(
             raise TypeError("all elements in messages list must be strings")
 
         if avg:
-            return [avgstr_message(msg) for msg in messages]
+            return [_avgstr_message(msg) for msg in messages]
         else:
-            return [longstr_message(msg) for msg in messages]
+            return [_longstr_message(msg) for msg in messages]
 
     elif isinstance(messages, np.ndarray):
         if messages.size == 0:
@@ -205,9 +151,9 @@ def longstring(
             messages_list = [str(msg) for msg in messages_list]
 
         if avg:
-            return [avgstr_message(msg) for msg in messages_list]
+            return [_avgstr_message(msg) for msg in messages_list]
         else:
-            return [longstr_message(msg) for msg in messages_list]
+            return [_longstr_message(msg) for msg in messages_list]
 
     else:
         raise TypeError("messages must be a string, list of strings, or numpy array")

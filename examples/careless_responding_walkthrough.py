@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ier import composite, screen
+from ier import IndexOptions, composite, screen
 
 
 def simulate(n_attentive: int = 80, n_careless: int = 20, n_items: int = 20, seed: int = 0):
@@ -37,7 +37,7 @@ def simulate(n_attentive: int = 80, n_careless: int = 20, n_items: int = 20, see
 
 def main() -> None:
     data, labels = simulate()
-    result = screen(data, scale_min=1, scale_max=5)
+    result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
     agreement = result["flag_counts"] >= 2
     hit_rate = float(np.mean(agreement[labels == 1]))
     false_alarm = float(np.mean(agreement[labels == 0]))

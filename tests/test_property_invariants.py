@@ -9,11 +9,11 @@ from ier.acquiescence import acquiescence
 from ier.evenodd import evenodd
 from ier.irv import irv
 from ier.longstring import (
-    avgstr_message,
-    longstr_message,
+    _avgstr_message,
+    _longstr_message,
+    _run_length_decode,
+    _run_length_encode,
     longstring,
-    run_length_decode,
-    run_length_encode,
 )
 from ier.mahad import mahad
 from ier.psychsyn import psychsyn
@@ -55,14 +55,14 @@ class TestLongstringProperties:
     @given(st.text(min_size=0, max_size=100))
     def test_run_length_encode_decode_roundtrip(self, message: str) -> None:
         """Encoding then decoding should return the original string."""
-        encoded = run_length_encode(message)
-        decoded = run_length_decode(encoded)
+        encoded = _run_length_encode(message)
+        decoded = _run_length_decode(encoded)
         assert decoded == message
 
     @given(non_empty_string())
     def test_longstr_length_bounds(self, message: str) -> None:
         """Longest string length should be between 1 and total length."""
-        result = longstr_message(message)
+        result = _longstr_message(message)
         assert result is not None
         char, length = result
         assert 1 <= length <= len(message)
@@ -71,14 +71,14 @@ class TestLongstringProperties:
     @given(non_empty_string())
     def test_avgstr_bounds(self, message: str) -> None:
         """Average string length should be between 1 and total length."""
-        result = avgstr_message(message)
+        result = _avgstr_message(message)
         assert 1.0 <= result <= len(message)
 
     @given(non_empty_string())
     def test_longstr_greater_or_equal_avgstr(self, message: str) -> None:
         """Longest string length should be >= average string length."""
-        longstr_result = longstr_message(message)
-        avgstr_result = avgstr_message(message)
+        longstr_result = _longstr_message(message)
+        avgstr_result = _avgstr_message(message)
         assert longstr_result is not None
         assert longstr_result[1] >= avgstr_result
 
@@ -93,9 +93,9 @@ class TestLongstringProperties:
     def test_repeated_char_longstring(self, repeat: int, char: str) -> None:
         """A repeated character string should have longest run equal to string length."""
         message = char * repeat
-        result = longstr_message(message)
+        result = _longstr_message(message)
         assert result == (char, repeat)
-        assert avgstr_message(message) == float(repeat)
+        assert _avgstr_message(message) == float(repeat)
 
 
 class TestIRVProperties:

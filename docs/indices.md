@@ -31,9 +31,12 @@ helpers use a different input domain and are listed separately.
 \* `person_total` flags unusually low totals under the default low-direction
 percentile rule; interpret in context of your scale coding.
 
-## Response-time indices (standalone)
+## Response-time indices (standalone — not in the registry)
 
-Call these with timing matrices (`respondents × items` or per-respondent times):
+These helpers take **timing matrices** (durations), not item-response matrices.
+They are intentionally excluded from `screen()` / `composite()` so item scores
+and timestamps are never mixed by accident. Compute them separately and merge
+flags in your analysis code if needed.
 
 | Function | Signal | Typical flag |
 |----------|--------|--------------|

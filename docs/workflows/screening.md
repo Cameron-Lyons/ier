@@ -3,7 +3,7 @@
 `screen()` runs multiple IER indices, applies flagging rules, and returns a
 structured result.
 
-Prefer a single `IndexOptions` object for configuration:
+Configure with a single `IndexOptions` object:
 
 ```python
 from ier import IndexOptions, screen
@@ -13,10 +13,6 @@ print(result["indices_used"])
 print(result["flag_counts"])
 print(result["errors"])
 ```
-
-Legacy keyword arguments (`scale_min=...`, `evenodd_factors=...`, etc.) still
-work when `options` is omitted. When `options` is provided, those kwargs are
-ignored.
 
 ## Result keys
 
@@ -38,7 +34,7 @@ Default indices are NumPy-only and require no extra item metadata:
 `markov`, `u3_poly`, `midpoint`, `acquiescence`, `guttman`
 
 Mahalanobis distances in screening use a NumPy-safe path; SciPy is only needed
-when you call `mahad(..., flag=True, method="chi2")` directly.
+when you call `mahad(..., flag=True, method="chi2"|"zscore")` directly.
 
 ## Config-gated indices
 
@@ -62,7 +58,7 @@ result = screen(
 ```
 
 Missing required config is recorded in `result["errors"]` instead of aborting
-the whole screening run.
+the whole screening run. `composite()` uses the same soft-fail policy.
 
 ## Flagging
 
@@ -71,14 +67,17 @@ the whole screening run.
   below `100 - percentile`.
 - `onset` uses presence flagging: any detected changepoint is flagged.
 
-## Response times
+## Response times (out of band)
 
-`response_time*` helpers take **timing matrices**, not item responses. Call them
-directly rather than through `screen()`.
+`response_time*` helpers take **timing matrices** (seconds or other duration
+units), not Likert item responses. They are intentionally **not** registered in
+`screen()` / `composite()` because mixing domains would silently mis-score
+respondents. Call them directly and combine flags yourself if needed:
 
 ```python
-from ier import response_time_flag
+from ier import response_time, response_time_flag
 
+median_rt = response_time(times, metric="median")
 flags = response_time_flag(times, cutoff_percentile=5)
 ```
 
@@ -86,5 +85,7 @@ flags = response_time_flag(times, cutoff_percentile=5)
 
 ```bash
 ier screen data.csv --scale-min 1 --scale-max 5 --indices irv longstring
+ier screen data.csv --format json --output screen.json
+ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier --version
 ```

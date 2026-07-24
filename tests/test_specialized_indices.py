@@ -1,11 +1,9 @@
-"""Unit tests for specialized IER indices and composite scorers."""
+"""Unit tests for specialized IER indices."""
 
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 
-from ier.composite import composite, composite_flag, composite_probability, composite_summary
 from ier.guttman import guttman, guttman_flag
 from ier.infrequency import infrequency, infrequency_flag
 from ier.longstring import longstring_pattern
@@ -16,13 +14,6 @@ from ier.markov import _transition_entropy, markov, markov_flag, markov_summary
 from ier.onset import onset, onset_flag
 from ier.person_total import person_total
 from ier.reliability import individual_reliability, individual_reliability_flag
-from ier.response_time import (
-    _em_gaussian_mixture,
-    response_time,
-    response_time_consistency,
-    response_time_flag,
-    response_time_mixture,
-)
 from ier.semantic import semantic_ant, semantic_syn
 from ier.u3_poly import midpoint_responding, response_pattern, u3_poly
 
@@ -121,36 +112,6 @@ class TestGuttman(unittest.TestCase):
         )
 
 
-class TestResponseTime(unittest.TestCase):
-    """Tests for response time functions."""
-
-    def test_basic_metrics(self) -> None:
-        """Test basic response time metrics."""
-        times = [[2.0, 3.0, 4.0], [1.0, 1.0, 1.0]]
-        self.assertAlmostEqual(response_time(times, metric="mean")[0], 3.0)
-        self.assertAlmostEqual(response_time(times, metric="median")[0], 3.0)
-        self.assertAlmostEqual(response_time(times, metric="min")[0], 2.0)
-
-    def test_invalid_metric_raises(self) -> None:
-        """Test that invalid metric raises ValueError."""
-        times = [[1.0, 2.0, 3.0]]
-        with self.assertRaises(ValueError):
-            response_time(times, metric="invalid")
-
-    def test_flag_function(self) -> None:
-        """Test response time flagging."""
-        times = [[2.0, 3.0, 4.0], [0.1, 0.1, 0.1], [2.5, 2.5, 2.5]]
-        flags = response_time_flag(times, threshold=0.5)
-        self.assertTrue(flags[1])
-        self.assertFalse(flags[0])
-
-    def test_consistency(self) -> None:
-        """Test response time consistency (CV)."""
-        times = [[1.0, 2.0, 3.0], [2.0, 2.0, 2.0]]
-        cv = response_time_consistency(times)
-        self.assertGreater(cv[0], cv[1])
-
-
 class TestIndividualReliability(unittest.TestCase):
     """Tests for individual reliability functions."""
 
@@ -202,149 +163,6 @@ class TestU3Poly(unittest.TestCase):
         self.assertIn("midpoint", result)
         self.assertIn("acquiescence", result)
         self.assertIn("variability", result)
-
-
-class TestComposite(unittest.TestCase):
-    """Tests for composite IER index functions."""
-
-    def test_basic_functionality(self) -> None:
-        """Test basic composite calculation."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        result = composite(data)
-        self.assertEqual(len(result), 3)
-
-    def test_straightliner_highest_score(self) -> None:
-        """Test that straightliners get highest composite score."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        result = composite(data)
-        self.assertEqual(np.argmax(result), 1)
-
-    def test_specific_indices(self) -> None:
-        """Test composite with specific indices."""
-        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3], [5, 4, 3, 2, 1]]
-        result = composite(data, indices=["irv", "longstring"])
-        self.assertEqual(len(result), 3)
-
-    def test_sum_method(self) -> None:
-        """Test composite with sum method."""
-        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
-        result = composite(data, method="sum")
-        self.assertEqual(len(result), 2)
-
-    def test_max_method(self) -> None:
-        """Test composite with max method."""
-        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
-        result = composite(data, method="max")
-        self.assertEqual(len(result), 2)
-
-    def test_no_standardize(self) -> None:
-        """Test composite without standardization."""
-        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
-        result = composite(data, standardize=False)
-        self.assertEqual(len(result), 2)
-
-    def test_with_evenodd(self) -> None:
-        """Test composite with evenodd index."""
-        data = [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [3, 3, 3, 3, 3, 3, 3, 3, 3, 3]]
-        result = composite(data, indices=["irv", "evenodd"], evenodd_factors=[5, 5])
-        self.assertEqual(len(result), 2)
-
-    def test_flag_function(self) -> None:
-        """Test composite flagging."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        scores, flags = composite_flag(data, threshold=1.0)
-        self.assertEqual(len(flags), 3)
-        self.assertTrue(
-            np.issubdtype(flags.dtype, np.bool_),
-            msg=f"Expected boolean dtype, got {flags.dtype}",
-        )
-        self.assertTrue(flags[1])
-
-    def test_flag_with_percentile(self) -> None:
-        """Test composite flagging with percentile."""
-        data = [
-            [1, 2, 3, 4, 5],
-            [3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1],
-            [2, 3, 4, 5, 1],
-        ]
-        scores, flags = composite_flag(data, percentile=75.0)
-        self.assertEqual(len(flags), 4)
-
-    def test_summary_function(self) -> None:
-        """Test composite summary."""
-        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3], [5, 4, 3, 2, 1]]
-        summary = composite_summary(data)
-        self.assertIn("composite", summary)
-        self.assertIn("indices", summary)
-        self.assertIn("indices_used", summary)
-        self.assertIn("mean", summary)
-        self.assertIn("std", summary)
-
-    def test_invalid_index_raises(self) -> None:
-        """Test that invalid index raises ValueError."""
-        data = [[1, 2, 3, 4, 5]]
-        with self.assertRaises(ValueError):
-            composite(data, indices=["invalid_index"])
-
-    def test_evenodd_without_factors_raises(self) -> None:
-        """Test that evenodd without factors raises ValueError."""
-        data = [[1, 2, 3, 4, 5]]
-        with self.assertRaises(ValueError):
-            composite(data, indices=["evenodd"])
-
-    def test_invalid_method_raises(self) -> None:
-        """Test that invalid method raises ValueError."""
-        data = [[1, 2, 3, 4, 5]]
-        with self.assertRaises(ValueError):
-            composite(data, method="invalid")  # type: ignore[arg-type]
-
-    def test_return_diagnostics(self) -> None:
-        """Test composite can return index diagnostics."""
-        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
-        scores, diagnostics = composite(data, indices=["irv", "mad"], return_diagnostics=True)
-        self.assertEqual(len(scores), 2)
-        self.assertIn("mad", diagnostics)
-
-    def test_flag_return_diagnostics(self) -> None:
-        """Test composite_flag returns diagnostics when requested."""
-        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
-        scores, flags, diagnostics = composite_flag(
-            data, indices=["irv", "mad"], return_diagnostics=True
-        )
-        self.assertEqual(len(scores), 2)
-        self.assertEqual(len(flags), 2)
-        self.assertIn("mad", diagnostics)
-
-    def test_no_valid_indices_raises_with_failures(self) -> None:
-        """Test composite reports collected handler failures when no index succeeds."""
-        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
-        with self.assertRaisesRegex(ValueError, "no valid indices"):
-            composite(data, indices=["mad"])
-
-    def test_constant_index_standardizes_to_zero(self) -> None:
-        """Test zero-variance standardized index scores become zero."""
-        data = [[1, 1, 2, 2], [3, 3, 4, 4]]
-        result = composite(data, indices=["longstring"], standardize=True)
-        np.testing.assert_array_equal(result, np.zeros(2))
-
-    def test_noninteger_longstring_not_truncated(self) -> None:
-        """Test longstring index does not truncate non-integer values."""
-        data = [[1.1, 1.9, 1.1, 1.9]]
-        result = composite(data, indices=["longstring"], standardize=False)
-        np.testing.assert_array_equal(result, np.array([1.0]))
 
 
 class TestMAD(unittest.TestCase):
@@ -830,101 +648,6 @@ class TestMarkov(unittest.TestCase):
             markov(data)
 
 
-class TestResponseTimeMixture(unittest.TestCase):
-    """Tests for response time mixture model."""
-
-    def test_basic_functionality(self) -> None:
-        """Test basic mixture model computation."""
-        rng = np.random.default_rng(42)
-        fast = rng.uniform(0.3, 0.8, size=(10, 5))
-        slow = rng.uniform(3.0, 8.0, size=(10, 5))
-        times = np.vstack([fast, slow])
-        result = response_time_mixture(times, random_seed=42)
-        self.assertEqual(len(result), 20)
-
-    def test_fast_high_probability(self) -> None:
-        """Test that fast responders get high P(fast)."""
-        rng = np.random.default_rng(42)
-        fast = rng.uniform(0.1, 0.5, size=(15, 5))
-        slow = rng.uniform(5.0, 10.0, size=(15, 5))
-        times = np.vstack([fast, slow])
-        result = response_time_mixture(times, random_seed=42)
-        fast_mean = np.mean(result[:15])
-        slow_mean = np.mean(result[15:])
-        self.assertGreater(fast_mean, slow_mean)
-
-    def test_slow_low_probability(self) -> None:
-        """Test that slow responders get low P(fast)."""
-        rng = np.random.default_rng(42)
-        fast = rng.uniform(0.1, 0.5, size=(15, 5))
-        slow = rng.uniform(5.0, 10.0, size=(15, 5))
-        times = np.vstack([fast, slow])
-        result = response_time_mixture(times, random_seed=42)
-        slow_mean = np.mean(result[15:])
-        self.assertLess(slow_mean, 0.5)
-
-    def test_range_0_1(self) -> None:
-        """Test that all probabilities are in [0, 1]."""
-        rng = np.random.default_rng(42)
-        times = rng.uniform(0.5, 10.0, size=(20, 5))
-        result = response_time_mixture(times, random_seed=42)
-        valid = result[~np.isnan(result)]
-        self.assertTrue(np.all(valid >= 0.0))
-        self.assertTrue(np.all(valid <= 1.0))
-
-    def test_no_log_transform(self) -> None:
-        """Test without log transform."""
-        rng = np.random.default_rng(42)
-        times = rng.uniform(0.5, 10.0, size=(20, 5))
-        result = response_time_mixture(times, log_transform=False, random_seed=42)
-        self.assertEqual(len(result), 20)
-
-    def test_reproducibility(self) -> None:
-        """Test that same seed gives same results."""
-        rng = np.random.default_rng(42)
-        times = rng.uniform(0.5, 10.0, size=(20, 5))
-        r1 = response_time_mixture(times, random_seed=123)
-        r2 = response_time_mixture(times, random_seed=123)
-        np.testing.assert_array_almost_equal(r1, r2)
-
-    def test_em_uses_pre_normalization_log_likelihood(self) -> None:
-        """Test EM does not converge just because normalized responsibilities sum to one."""
-        rng = np.random.default_rng(123)
-        data = np.concatenate(
-            [
-                rng.normal(-1.0, 0.45, 30),
-                rng.normal(0.2, 0.55, 35),
-                rng.normal(2.0, 0.7, 30),
-            ]
-        )
-
-        short_run = _em_gaussian_mixture(data, 3, np.random.default_rng(42), max_iter=2, tol=1e-12)
-        full_run = _em_gaussian_mixture(data, 3, np.random.default_rng(42), max_iter=100, tol=1e-12)
-
-        self.assertGreater(float(np.max(np.abs(short_run - full_run))), 0.05)
-
-    def test_insufficient_data_raises(self) -> None:
-        """Test that insufficient data raises ValueError."""
-        times = [[1.0, 2.0, 3.0]]
-        with self.assertRaises(ValueError):
-            response_time_mixture(times, n_components=2)
-
-    def test_requires_scipy(self) -> None:
-        """Test mixture model reports missing optional SciPy dependency."""
-        times = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-        with patch("ier.response_time.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError):
-            response_time_mixture(times)
-
-    def test_with_nan(self) -> None:
-        """Test handling of NaN values in response times."""
-        rng = np.random.default_rng(42)
-        times = rng.uniform(0.5, 10.0, size=(20, 5))
-        times[0, :] = np.nan
-        result = response_time_mixture(times, random_seed=42)
-        self.assertTrue(np.isnan(result[0]))
-        self.assertFalse(np.isnan(result[1]))
-
-
 class TestOnset(unittest.TestCase):
     """Tests for carelessness onset detection."""
 
@@ -974,117 +697,6 @@ class TestOnset(unittest.TestCase):
         data[0, 5] = np.nan
         result = onset(data, window_size=5, min_items=10, na_rm=True)
         self.assertEqual(len(result), 1)
-
-
-class TestCompositeProbability(unittest.TestCase):
-    """Tests for composite_probability function."""
-
-    def test_basic_functionality(self) -> None:
-        """Test basic probability computation."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        result = composite_probability(data)
-        self.assertEqual(len(result), 3)
-
-    def test_range_0_1(self) -> None:
-        """Test that probabilities are in [0, 1]."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        result = composite_probability(data)
-        valid = result[~np.isnan(result)]
-        self.assertTrue(np.all(valid >= 0.0))
-        self.assertTrue(np.all(valid <= 1.0))
-
-    def test_high_composite_high_probability(self) -> None:
-        """Test that high composite scores map to high probabilities."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        probs = composite_probability(data)
-        scores = composite(data)
-        max_idx = int(np.argmax(scores))
-        self.assertEqual(int(np.argmax(probs)), max_idx)
-
-    def test_low_composite_low_probability(self) -> None:
-        """Test that low composite scores map to low probabilities."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        probs = composite_probability(data)
-        scores = composite(data)
-        min_idx = int(np.argmin(scores))
-        self.assertEqual(int(np.argmin(probs)), min_idx)
-
-    def test_specific_indices(self) -> None:
-        """Test with specific indices."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-        ]
-        result = composite_probability(data, indices=["irv", "longstring"])
-        self.assertEqual(len(result), 2)
-
-
-class TestCompositeBestSubset(unittest.TestCase):
-    """Tests for composite best_subset method."""
-
-    def test_works(self) -> None:
-        """Test that best_subset method works."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        result = composite(data, method="best_subset")
-        self.assertEqual(len(result), 3)
-
-    def test_overrides_indices(self) -> None:
-        """Test that best_subset overrides user-specified indices."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        result = composite(data, method="best_subset", indices=["mahad"])
-        self.assertEqual(len(result), 3)
-
-    def test_with_mad(self) -> None:
-        """Test best_subset with MAD item info provided."""
-        data = [
-            [5, 1, 5, 1, 5, 1, 5, 1, 5, 1],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        result = composite(
-            data,
-            method="best_subset",
-            mad_positive_items=[0, 2, 4, 6, 8],
-            mad_negative_items=[1, 3, 5, 7, 9],
-            mad_scale_max=5,
-        )
-        self.assertEqual(len(result), 3)
-
-    def test_without_mad(self) -> None:
-        """Test best_subset without MAD falls back to irv/longstring/lz."""
-        data = [
-            [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
-            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
-            [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
-        ]
-        result = composite(data, method="best_subset")
-        summary = composite_summary(data, method="best_subset")
-        self.assertNotIn("mad", summary["indices_used"])
-        self.assertEqual(len(result), 3)
 
 
 if __name__ == "__main__":

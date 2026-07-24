@@ -28,9 +28,10 @@ Do **not** expect bit-identical scores without aligning:
 
 ## Golden fixtures in this repo
 
-`tests/test_golden_parity.py` locks hand-verified `irv` and `longstring` values
-on a small matrix so regressions are caught in CI. Use that file as a template
-when adding parity checks for additional indices.
+`tests/test_golden_parity.py` locks hand-verified values for `irv`,
+`longstring`, `longstring_pattern`, `mahad` (iqr distances), `psychsyn`, and
+`evenodd` on small matrices so regressions are caught in CI. Use that file as a
+template when adding parity checks for additional indices.
 
 ## Suggested validation workflow
 
@@ -44,8 +45,9 @@ If you need parity with an existing R pipeline:
 ## What IER adds for Python users
 
 - Unified `screen()` / `composite()` registry with soft per-index errors
-- Shared `IndexOptions` config object (preferred over long kwargs lists)
+- Shared `IndexOptions` config object (sole config surface for orchestration APIs)
 - Strict typing (`py.typed`) and CI across Python 3.11–3.14
 - Optional SciPy / matplotlib extras without forcing them on base installs
-- CLI: `ier screen data.csv` / `ier composite data.csv`
+- CLI: `ier screen data.csv` / `ier composite data.csv` with JSON/CSV export
 - Explicit documentation that composite logistic scores are uncalibrated
+- Response-time helpers kept out of band (timing matrices ≠ item responses)
