@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-24
+
+### Added
+
+- Architecture note (`docs/architecture.md`) covering registry design, flagging,
+  NA policy, and uncalibrated composite probabilities.
+- Expanded golden / R-parity fixtures for `guttman`, `markov`, `person_total`,
+  `midpoint`, `lz`, and `onset`, plus JSON harness under `tests/fixtures/parity/`.
+- Synthetic detection-rate benchmark (`benchmarks/bench_detection.py`).
+- GitHub issue templates (bug / feature / methods) and a PR template.
+- Shared SciPy install hints via `_optional_imports.require_scipy`.
+
+### Changed
+
+- Docs homepage quick start uses `IndexOptions` (2.0-compatible).
+- `dev` extra composes `full`, `plot`, and `docs` instead of duplicating pins.
+- Lint and security workflows also run on pushes to `main`.
+- Screen throughput benchmark updated for the IndexOptions-only API.
+- LICENSE copyright years updated through 2026.
+- Package version bumped to 2.1.0.
+
+### Removed
+
+- Unused `raise_missing_config` flag on `score_registered_indices()` (soft-fail
+  is the only orchestration path).
+
 ## [2.0.0] - 2026-07-24
 
 ### Breaking

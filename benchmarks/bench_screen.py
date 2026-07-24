@@ -14,7 +14,7 @@ import time
 
 import numpy as np
 
-from ier import screen
+from ier import IndexOptions, screen
 
 
 def _make_data(n_respondents: int, n_items: int, seed: int) -> np.ndarray:
@@ -37,16 +37,19 @@ def main() -> None:
     args = parser.parse_args()
 
     data = _make_data(args.respondents, args.items, args.seed)
+    options = IndexOptions(scale_min=1, scale_max=5)
 
     for _ in range(args.warmup):
-        screen(data, scale_min=1, scale_max=5)
+        screen(data, options=options)
 
     timings: list[float] = []
+    result = None
     for _ in range(args.repeats):
         start = time.perf_counter()
-        result = screen(data, scale_min=1, scale_max=5)
+        result = screen(data, options=options)
         timings.append(time.perf_counter() - start)
 
+    assert result is not None
     print(f"shape={data.shape} indices={result['n_indices']}")
     print(
         "screen seconds: "

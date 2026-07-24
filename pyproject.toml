@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "insufficient-effort"
-version = "2.0.0"
+version = "2.1.0"
 authors = [{ name = "Cameron Lyons", email = "cameron.lyons2@gmail.com" }]
 description = "Python library for detecting Insufficient Effort Responding (IER) in survey data"
 readme = "README.md"
@@ -33,9 +33,8 @@ docs = [
     "mkdocstrings[python]>=0.26.0,<1",
 ]
 dev = [
-    "scipy>=1.16.3,<1.18",
+    "insufficient-effort[full,plot,docs]",
     "scipy-stubs>=1.16.3,<1.18",
-    "matplotlib>=3.8.0,<4",
     "pandas>=2.2.0,<3",
     "polars>=1.0.0,<2",
     "pytest>=9.0.3,<10",
@@ -50,9 +49,6 @@ dev = [
     "pillow>=12.2.0,<13",
     "pygments>=2.20.0,<3",
     "requests>=2.33.0,<3",
-    "mkdocs>=1.6.0,<2",
-    "mkdocs-material>=9.5.0,<10",
-    "mkdocstrings[python]>=0.26.0,<1",
 ]
 
 [project.scripts]

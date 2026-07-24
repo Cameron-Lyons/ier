@@ -7,13 +7,15 @@ to provide a NumPy-first Python API with typed orchestration via `screen()` and
 ## Related R packages
 
 | Concept | Common R reference | IER function |
-|---------|--------------------|--------------|
+|--------|--------------------|--------------|
 | Intra-individual response variability | `careless::irv` | `irv()` |
 | Longest identical string | `careless::longstring` | `longstring_scores()` / registry `"longstring"` |
 | Psychometric synonyms / antonyms | `careless::psychsyn` / `psychant` | `psychsyn()` / `psychant()` |
 | Mahalanobis distance | `careless::mahad` | `mahad()` |
 | Even–odd consistency | `careless::evenodd` | `evenodd()` |
 | Person-fit / Guttman errors | PerFit / custom | `guttman()`, `lz()` |
+| Transition entropy | custom / Meade & Craig style | `markov()` |
+| Carelessness onset | changepoint literature | `onset()` |
 
 Exact function names, defaults, and NA handling differ across implementations.
 Do **not** expect bit-identical scores without aligning:
@@ -28,10 +30,31 @@ Do **not** expect bit-identical scores without aligning:
 
 ## Golden fixtures in this repo
 
-`tests/test_golden_parity.py` locks hand-verified values for `irv`,
-`longstring`, `longstring_pattern`, `mahad` (iqr distances), `psychsyn`, and
-`evenodd` on small matrices so regressions are caught in CI. Use that file as a
-template when adding parity checks for additional indices.
+`tests/test_golden_parity.py` locks hand-verified / regression values for:
+
+`irv`, `longstring`, `longstring_pattern`, `mahad` (iqr), `psychsyn`,
+`evenodd`, `guttman`, `markov`, `person_total`, `midpoint`, `lz`, and `onset`.
+
+JSON copies under `tests/fixtures/parity/` power a harness that loads the same
+matrices and expected vectors. Treat JSON as the portable contract if you want
+to regenerate expectations from R and drop in a replacement file.
+
+## Regenerating fixtures from R
+
+1. Export the fixture `matrix` from JSON to CSV.
+2. Score the matching R function with aligned options (NA policy, critval, …).
+3. Replace the `expected` vectors (use `null` for NaN).
+4. Run `pytest tests/test_golden_parity.py -q`.
+
+Example sketch for IRV / longstring:
+
+```r
+library(jsonlite)
+library(careless)
+fix <- fromJSON("tests/fixtures/parity/irv_longstring.json")
+x <- as.matrix(fix$matrix)
+# Compare definitions carefully before overwriting expected$irv / longstring.
+```
 
 ## Suggested validation workflow
 
@@ -51,3 +74,5 @@ If you need parity with an existing R pipeline:
 - CLI: `ier screen data.csv` / `ier composite data.csv` with JSON/CSV export
 - Explicit documentation that composite logistic scores are uncalibrated
 - Response-time helpers kept out of band (timing matrices ≠ item responses)
+- Architecture note covering registry, flagging, and NA policy
+- Synthetic detection-rate benchmark (`benchmarks/bench_detection.py`)

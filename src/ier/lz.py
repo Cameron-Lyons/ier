@@ -16,6 +16,7 @@ References:
 """
 
 import logging
+from typing import Any
 
 import numpy as np
 
@@ -24,9 +25,11 @@ from ier._validation import MatrixLike, validate_matrix_input
 logger = logging.getLogger(__name__)
 
 SCIPY_AVAILABLE = False
+optimize: Any = None
 try:
-    from scipy import optimize
+    from scipy import optimize as _optimize
 
+    optimize = _optimize
     SCIPY_AVAILABLE = True
 except ImportError as e:
     # SciPy is optional; ML theta estimation falls back to logit transformation
@@ -257,6 +260,7 @@ def _estimate_theta(x: np.ndarray, a: np.ndarray, b: np.ndarray, na_rm: bool = T
 
 def _ml_theta(responses: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
     """Maximum likelihood estimation of theta for a single person."""
+    assert optimize is not None
 
     def neg_log_likelihood(theta_val: float) -> float:
         prob = 1 / (1 + np.exp(-a * (theta_val - b)))

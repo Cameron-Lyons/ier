@@ -20,6 +20,8 @@ cd ier
 python -m pip install -e ".[dev]"
 ```
 
+The `dev` extra composes `full`, `plot`, and `docs` plus test/lint tooling.
+
 ## Run Quality Checks
 
 Run the unified suite before opening a PR:
@@ -42,11 +44,23 @@ bandit -r src/ier -c pyproject.toml
 uv run mkdocs build --strict
 ```
 
-Optional screen benchmark:
+### Lint roles
+
+- **Ruff** is the primary linter/formatter (fast, CI-blocking style + bugbear rules).
+- **Pylint** remains a secondary depth check (`--fail-under=9.0`) for a few
+  heuristics Ruff does not cover. Prefer fixing Ruff findings first.
+
+Optional benchmarks:
 
 ```bash
 uv run python benchmarks/bench_screen.py
+uv run python benchmarks/bench_detection.py
 ```
+
+## Architecture
+
+See [docs/architecture.md](docs/architecture.md) for registry design, flagging
+policy, NA handling, and composite score caveats.
 
 ## Pull Request Expectations
 

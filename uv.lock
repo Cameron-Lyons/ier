@@ -566,7 +566,7 @@ wheels = [
 
 [[package]]
 name = "insufficient-effort"
-version = "2.0.0"
+version = "2.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
@@ -611,13 +611,10 @@ plot = [
 requires-dist = [
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.9.0,<2" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.150.0,<7" },
-    { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.8.0,<4" },
+    { name = "insufficient-effort", extras = ["full", "plot", "docs"], marker = "extra == 'dev'" },
     { name = "matplotlib", marker = "extra == 'plot'", specifier = ">=3.8.0,<4" },
-    { name = "mkdocs", marker = "extra == 'dev'", specifier = ">=1.6.0,<2" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6.0,<2" },
-    { name = "mkdocs-material", marker = "extra == 'dev'", specifier = ">=9.5.0,<10" },
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5.0,<10" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'dev'", specifier = ">=0.26.0,<1" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.26.0,<1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.19.0,<3" },
     { name = "numpy", specifier = ">=1.26.0,<2.5" },
@@ -632,7 +629,6 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0,<8" },
     { name = "requests", marker = "extra == 'dev'", specifier = ">=2.33.0,<3" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.0,<1" },
-    { name = "scipy", marker = "extra == 'dev'", specifier = ">=1.16.3,<1.18" },
     { name = "scipy", marker = "extra == 'full'", specifier = ">=1.11.0,<1.18" },
     { name = "scipy-stubs", marker = "extra == 'dev'", specifier = ">=1.16.3,<1.18" },
 ]

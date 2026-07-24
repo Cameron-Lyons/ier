@@ -11,6 +11,8 @@ common R careless-responding tooling (e.g. ``careless::irv`` /
 - mahad (iqr path): Mahalanobis distances (NumPy-only; used by screen/composite).
 - psychsyn: within-person synonym correlations for pairs above ``critval``.
 - evenodd: mean even–odd consistency across factors.
+- guttman / markov / person_total / midpoint / lz / onset: locked regression
+  values (see also ``tests/fixtures/parity/*.json``).
 
 They are regression fixtures for scientific credibility, not a claim of
 bit-identical output against every CRAN release.
@@ -18,7 +20,9 @@ bit-identical output against every CRAN release.
 
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -26,13 +30,21 @@ from ier import (
     IndexOptions,
     composite,
     evenodd,
+    guttman,
     irv,
     longstring_pattern,
     longstring_scores,
+    lz,
     mahad,
+    markov,
+    onset,
+    person_total,
     screen,
 )
 from ier.psychsyn import psychsyn
+from ier.u3_poly import midpoint_responding
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "parity"
 
 # Respondent × item matrix chosen so each row has an obvious analytic answer.
 GOLDEN_MATRIX = np.array(
@@ -84,6 +96,102 @@ EVENODD_MATRIX = np.array(
     dtype=float,
 )
 EXPECTED_EVENODD = np.array([1.0, 0.0, 0.0, 0.0])
+
+ONSET_MATRIX = np.array(
+    [
+        [
+            5.0,
+            4.0,
+            4.0,
+            2.0,
+            5.0,
+            1.0,
+            3.0,
+            4.0,
+            5.0,
+            3.0,
+            2.0,
+            2.0,
+            3.0,
+            3.0,
+            4.0,
+            5.0,
+            1.0,
+            5.0,
+            3.0,
+            2.0,
+            4.0,
+            3.0,
+            2.0,
+            2.0,
+            4.0,
+            3.0,
+            3.0,
+            2.0,
+            4.0,
+            2.0,
+            2.0,
+            5.0,
+            2.0,
+            2.0,
+            4.0,
+            4.0,
+            1.0,
+            1.0,
+            2.0,
+            5.0,
+        ],
+        [
+            3.0,
+            4.0,
+            2.0,
+            2.0,
+            4.0,
+            5.0,
+            1.0,
+            1.0,
+            4.0,
+            2.0,
+            3.0,
+            1.0,
+            5.0,
+            3.0,
+            5.0,
+            4.0,
+            4.0,
+            2.0,
+            4.0,
+            1.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+        ],
+        [3.0] * 40,
+    ],
+    dtype=float,
+)
+EXPECTED_ONSET = np.array([9.0, 15.0, np.nan])
+
+
+def _expected_array(values: list[float | None]) -> np.ndarray:
+    return np.array([np.nan if v is None else v for v in values], dtype=float)
 
 
 class TestGoldenIrvLongstring(unittest.TestCase):
@@ -173,6 +281,131 @@ class TestGoldenMahadPsychsynEvenodd(unittest.TestCase):
         np.testing.assert_allclose(
             screen_result["scores"]["evenodd"], EXPECTED_EVENODD, rtol=0, atol=1e-12
         )
+
+
+class TestGoldenExtendedIndices(unittest.TestCase):
+    """Locked fixtures for guttman / markov / person_total / midpoint / lz / onset."""
+
+    def test_guttman_locked(self) -> None:
+        scores = guttman(PARITY_MATRIX)
+        expected = np.array(
+            [
+                0.7333333333333333,
+                0.6666666666666666,
+                0.0,
+                0.4666666666666667,
+                0.0,
+                0.13333333333333333,
+                0.4,
+                0.13333333333333333,
+            ]
+        )
+        np.testing.assert_allclose(scores, expected, rtol=0, atol=1e-12)
+
+    def test_markov_locked(self) -> None:
+        scores = markov(PARITY_MATRIX)
+        expected = np.array(
+            [
+                -0.0,
+                0.4,
+                -0.0,
+                -0.0,
+                -0.0,
+                0.9509775004326937,
+                0.9509775004326937,
+                -0.0,
+            ]
+        )
+        np.testing.assert_allclose(scores, expected, rtol=0, atol=1e-12)
+
+    def test_person_total_locked(self) -> None:
+        scores = person_total(PARITY_MATRIX)
+        expected = np.array(
+            [
+                0.7635899174405921,
+                0.6863485850246135,
+                np.nan,
+                0.4842001247062523,
+                np.nan,
+                -0.39129279043561477,
+                0.39129279043561477,
+                -0.4842001247062523,
+            ]
+        )
+        np.testing.assert_allclose(scores, expected, rtol=0, atol=1e-12, equal_nan=True)
+
+    def test_midpoint_locked(self) -> None:
+        scores = midpoint_responding(PARITY_MATRIX, scale_min=1, scale_max=5)
+        expected = np.array([1 / 6, 1 / 3, 1.0, 0.0, 0.0, 0.0, 0.0, 0.5])
+        np.testing.assert_allclose(scores, expected, rtol=0, atol=1e-12)
+
+    def test_lz_locked(self) -> None:
+        scores = lz(PARITY_MATRIX)
+        expected = np.array(
+            [
+                1.1901017244670749,
+                1.3763807455050414,
+                0.5659327404151528,
+                -0.18770570477613116,
+                0.5659327404151528,
+                -0.46960829509822394,
+                0.15231755613664857,
+                -1.0950615622617537,
+            ]
+        )
+        np.testing.assert_allclose(scores, expected, rtol=0, atol=1e-12)
+
+    def test_onset_locked(self) -> None:
+        scores = onset(ONSET_MATRIX, window_size=5, min_items=20)
+        np.testing.assert_allclose(scores, EXPECTED_ONSET, rtol=0, atol=1e-12, equal_nan=True)
+        screen_result = screen(
+            ONSET_MATRIX,
+            indices=["onset"],
+            options=IndexOptions(onset_window_size=5, onset_min_items=20),
+        )
+        np.testing.assert_allclose(
+            screen_result["scores"]["onset"], EXPECTED_ONSET, rtol=0, atol=1e-12, equal_nan=True
+        )
+
+
+class TestParityJsonHarness(unittest.TestCase):
+    """Load JSON fixtures so R-side regenerations can drop in replacement files."""
+
+    def test_all_parity_fixtures(self) -> None:
+        paths = sorted(FIXTURES.glob("*.json"))
+        self.assertGreaterEqual(len(paths), 4)
+        scorers = {
+            "irv": lambda x, _opts: irv(x),
+            "longstring": lambda x, _opts: longstring_scores(x),
+            "mahad_iqr": lambda x, _opts: mahad(x, method="iqr"),
+            "psychsyn": lambda x, opts: psychsyn(
+                x, critval=float(opts.get("psychsyn_critval", 0.6)), resample_na=True
+            ),
+            "guttman": lambda x, _opts: guttman(x),
+            "markov": lambda x, _opts: markov(x),
+            "person_total": lambda x, _opts: person_total(x),
+            "midpoint": lambda x, opts: midpoint_responding(
+                x,
+                scale_min=float(opts.get("scale_min", 1)),
+                scale_max=float(opts.get("scale_max", 5)),
+            ),
+            "lz": lambda x, _opts: lz(x),
+            "evenodd": lambda x, opts: evenodd(x, factors=list(opts["evenodd_factors"])),
+            "onset": lambda x, opts: onset(
+                x,
+                window_size=int(opts.get("onset_window_size", 10)),
+                min_items=int(opts.get("onset_min_items", 20)),
+            ),
+        }
+        for path in paths:
+            payload = json.loads(path.read_text())
+            matrix = np.asarray(payload["matrix"], dtype=float)
+            options = payload.get("options", {})
+            for name, expected_list in payload["expected"].items():
+                with self.subTest(fixture=path.name, index=name):
+                    scores = scorers[name](matrix, options)
+                    expected = _expected_array(expected_list)
+                    np.testing.assert_allclose(scores, expected, rtol=0, atol=1e-10, equal_nan=True)
 
 
 class TestIndexOptionsApi(unittest.TestCase):

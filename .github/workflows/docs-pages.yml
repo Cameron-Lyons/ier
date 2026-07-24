@@ -10,6 +10,7 @@ on:
       - "CHANGELOG.md"
       - "pyproject.toml"
       - ".github/workflows/docs-pages.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read

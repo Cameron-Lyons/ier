@@ -1,6 +1,7 @@
 """Unit tests for specialized IER indices."""
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -503,6 +504,23 @@ class TestMahadQQPlot(unittest.TestCase):
         theoretical, observed = mahad_qqplot(data)
         self.assertEqual(len(theoretical), 30)
         self.assertEqual(len(observed), 30)
+
+    def test_requires_scipy(self) -> None:
+        """Test Q-Q plot reports missing optional SciPy dependency."""
+        rng = np.random.default_rng(42)
+        data = rng.normal(size=(20, 3))
+        with (
+            patch(
+                "ier.mahad.require_scipy",
+                side_effect=RuntimeError(
+                    "scipy is required for mahad_qqplot. "
+                    "Install with: pip install 'insufficient-effort[full]'"
+                ),
+            ),
+            self.assertRaises(RuntimeError) as ctx,
+        ):
+            mahad_qqplot(data)
+        self.assertIn("insufficient-effort[full]", str(ctx.exception))
 
     def test_shapes_match(self) -> None:
         """Test that output shapes match."""

@@ -70,6 +70,7 @@ ier --version
 Full docs live in [`docs/`](docs/) (MkDocs):
 
 - [Getting started](docs/getting-started.md)
+- [Architecture](docs/architecture.md)
 - [Index catalog](docs/indices.md)
 - [Screening workflow](docs/workflows/screening.md)
 - [Composite guidance](docs/workflows/composite.md)
@@ -92,10 +93,11 @@ uv run python examples/composite_scoring.py
 uv run python examples/careless_responding_walkthrough.py
 ```
 
-Benchmark:
+Benchmarks:
 
 ```bash
 uv run python benchmarks/bench_screen.py
+uv run python benchmarks/bench_detection.py
 ```
 
 ## Contributing
