@@ -2,23 +2,9 @@ name: Docs
 
 on:
   workflow_call:
-  push:
-    branches: [main]
-    paths:
-      - "docs/**"
-      - "mkdocs.yml"
-      - "src/ier/**"
-      - "CHANGELOG.md"
-      - "pyproject.toml"
 
-# Keep top-level permissions minimal so this workflow can be called from Veto
-# (which only grants contents: read). Pages/OIDC are granted on the deploy job.
 permissions:
   contents: read
-
-concurrency:
-  group: docs-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -38,23 +24,3 @@ jobs:
 
       - name: Build docs
         run: uv run mkdocs build --strict
-
-      - name: Upload Pages artifact
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: site
-
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
