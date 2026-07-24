@@ -39,7 +39,16 @@ Accepted inputs:
 - NumPy arrays
 - objects with `__array__` (e.g. pandas DataFrames)
 
-Polars DataFrames should usually be converted with `.to_numpy()`.
+Polars DataFrames usually work via `__array__`, but converting with
+`.to_numpy()` is the most explicit path:
+
+```python
+import polars as pl
+from ier import irv
+
+df = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+scores = irv(df.to_numpy())
+```
 
 ```python
 import pandas as pd

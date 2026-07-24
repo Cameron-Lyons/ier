@@ -8,7 +8,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from ier.cli import _load_matrix, main
+from ier.cli import (
+    _load_matrix,
+    _parse_float_list,
+    _parse_int_list,
+    _parse_pair_list,
+    main,
+)
 
 
 class TestCli(unittest.TestCase):
@@ -74,6 +80,132 @@ class TestCli(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 0)
+
+    def test_screen_json_output(self) -> None:
+        out = self.root / "screen.json"
+        code = main(
+            [
+                "screen",
+                str(self.csv_path),
+                "--indices",
+                "irv",
+                "longstring",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(out.exists())
+        self.assertIn("flag_counts", out.read_text(encoding="utf-8"))
+
+    def test_composite_csv_output(self) -> None:
+        out = self.root / "scores.csv"
+        code = main(
+            [
+                "composite",
+                str(self.csv_path),
+                "--indices",
+                "irv",
+                "longstring",
+                "--format",
+                "csv",
+                "--output",
+                str(out),
+            ]
+        )
+        self.assertEqual(code, 0)
+        text = out.read_text(encoding="utf-8")
+        self.assertIn("composite_score", text)
+
+    def test_jagged_csv_errors(self) -> None:
+        jagged = self.root / "jagged.csv"
+        jagged.write_text("1,2,3\n4,5\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "jagged"):
+            _load_matrix(jagged, ",")
+
+    def test_screen_csv_and_composite_json(self) -> None:
+        screen_out = self.root / "screen.csv"
+        composite_out = self.root / "composite.json"
+        self.assertEqual(
+            main(
+                [
+                    "screen",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(screen_out),
+                ]
+            ),
+            0,
+        )
+        self.assertIn("irv_score", screen_out.read_text(encoding="utf-8"))
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(composite_out),
+                ]
+            ),
+            0,
+        )
+        self.assertIn("scores", composite_out.read_text(encoding="utf-8"))
+
+    def test_index_options_cli_flags(self) -> None:
+        code = main(
+            [
+                "screen",
+                str(self.csv_path),
+                "--indices",
+                "evenodd",
+                "semantic_syn",
+                "--evenodd-factors",
+                "2,3",
+                "--semantic-item-pairs",
+                "0,1;2,3",
+                "--top",
+                "1",
+            ]
+        )
+        self.assertEqual(code, 0)
+
+    def test_parse_helpers(self) -> None:
+        self.assertIsNone(_parse_int_list(None))
+        self.assertIsNone(_parse_int_list(""))
+        self.assertEqual(_parse_int_list("1, 2"), [1, 2])
+        self.assertIsNone(_parse_float_list(None))
+        self.assertIsNone(_parse_float_list(" , "))
+        self.assertEqual(_parse_float_list("1.5,2"), [1.5, 2.0])
+        self.assertIsNone(_parse_pair_list(None))
+        self.assertEqual(_parse_pair_list("0,1;2,3"), [(0, 1), (2, 3)])
+        self.assertIsNone(_parse_pair_list(";;"))
+        with self.assertRaises(ValueError):
+            _parse_pair_list("0-1")
+
+    def test_invalid_semantic_pairs_cli(self) -> None:
+        code = main(
+            [
+                "screen",
+                str(self.csv_path),
+                "--indices",
+                "irv",
+                "--semantic-item-pairs",
+                "bad",
+            ]
+        )
+        self.assertEqual(code, 1)
 
     def test_explicit_delimiter(self) -> None:
         tsv = self.root / "data.tsv"

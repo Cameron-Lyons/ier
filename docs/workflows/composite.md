@@ -59,4 +59,6 @@ combination so that higher composite always means more IER signal.
 
 ```bash
 ier composite data.csv --indices irv longstring --method mean
+ier composite data.csv --format json --output composite.json
+ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
 ```

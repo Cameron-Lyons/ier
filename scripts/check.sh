@@ -24,7 +24,7 @@ echo "==> mypy"
 "${RUN[@]}" mypy src/ier
 
 echo "==> pylint"
-"${RUN[@]}" pylint src/ier
+"${RUN[@]}" pylint src/ier --fail-under=9.0
 
 echo "==> bandit"
 "${RUN[@]}" bandit -r src/ier -c pyproject.toml

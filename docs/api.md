@@ -11,6 +11,7 @@
         - composite_probability
         - composite_summary
         - irv
+        - longstring_scores
         - longstring
         - longstring_pattern
         - mahad

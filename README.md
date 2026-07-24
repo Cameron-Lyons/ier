@@ -9,10 +9,10 @@ For a comprehensive methods review, see
 ## Features
 
 - Multiple detection families: consistency, response patterns, response styles, outliers, response times, attention checks
-- Workflow APIs: `screen()` and `composite()` with shared `IndexOptions`
-- CLI: `ier screen data.csv` / `ier composite data.csv`
+- Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
+- CLI: `ier screen data.csv` / `ier composite data.csv` (text / JSON / CSV)
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
-- Soft per-index errors during screening
+- Soft per-index errors during screening and composite scoring
 - Full type annotations (`py.typed`)
 
 ## Installation
@@ -59,7 +59,9 @@ print("Composite:", scores)
 
 ```bash
 ier screen data.csv --scale-min 1 --scale-max 5
+ier screen data.csv --format json --output screen.json
 ier composite data.csv --indices irv longstring
+ier composite data.csv --format csv --output scores.csv
 ier --version
 ```
 

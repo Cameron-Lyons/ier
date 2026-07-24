@@ -84,10 +84,10 @@ def mahad(
     if method not in ["chi2", "iqr", "zscore"]:
         raise ValueError("method must be one of: 'chi2', 'iqr', 'zscore'")
 
-    # Distances are NumPy-only; SciPy is only needed for chi-squared flagging.
-    if flag and method == "chi2" and not SCIPY_AVAILABLE:
+    # Distances are NumPy-only; SciPy is needed for chi2 / zscore flagging.
+    if flag and method in ("chi2", "zscore") and not SCIPY_AVAILABLE:
         raise RuntimeError(
-            "scipy is required for chi2 flagging. "
+            f"scipy is required for {method} flagging. "
             "Install with: pip install 'insufficient-effort[full]'"
         )
 
@@ -207,7 +207,8 @@ def _flag_outliers(
         if std_dist == 0:
             return np.full_like(distances, False, dtype=bool)
 
-        z_threshold = stats.norm.ppf(1 - (1 - confidence) / 2) if SCIPY_AVAILABLE else 2.0
+        # SCIPY_AVAILABLE already enforced by mahad() for method="zscore".
+        z_threshold = stats.norm.ppf(1 - (1 - confidence) / 2)
 
         flags = np.full_like(distances, False, dtype=bool)
         valid_mask = ~np.isnan(distances)
