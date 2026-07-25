@@ -30,12 +30,12 @@ plot = ["matplotlib>=3.8.0,<4"]
 docs = [
     "mkdocs>=1.6.0,<2",
     "mkdocs-material>=9.5.0,<10",
-    "mkdocstrings[python]>=0.26.0,<1",
+    "mkdocstrings[python]>=0.26.0,<2",
 ]
 dev = [
     "insufficient-effort[full,plot,docs]",
     "scipy-stubs>=1.16.3,<1.18",
-    "pandas>=2.2.0,<3",
+    "pandas>=2.2.0,<4",
     "polars>=1.0.0,<2",
     "pytest>=9.0.3,<10",
     "pytest-cov>=7.0.0,<8",
