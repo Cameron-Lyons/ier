@@ -273,15 +273,24 @@ class TestCli(unittest.TestCase):
         code = main(["screen", str(tsv), "--delimiter", "\t", "--indices", "irv", "--top", "1"])
         self.assertEqual(code, 0)
 
+    def test_whitespace_delimited_input(self) -> None:
+        whitespace = self.root / "data.txt"
+        whitespace.write_text("i1 i2 i3\n1  2 3\n4 5   6\n", encoding="utf-8")
+
+        matrix = _load_matrix(whitespace, None)
+
+        np.testing.assert_array_equal(matrix, np.array([[1, 2, 3], [4, 5, 6]], dtype=float))
+        code = main(["screen", str(whitespace), "--indices", "irv", "--top", "1"])
+        self.assertEqual(code, 0)
+
     def test_sniffer_fallback(self) -> None:
         weird = self.root / "weird.csv"
-        weird.write_text("1 2 3\n4 5 6\n", encoding="utf-8")
-        with (
-            patch("ier.cli.csv.Sniffer.sniff", side_effect=csv.Error("nope")),
-            self.assertRaises(ValueError),
-        ):
-            # Space-separated with comma fallback fails float parsing.
-            _load_matrix(weird, None)
+        weird.write_text("1  2\t3\n4\t5  6\n", encoding="utf-8")
+
+        with patch("ier.cli.csv.Sniffer.sniff", side_effect=csv.Error("nope")):
+            matrix = _load_matrix(weird, None)
+
+        np.testing.assert_array_equal(matrix, np.array([[1, 2, 3], [4, 5, 6]], dtype=float))
 
     def test_empty_file(self) -> None:
         empty = self.root / "empty.csv"
