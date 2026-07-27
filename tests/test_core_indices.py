@@ -110,6 +110,17 @@ class TestLongstring(unittest.TestCase):
         expected: list[tuple[str, int] | None] = [("A", 4), ("A", 1), None]
         self.assertEqual(result, expected)
 
+        object_data: npt.NDArray[np.object_] = np.array(["aaaa", "abc"], dtype=object)
+        self.assertEqual(longstring(object_data), [("a", 4), ("a", 1)])
+
+    def test_longstring_rejects_numeric_or_multidimensional_arrays(self) -> None:
+        """Test arrays cannot be silently converted into meaningless text runs."""
+        with self.assertRaisesRegex(TypeError, "must be strings"):
+            longstring(np.array([1, 1, 2]))
+
+        with self.assertRaisesRegex(ValueError, "one-dimensional"):
+            longstring(np.array([["aaaa", "bbbb"], ["abc", "def"]]))
+
     def test_longstring_validation(self) -> None:
         """Test longstring function raises appropriate errors for invalid inputs."""
         with self.assertRaises(ValueError):
