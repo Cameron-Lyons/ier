@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "IER: Python package for detecting Insufficient Effort Responding"
+abstract: >-
+  IER is a Python package for detecting insufficient effort responding and
+  careless responding in survey data.
+authors:
+  - family-names: Lyons
+    given-names: Cameron
+    email: cameron.lyons2@gmail.com
+type: software
+license: MIT
+repository-code: "https://github.com/Cameron-Lyons/ier"
+url: "https://cameron-lyons.github.io/ier/"
+keywords:
+  - insufficient effort responding
+  - careless responding
+  - survey research
+  - psychometrics
+  - data quality
