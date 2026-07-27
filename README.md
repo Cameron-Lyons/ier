@@ -66,7 +66,8 @@ ier --version
 ```
 
 Input matrices may be comma-, tab-, semicolon-, or whitespace-delimited. Common
-delimiters are auto-detected unless `--delimiter` is supplied.
+delimiters are auto-detected unless `--delimiter` is supplied. Blank fields in
+delimited files are loaded as missing values (`NaN`).
 
 ## Documentation
 

@@ -83,6 +83,9 @@ flags = response_time_flag(times, cutoff_percentile=5)
 
 ## CLI
 
+Blank fields in comma-, tab-, or semicolon-delimited input are loaded as missing
+values (`NaN`) and follow each index's documented missing-data behavior.
+
 ```bash
 ier screen data.csv --scale-min 1 --scale-max 5 --indices irv longstring
 ier screen data.csv --format json --output screen.json

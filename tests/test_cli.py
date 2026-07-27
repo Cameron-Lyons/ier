@@ -200,6 +200,39 @@ class TestCli(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "jagged"):
             _load_matrix(jagged, ",")
 
+    def test_blank_csv_cells_load_as_nan(self) -> None:
+        missing = self.root / "missing-values.csv"
+        missing.write_text("i1,i2,i3\n1,,3\n,5,6\n", encoding="utf-8")
+
+        matrix = _load_matrix(missing, None)
+
+        np.testing.assert_equal(
+            matrix,
+            np.array([[1.0, np.nan, 3.0], [np.nan, 5.0, 6.0]]),
+        )
+
+    def test_blank_first_cell_does_not_discard_first_data_row(self) -> None:
+        missing = self.root / "missing-first.csv"
+        missing.write_text(",2,3\n4,5,6\n", encoding="utf-8")
+
+        matrix = _load_matrix(missing, ",")
+
+        np.testing.assert_equal(
+            matrix,
+            np.array([[np.nan, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+        )
+
+    def test_blank_first_header_cell_still_drops_header_row(self) -> None:
+        missing = self.root / "blank-header.csv"
+        missing.write_text(",item2,item3\n1,2,3\n4,5,6\n", encoding="utf-8")
+
+        matrix = _load_matrix(missing, ",")
+
+        np.testing.assert_array_equal(
+            matrix,
+            np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+        )
+
     def test_screen_csv_and_composite_json(self) -> None:
         screen_out = self.root / "screen.csv"
         composite_out = self.root / "composite.json"

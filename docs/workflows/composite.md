@@ -57,6 +57,9 @@ combination so that higher composite always means more IER signal.
 
 ## CLI
 
+Blank fields in comma-, tab-, or semicolon-delimited input are loaded as missing
+values (`NaN`) and follow each index's documented missing-data behavior.
+
 ```bash
 ier composite data.csv --indices irv longstring --method mean
 ier composite data.csv --format json --output composite.json

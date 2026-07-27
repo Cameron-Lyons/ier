@@ -18,6 +18,24 @@ if TYPE_CHECKING:
     from ier.types import ScreenResult
 
 
+def _row_starts_with_non_numeric_value(row: list[str]) -> bool:
+    """Return whether the first non-empty cell cannot be parsed as a number."""
+    for cell in row:
+        if not cell.strip():
+            continue
+        try:
+            float(cell)
+        except ValueError:
+            return True
+        return False
+    return False
+
+
+def _parse_numeric_cell(cell: str) -> float:
+    """Parse a matrix cell, treating blank delimited fields as missing values."""
+    return float(cell) if cell.strip() else np.nan
+
+
 def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
     """Load a respondent × item matrix from CSV/TSV/whitespace text."""
     if delimiter is not None and (len(delimiter) != 1 or delimiter in "\r\n"):
@@ -47,12 +65,9 @@ def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
     if not rows:
         raise ValueError(f"no data rows found in {path}")
 
-    # Drop a header row if the first cell is non-numeric.
-    start = 0
-    try:
-        float(rows[0][0])
-    except ValueError:
-        start = 1
+    # Drop a header row if its first non-empty cell is non-numeric. Blank cells are
+    # valid missing values and must not cause the first data row to be discarded.
+    start = int(_row_starts_with_non_numeric_value(rows[0]))
 
     data_rows = rows[start:]
     if not data_rows:
@@ -66,7 +81,10 @@ def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
         )
 
     try:
-        matrix = np.array([[float(cell) for cell in row] for row in data_rows], dtype=float)
+        matrix = np.array(
+            [[_parse_numeric_cell(cell) for cell in row] for row in data_rows],
+            dtype=float,
+        )
     except ValueError as err:
         raise ValueError(f"failed to parse numeric matrix from {path}: {err}") from err
 
