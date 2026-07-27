@@ -65,6 +65,9 @@ ier composite data.csv --format csv --output scores.csv
 ier --version
 ```
 
+Input matrices may be comma-, tab-, semicolon-, or whitespace-delimited. Common
+delimiters are auto-detected unless `--delimiter` is supplied.
+
 ## Documentation
 
 Full docs live in [`docs/`](docs/) (MkDocs):

@@ -28,9 +28,14 @@ def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
                 dialect = csv.Sniffer().sniff(sample, delimiters=",\t;")
                 delim = dialect.delimiter
             except csv.Error:
-                delim = ","
-            reader = csv.reader(handle, delimiter=delim)
-            rows = [row for row in reader if row and any(cell.strip() for cell in row)]
+                rows = []
+                for line in handle:
+                    row = line.split()
+                    if row:
+                        rows.append(row)
+            else:
+                reader = csv.reader(handle, delimiter=delim)
+                rows = [row for row in reader if row and any(cell.strip() for cell in row)]
     else:
         with path.open(newline="", encoding="utf-8") as handle:
             reader = csv.reader(handle, delimiter=delimiter)
@@ -53,7 +58,7 @@ def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
     widths = {len(row) for row in data_rows}
     if len(widths) != 1:
         raise ValueError(
-            f"jagged CSV in {path}: rows have unequal lengths {sorted(widths)}; "
+            f"jagged delimited input in {path}: rows have unequal lengths {sorted(widths)}; "
             "expected a rectangular respondent×item matrix"
         )
 
@@ -129,7 +134,7 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--delimiter",
         default=None,
-        help="CSV delimiter (auto-detect if omitted)",
+        help="Input delimiter (auto-detect comma, tab, semicolon, or whitespace if omitted)",
     )
     parser.add_argument("--scale-min", type=float, default=None)
     parser.add_argument("--scale-max", type=float, default=None)
@@ -201,11 +206,13 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    screen_parser = sub.add_parser("screen", help="Run multi-index screening on a CSV matrix.")
+    screen_parser = sub.add_parser(
+        "screen", help="Run multi-index screening on a delimited matrix."
+    )
     screen_parser.add_argument(
         "data",
         type=Path,
-        help="Path to CSV/TSV of respondent × item scores",
+        help="Path to CSV/TSV/whitespace respondent × item scores",
     )
     screen_parser.add_argument(
         "--indices",
@@ -220,7 +227,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "composite", help="Compute a composite IER score for each respondent."
     )
     composite_parser.add_argument(
-        "data", type=Path, help="Path to CSV/TSV of respondent × item scores"
+        "data", type=Path, help="Path to CSV/TSV/whitespace respondent × item scores"
     )
     composite_parser.add_argument(
         "--indices",
