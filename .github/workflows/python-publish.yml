@@ -16,11 +16,31 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
+  validate-release:
+    name: Validate release version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Match release tag to project version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: python scripts/check_release_tag.py "$RELEASE_TAG" pyproject.toml
+
+      - name: Note manual publish target
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          PUBLISH_TARGET: ${{ inputs.target }}
+        run: echo "Manual publish requested for $PUBLISH_TARGET"
+
   test:
     name: Run tests before publish
+    needs: validate-release
     uses: ./.github/workflows/ci.yml
     secrets: inherit
 
@@ -85,6 +105,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, test-install]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+    permissions:
+      contents: read
+      id-token: write
     environment:
       name: testpypi
       url: https://test.pypi.org/p/insufficient-effort
@@ -106,6 +129,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, test-install]
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+    permissions:
+      contents: read
+      id-token: write
     environment:
       name: pypi
       url: https://pypi.org/p/insufficient-effort

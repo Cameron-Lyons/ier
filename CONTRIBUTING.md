@@ -87,9 +87,10 @@ policy, NA handling, and composite score caveats.
 The repository supports two release paths:
 
 - Tag-based GitHub release workflow (`vX.Y.Z`) — runs the full CI suite, then
-  produces artifacts and a GitHub Release.
+  produces artifacts and a GitHub Release. The tag must exactly match
+  `v<project.version>` from `pyproject.toml`.
 - Publish workflow (`Publish to PyPI`) — runs tests, builds, then uploads to
-  TestPyPI/PyPI.
+  TestPyPI/PyPI. Release-triggered publishes enforce the same tag/version match.
 
 ### Publish to TestPyPI
 
