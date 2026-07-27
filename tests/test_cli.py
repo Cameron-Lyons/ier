@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import csv
+import json
 import tempfile
 import unittest
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 from ier.cli import (
+    _emit_composite_json,
     _load_matrix,
     _parse_float_list,
     _parse_int_list,
@@ -99,6 +104,39 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
         self.assertIn("flag_counts", out.read_text(encoding="utf-8"))
+
+    def test_screen_json_uses_null_for_non_finite_scores(self) -> None:
+        constant = self.root / "constant.csv"
+        constant.write_text("1,1,1,1\n1,1,1,1\n1,1,1,1\n", encoding="utf-8")
+        out = self.root / "screen-strict.json"
+
+        code = main(
+            [
+                "screen",
+                str(constant),
+                "--indices",
+                "psychsyn",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["scores"]["psychsyn"], [None, None, None])
+        self.assertIsNone(payload["summary"]["psychsyn"]["mean"])
+
+    def test_composite_json_uses_null_for_all_non_finite_values(self) -> None:
+        text = _emit_composite_json(
+            np.array([1.0, np.nan, np.inf, -np.inf], dtype=float),
+            "mean",
+        )
+
+        self.assertNotIn("NaN", text)
+        self.assertNotIn("Infinity", text)
+        self.assertEqual(json.loads(text)["scores"], [1.0, None, None, None])
 
     def test_composite_csv_output(self) -> None:
         out = self.root / "scores.csv"
@@ -206,6 +244,26 @@ class TestCli(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 1)
+
+    def test_invalid_index_returns_structured_error(self) -> None:
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            code = main(["screen", str(self.csv_path), "--indices", "nonexistent"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("error: invalid index 'nonexistent'", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_invalid_percentile_returns_structured_error(self) -> None:
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            code = main(["screen", str(self.csv_path), "--percentile", "101"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("error:", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_explicit_delimiter(self) -> None:
         tsv = self.root / "data.tsv"
