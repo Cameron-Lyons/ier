@@ -57,6 +57,13 @@ uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_detection.py
 ```
 
+Verify release artifacts after packaging changes:
+
+```bash
+uv build
+uv run --no-project python scripts/check_dist.py dist/*
+```
+
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md) for registry design, flagging
