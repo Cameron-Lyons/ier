@@ -20,6 +20,9 @@ if TYPE_CHECKING:
 
 def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
     """Load a respondent × item matrix from CSV/TSV/whitespace text."""
+    if delimiter is not None and (len(delimiter) != 1 or delimiter in "\r\n"):
+        raise ValueError("delimiter must be exactly one non-newline character")
+
     if delimiter is None:
         with path.open(newline="", encoding="utf-8") as handle:
             sample = handle.read(4096)
