@@ -30,6 +30,10 @@ Run the unified suite before opening a PR:
 ./scripts/check.sh
 ```
 
+When `uv` is available, the script first synchronizes the locked `dev` extra,
+then runs every command without further environment mutation. Without `uv`, it
+uses tools from the active environment.
+
 Skip the docs build with `SKIP_DOCS=1 ./scripts/check.sh`.
 
 Or run checks individually:

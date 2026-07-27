@@ -6,7 +6,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 if command -v uv >/dev/null 2>&1; then
-  RUN=(uv run)
+  echo "==> sync locked development environment"
+  uv sync --locked --extra dev
+  RUN=(uv run --no-sync)
 else
   RUN=()
 fi
