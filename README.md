@@ -113,6 +113,10 @@ MIT License — see [LICENSE](LICENSE).
 
 ## Citation
 
+Citation metadata for reference managers and GitHub's **Cite this repository**
+feature is available in [`CITATION.cff`](CITATION.cff). The equivalent BibTeX
+entry is:
+
 ```bibtex
 @software{ier2026,
   title={IER: Python package for detecting Insufficient Effort Responding},
