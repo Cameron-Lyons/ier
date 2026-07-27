@@ -102,6 +102,8 @@ The repository supports two release paths:
 ## Versioning Policy
 
 - Use semantic versioning (`MAJOR.MINOR.PATCH`).
+- Source-changing PRs must set a valid semantic version strictly greater than
+  the version on `main`; CI rejects unchanged versions and downgrades.
 - Bump `/pyproject.toml` when preparing a new public package release.
 - PyPI does not allow uploading new files for a version that already exists.
   If you need to correct packaging for the same code, publish a new patch version.
