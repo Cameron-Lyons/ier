@@ -89,3 +89,6 @@ ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier --version
 ```
+
+JSON output is standards-compliant: unavailable or non-finite scores and summary
+statistics are encoded as `null`.

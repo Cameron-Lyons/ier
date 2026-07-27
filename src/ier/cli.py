@@ -245,6 +245,11 @@ def _write_output(text: str, path: Path | None) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _json_numbers(values: np.ndarray) -> list[float | None]:
+    """Convert numeric arrays to strict-JSON values, representing non-finite values as null."""
+    return [float(value) if np.isfinite(value) else None for value in values]
+
+
 def _emit_screen_text(result: ScreenResult, top: int) -> str:
     lines = [
         f"respondents: {result['n_respondents']}",
@@ -263,19 +268,29 @@ def _emit_screen_text(result: ScreenResult, top: int) -> str:
 
 
 def _emit_screen_json(result: ScreenResult) -> str:
+    summary = {
+        name: {
+            "mean": stats["mean"] if np.isfinite(stats["mean"]) else None,
+            "std": stats["std"] if np.isfinite(stats["std"]) else None,
+            "min": stats["min"] if np.isfinite(stats["min"]) else None,
+            "max": stats["max"] if np.isfinite(stats["max"]) else None,
+            "n_flagged": stats["n_flagged"],
+        }
+        for name, stats in result["summary"].items()
+    }
     payload = {
         "n_respondents": result["n_respondents"],
         "n_indices": result["n_indices"],
         "indices_used": result["indices_used"],
         "errors": result["errors"],
         "flag_counts": np.asarray(result["flag_counts"]).tolist(),
-        "scores": {name: np.asarray(arr).tolist() for name, arr in result["scores"].items()},
+        "scores": {name: _json_numbers(np.asarray(arr)) for name, arr in result["scores"].items()},
         "flags": {
             name: np.asarray(arr).astype(bool).tolist() for name, arr in result["flags"].items()
         },
-        "summary": result["summary"],
+        "summary": summary,
     }
-    return json.dumps(payload, indent=2)
+    return json.dumps(payload, indent=2, allow_nan=False)
 
 
 def _emit_screen_csv(result: ScreenResult) -> str:
@@ -316,8 +331,9 @@ def _emit_composite_text(scores: np.ndarray, method: str, top: int) -> str:
 
 def _emit_composite_json(scores: np.ndarray, method: str) -> str:
     return json.dumps(
-        {"method": method, "scores": scores.tolist(), "n_respondents": len(scores)},
+        {"method": method, "scores": _json_numbers(scores), "n_respondents": len(scores)},
         indent=2,
+        allow_nan=False,
     )
 
 
@@ -330,18 +346,10 @@ def _emit_composite_csv(scores: np.ndarray) -> str:
     return buf.getvalue()
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Entry point for the ``ier`` console script."""
-    parser = _build_parser()
-    args = parser.parse_args(argv)
-
-    try:
-        matrix = _load_matrix(args.data, args.delimiter)
-        options = _options_from_args(args)
-    except (OSError, ValueError) as err:
-        print(f"error: {err}", file=sys.stderr)
-        return 1
-
+def _run_command(args: argparse.Namespace) -> int:
+    """Execute one parsed CLI command, allowing user-facing failures to bubble to main()."""
+    matrix = _load_matrix(args.data, args.delimiter)
+    options = _options_from_args(args)
     if args.command == "screen":
         result = screen(
             matrix,
@@ -372,6 +380,18 @@ def main(argv: list[str] | None = None) -> int:
         text = _emit_composite_text(scores, args.method, args.top)
     _write_output(text, args.output)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point for the ``ier`` console script."""
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        return _run_command(args)
+    except (OSError, ValueError) as err:
+        print(f"error: {err}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":  # pragma: no cover

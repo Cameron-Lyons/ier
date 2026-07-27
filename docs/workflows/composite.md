@@ -62,3 +62,6 @@ ier composite data.csv --indices irv longstring --method mean
 ier composite data.csv --format json --output composite.json
 ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
 ```
+
+JSON output is standards-compliant: unavailable or non-finite scores are encoded
+as `null`.
