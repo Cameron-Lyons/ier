@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +12,10 @@ from pathlib import Path
 
 class TestCheckScript(unittest.TestCase):
     def test_uv_bootstraps_locked_dev_environment_before_checks(self) -> None:
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("requires Bash")
+
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             fake_bin = root / "bin"
@@ -24,10 +29,10 @@ class TestCheckScript(unittest.TestCase):
             fake_uv.chmod(0o755)
             environment = os.environ.copy()
             environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
-            environment["IER_TEST_UV_LOG"] = str(log)
+            environment["IER_TEST_UV_LOG"] = log.as_posix()
 
             result = subprocess.run(
-                ["./scripts/check.sh"],
+                [bash, "./scripts/check.sh"],
                 cwd=Path(__file__).resolve().parents[1],
                 env=environment,
                 check=False,
