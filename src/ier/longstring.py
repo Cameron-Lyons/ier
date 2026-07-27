@@ -99,8 +99,8 @@ def longstring(
     - For multiple messages: List of results for each message
 
     Raises:
-    - TypeError: If input is not a string, list of strings, or numpy array
-    - ValueError: If input is empty or contains invalid data
+    - TypeError: If input is not a string or contains non-string values
+    - ValueError: If input is empty or a numpy array is not one-dimensional
 
     Example:
         >>> longstring("aaabbbcc")
@@ -143,12 +143,14 @@ def longstring(
     elif isinstance(messages, np.ndarray):
         if messages.size == 0:
             raise ValueError("messages array cannot be empty")
+        if messages.ndim != 1:
+            raise ValueError("messages array must be one-dimensional")
 
-        is_string_dtype = messages.dtype.kind in ("U", "S")
-        messages_list: list[str] = messages.tolist()
-
-        if not is_string_dtype:
-            messages_list = [str(msg) for msg in messages_list]
+        messages_list: list[str] = []
+        for message in messages.tolist():
+            if not isinstance(message, str):
+                raise TypeError("all elements in messages array must be strings")
+            messages_list.append(message)
 
         if avg:
             return [_avgstr_message(msg) for msg in messages_list]

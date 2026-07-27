@@ -31,6 +31,10 @@ helpers use a different input domain and are listed separately.
 \* `person_total` flags unusually low totals under the default low-direction
 percentile rule; interpret in context of your scale coding.
 
+The registry's `longstring` index uses `longstring_scores()` for numeric response
+matrices. The standalone `longstring()` helper analyzes text strings only and
+rejects numeric or multidimensional arrays.
+
 ## Response-time indices (standalone — not in the registry)
 
 These helpers take **timing matrices** (durations), not item-response matrices.
