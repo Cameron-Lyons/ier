@@ -13,6 +13,7 @@ from unittest.mock import patch
 import numpy as np
 
 from ier.cli import (
+    _emit_composite_csv,
     _emit_composite_json,
     _load_matrix,
     _parse_float_list,
@@ -137,6 +138,42 @@ class TestCli(unittest.TestCase):
         self.assertNotIn("NaN", text)
         self.assertNotIn("Infinity", text)
         self.assertEqual(json.loads(text)["scores"], [1.0, None, None, None])
+
+    def test_composite_csv_uses_empty_cells_for_all_non_finite_values(self) -> None:
+        text = _emit_composite_csv(np.array([1.0, np.nan, np.inf, -np.inf], dtype=float))
+
+        self.assertEqual(
+            list(csv.reader(StringIO(text))),
+            [
+                ["respondent", "composite_score"],
+                ["0", "1.0"],
+                ["1", ""],
+                ["2", ""],
+                ["3", ""],
+            ],
+        )
+
+    def test_screen_csv_uses_empty_cells_for_non_finite_scores(self) -> None:
+        constant = self.root / "constant.csv"
+        constant.write_text("1,1,1,1\n1,1,1,1\n1,1,1,1\n", encoding="utf-8")
+        out = self.root / "screen.csv"
+
+        code = main(
+            [
+                "screen",
+                str(constant),
+                "--indices",
+                "psychsyn",
+                "--format",
+                "csv",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        rows = list(csv.DictReader(StringIO(out.read_text(encoding="utf-8"))))
+        self.assertEqual([row["psychsyn_score"] for row in rows], ["", "", ""])
 
     def test_composite_csv_output(self) -> None:
         out = self.root / "scores.csv"
