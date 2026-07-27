@@ -91,4 +91,5 @@ ier --version
 ```
 
 JSON output is standards-compliant: unavailable or non-finite scores and summary
-statistics are encoded as `null`.
+statistics are encoded as `null`. CSV output represents non-finite scores as empty
+cells so numeric columns remain compatible with spreadsheet and statistics tools.

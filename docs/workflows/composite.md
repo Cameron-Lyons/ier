@@ -64,4 +64,5 @@ ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
 ```
 
 JSON output is standards-compliant: unavailable or non-finite scores are encoded
-as `null`.
+as `null`. CSV output represents those scores as empty cells so numeric columns
+remain compatible with spreadsheet and statistics tools.

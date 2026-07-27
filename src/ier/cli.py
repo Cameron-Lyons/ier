@@ -260,6 +260,11 @@ def _json_numbers(values: np.ndarray) -> list[float | None]:
     return [float(value) if np.isfinite(value) else None for value in values]
 
 
+def _csv_number(value: float) -> float | None:
+    """Return a CSV-safe number, using an empty cell for non-finite values."""
+    return float(value) if np.isfinite(value) else None
+
+
 def _emit_screen_text(result: ScreenResult, top: int) -> str:
     lines = [
         f"respondents: {result['n_respondents']}",
@@ -316,7 +321,7 @@ def _emit_screen_csv(result: ScreenResult) -> str:
     for i in range(n):
         row: dict[str, object] = {"respondent": i, "flag_count": int(counts[i])}
         for name in result["indices_used"]:
-            row[f"{name}_score"] = float(scores[name][i])
+            row[f"{name}_score"] = _csv_number(scores[name][i])
             row[f"{name}_flag"] = int(bool(flags[name][i]))
         rows.append(row)
 
@@ -352,7 +357,7 @@ def _emit_composite_csv(scores: np.ndarray) -> str:
     writer = csv.writer(buf)
     writer.writerow(["respondent", "composite_score"])
     for i, score in enumerate(scores):
-        writer.writerow([i, float(score)])
+        writer.writerow([i, _csv_number(score)])
     return buf.getvalue()
 
 
