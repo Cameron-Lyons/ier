@@ -273,6 +273,21 @@ class TestCli(unittest.TestCase):
         code = main(["screen", str(tsv), "--delimiter", "\t", "--indices", "irv", "--top", "1"])
         self.assertEqual(code, 0)
 
+    def test_invalid_delimiter_returns_structured_error(self) -> None:
+        for delimiter in ["", "||", "\n"]:
+            with self.subTest(delimiter=delimiter):
+                stderr = StringIO()
+
+                with patch("sys.stderr", stderr):
+                    code = main(["screen", str(self.csv_path), "--delimiter", delimiter])
+
+                self.assertEqual(code, 1)
+                self.assertIn(
+                    "error: delimiter must be exactly one non-newline character",
+                    stderr.getvalue(),
+                )
+                self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_whitespace_delimited_input(self) -> None:
         whitespace = self.root / "data.txt"
         whitespace.write_text("i1 i2 i3\n1  2 3\n4 5   6\n", encoding="utf-8")
