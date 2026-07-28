@@ -49,6 +49,12 @@ jobs:
       - name: Verify package metadata
         run: uv run --no-project python scripts/check_dist.py dist/*
 
+      - name: Check package
+        run: uvx twine check dist/*
+
+      - name: Smoke-test built wheel
+        run: uv run --isolated --no-project --with dist/*.whl python scripts/smoke_test_install.py
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:

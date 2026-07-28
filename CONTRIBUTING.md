@@ -66,6 +66,7 @@ Verify release artifacts after packaging changes:
 ```bash
 uv build
 uv run --no-project python scripts/check_dist.py dist/*
+uv run --isolated --no-project --with dist/*.whl python scripts/smoke_test_install.py
 ```
 
 ## Architecture
