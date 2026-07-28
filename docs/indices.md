@@ -25,7 +25,7 @@ helpers use a different input domain and are listed separately.
 | `mad` | Maximum absolute deviation (antonyms) | high | no | yes | MAD item lists / `mad_scale_max` |
 | `lz` | lz person-fit | low | no | yes | optional IRT params via direct API |
 | `semantic_syn` | Predefined synonym consistency | low | no | yes | `semantic_item_pairs` |
-| `semantic_ant` | Predefined antonym consistency | low | no | yes | `semantic_item_pairs` |
+| `semantic_ant` | Predefined antonym consistency | low | no | yes | `semantic_item_pairs`, optional scale bounds |
 | `infrequency` | Failed attention / bogus items | high | no | yes | item indices + expected responses |
 
 \* `person_total` flags unusually low totals under the default low-direction
@@ -34,6 +34,11 @@ percentile rule; interpret in context of your scale coding.
 The registry's `longstring` index uses `longstring_scores()` for numeric response
 matrices. The standalone `longstring()` helper analyzes text strings only and
 rejects numeric or multidimensional arrays.
+
+`semantic_ant` reverse-scores the second item in each configured pair before
+computing consistency. Pass `scale_min` and `scale_max` through `IndexOptions`
+when the matrix does not contain both response-scale endpoints; otherwise the
+bounds are inferred from the observed data.
 
 ## Response-time indices (standalone — not in the registry)
 

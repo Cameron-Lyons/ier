@@ -186,7 +186,12 @@ def _semantic_syn_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
 def _semantic_ant_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
     if options.semantic_item_pairs is None:
         raise ValueError("semantic_item_pairs must be provided when using semantic_ant")
-    return semantic_ant(x, item_pairs=options.semantic_item_pairs)
+    return semantic_ant(
+        x,
+        item_pairs=options.semantic_item_pairs,
+        scale_min=options.scale_min,
+        scale_max=options.scale_max,
+    )
 
 
 def _infrequency_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
