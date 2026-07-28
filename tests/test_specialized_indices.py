@@ -66,12 +66,23 @@ class TestSemanticSyn(unittest.TestCase):
         with self.assertRaises(ValueError):
             semantic_syn(data, [(0, 10)])
 
-    def test_semantic_ant_wrapper(self) -> None:
-        """Test semantic_ant is a proper wrapper."""
-        data = [[1, 5, 2, 4], [1, 5, 1, 5]]
+    def test_semantic_ant_reverse_scores_pairs(self) -> None:
+        """Antonym pairs are compared after reflection around the response scale."""
+        data = [[1, 5, 2, 4], [1, 1, 2, 2]]
         pairs = [(0, 1), (2, 3)]
-        result = semantic_ant(data, pairs)
-        self.assertEqual(len(result), 2)
+        result = semantic_ant(data, pairs, scale_min=1, scale_max=5)
+        np.testing.assert_array_almost_equal(result, [1.0, -1.0])
+
+    def test_semantic_ant_infers_scale_bounds(self) -> None:
+        """Antonym scoring infers omitted response-scale bounds from the matrix."""
+        data = [[1, 5, 2, 4], [5, 1, 4, 2]]
+        result = semantic_ant(data, [(0, 1), (2, 3)])
+        np.testing.assert_array_almost_equal(result, [1.0, 1.0])
+
+    def test_semantic_ant_rejects_inverted_scale(self) -> None:
+        """Explicit antonym scale bounds must be ordered."""
+        with self.assertRaisesRegex(ValueError, "scale_max"):
+            semantic_ant([[1, 5]], [(0, 1)], scale_min=5, scale_max=1)
 
     def test_zero_variance_rows_are_handled(self) -> None:
         """Test semantic consistency handles zero-variance respondents deterministically."""
@@ -80,7 +91,7 @@ class TestSemanticSyn(unittest.TestCase):
         syn = semantic_syn(data, pairs)
         ant = semantic_ant(data, pairs)
         np.testing.assert_array_almost_equal(syn, [1.0, 1.0])
-        np.testing.assert_array_almost_equal(ant, [-1.0, -1.0])
+        np.testing.assert_array_almost_equal(ant, [1.0, 1.0])
 
 
 class TestGuttman(unittest.TestCase):

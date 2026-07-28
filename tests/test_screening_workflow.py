@@ -226,6 +226,19 @@ class TestScreen(unittest.TestCase):
         self.assertIn("semantic_syn", result["errors"])
         self.assertIn("infrequency", result["errors"])
 
+    def test_semantic_ant_uses_configured_scale_bounds(self) -> None:
+        data = np.array([[1, 5, 2, 4], [1, 1, 2, 2]], dtype=float)
+        result = screen(
+            data,
+            indices=["semantic_ant"],
+            options=IndexOptions(
+                semantic_item_pairs=[(0, 1), (2, 3)],
+                scale_min=1,
+                scale_max=5,
+            ),
+        )
+        np.testing.assert_array_almost_equal(result["scores"]["semantic_ant"], [1.0, -1.0])
+
     def test_onset_present_flag_mode(self) -> None:
         rng = np.random.default_rng(0)
         attentive = rng.choice([1, 2, 3, 4, 5], size=(5, 20))

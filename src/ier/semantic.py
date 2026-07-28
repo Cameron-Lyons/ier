@@ -14,6 +14,9 @@ def semantic_syn(
     x: MatrixLike,
     item_pairs: list[tuple[int, int]],
     anto: bool = False,
+    *,
+    scale_min: float | None = None,
+    scale_max: float | None = None,
 ) -> np.ndarray:
     """
     Calculate semantic synonym/antonym consistency scores.
@@ -27,13 +30,16 @@ def semantic_syn(
     - x: A matrix of data where rows are individuals and columns are items.
     - item_pairs: List of (i, j) tuples specifying semantically related item pairs.
                   Indices are 0-based.
-    - anto: If True, pairs are antonyms (expect negative correlation).
-            If False, pairs are synonyms (expect positive correlation).
+    - anto: If True, reverse-score the second item in each antonym pair before
+            comparing it with the first. If False, compare synonym pairs directly.
+    - scale_min: Minimum response-scale value used to reverse-score antonyms.
+                 If None, inferred from the data.
+    - scale_max: Maximum response-scale value used to reverse-score antonyms.
+                 If None, inferred from the data.
 
     Returns:
     - A numpy array of consistency scores for each individual.
-      For synonyms: higher = more consistent.
-      For antonyms: lower (more negative) = more consistent.
+      Higher values indicate greater consistency for both synonyms and antonyms.
 
     Raises:
     - ValueError: If inputs are invalid or item_pairs is empty
@@ -60,7 +66,15 @@ def semantic_syn(
     response_j = x_array[:, pairs_array[:, 1]].astype(float)
 
     if anto:
-        response_j = -response_j
+        observed = x_array[~np.isnan(x_array)]
+        if len(observed) == 0:
+            return np.full(x_array.shape[0], np.nan, dtype=float)
+
+        resolved_min = float(np.min(observed)) if scale_min is None else scale_min
+        resolved_max = float(np.max(observed)) if scale_max is None else scale_max
+        if resolved_max < resolved_min:
+            raise ValueError("scale_max must be greater than or equal to scale_min")
+        response_j = (resolved_min + resolved_max) - response_j
 
     pair_diffs = np.abs(response_i - response_j)
     invalid_mask = np.isnan(response_i) | np.isnan(response_j)
@@ -87,6 +101,9 @@ def semantic_syn(
 def semantic_ant(
     x: MatrixLike,
     item_pairs: list[tuple[int, int]],
+    *,
+    scale_min: float | None = None,
+    scale_max: float | None = None,
 ) -> np.ndarray:
     """
     Calculate semantic antonym consistency scores.
@@ -96,6 +113,8 @@ def semantic_ant(
     Parameters:
     - x: A matrix of data where rows are individuals and columns are items.
     - item_pairs: List of (i, j) tuples specifying semantic antonym pairs.
+    - scale_min: Minimum response-scale value. If None, inferred from the data.
+    - scale_max: Maximum response-scale value. If None, inferred from the data.
 
     Returns:
     - A numpy array of consistency scores for each individual.
@@ -105,4 +124,10 @@ def semantic_ant(
         >>> pairs = [(0, 1), (2, 3)]  # semantic antonym pairs (e.g., happy/sad)
         >>> scores = semantic_ant(data, pairs)
     """
-    return semantic_syn(x, item_pairs, anto=True)
+    return semantic_syn(
+        x,
+        item_pairs,
+        anto=True,
+        scale_min=scale_min,
+        scale_max=scale_max,
+    )
