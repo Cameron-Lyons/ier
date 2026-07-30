@@ -8,7 +8,7 @@ import unittest
 from contextlib import contextmanager
 from unittest.mock import patch
 
-from ier._optional_imports import require_matplotlib_pyplot, require_scipy, scipy_install_hint
+from ier._optional_imports import require_matplotlib_pyplot
 
 
 @contextmanager
@@ -42,16 +42,6 @@ def _block_imports(*blocked: str):
 
 
 class TestOptionalImports(unittest.TestCase):
-    def test_scipy_install_hint_mentions_full_extra(self) -> None:
-        hint = scipy_install_hint("demo feature")
-        self.assertIn("demo feature", hint)
-        self.assertIn("insufficient-effort[full]", hint)
-
-    def test_require_scipy_raises_when_missing(self) -> None:
-        with _block_imports("scipy"), self.assertRaises(RuntimeError) as ctx:
-            require_scipy("unit test")
-        self.assertIn("insufficient-effort[full]", str(ctx.exception))
-
     def test_require_matplotlib_raises_when_missing(self) -> None:
         with _block_imports("matplotlib"), self.assertRaises(RuntimeError) as ctx:
             require_matplotlib_pyplot()

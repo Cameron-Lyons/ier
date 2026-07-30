@@ -9,7 +9,7 @@ Thanks for contributing. This document covers local setup, quality checks, and r
 ```bash
 git clone https://github.com/Cameron-Lyons/ier.git
 cd ier
-uv sync --extra dev
+uv sync --all-groups
 ```
 
 ### Fallback (`pip`)
@@ -17,10 +17,13 @@ uv sync --extra dev
 ```bash
 git clone https://github.com/Cameron-Lyons/ier.git
 cd ier
-python -m pip install -e ".[dev]"
+python -m pip install -e . --group integration --group lint --group docs --group security
 ```
 
-The `dev` extra composes `full`, `plot`, and `docs` plus test/lint tooling.
+Development dependencies are split into `test`, `integration`, `lint`, `docs`,
+and `security` groups. `integration` includes the test group plus pandas and
+Polars compatibility checks; `uv sync --all-groups` installs the complete
+contributor environment.
 
 ## Run Quality Checks
 
@@ -30,7 +33,7 @@ Run the unified suite before opening a PR:
 ./scripts/check.sh
 ```
 
-When `uv` is available, the script first synchronizes the locked `dev` extra,
+When `uv` is available, the script first synchronizes all locked dependency groups,
 then runs every command without further environment mutation. Without `uv`, it
 uses tools from the active environment.
 
@@ -39,20 +42,22 @@ Skip the docs build with `SKIP_DOCS=1 ./scripts/check.sh`.
 Or run checks individually:
 
 ```bash
-pytest tests/ -v --cov=ier --cov-report=term-missing
-ruff check .
-ruff format --check .
-mypy src/ier
-pylint src/ier
-bandit -r src/ier -c pyproject.toml
-uv run mkdocs build --strict
+uv run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
+uv run --no-sync mypy src/ier
+uv run --no-sync mkdocs build --strict
 ```
 
 ### Lint roles
 
-- **Ruff** is the primary linter/formatter (fast, CI-blocking style + bugbear rules).
-- **Pylint** remains a secondary depth check (`--fail-under=9.0`) for a few
-  heuristics Ruff does not cover. Prefer fixing Ruff findings first.
+- **Ruff** is the linter, formatter, and static security scanner. The selected
+  rules include pycodestyle, Pyflakes, isort, pyupgrade, Bugbear, simplify,
+  type-checking, flake8-bandit security checks, and Pylint error/convention/warning rules.
+- **mypy** performs strict static type checking for the public and internal source.
+
+Pre-commit hooks use isolated tool environments and do not need a project
+dependency. Install them with `uvx pre-commit install` when desired.
 
 Optional benchmarks:
 

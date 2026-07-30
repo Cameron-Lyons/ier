@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=77.0.3", "wheel"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "insufficient-effort"
-version = "2.1.7"
+version = "2.2.0"
 authors = [{ name = "Cameron Lyons", email = "cameron.lyons2@gmail.com" }]
 description = "Python library for detecting Insufficient Effort Responding (IER) in survey data"
 readme = "README.md"
@@ -26,30 +26,34 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-full = ["scipy>=1.11.0,<1.18"]
+# Retained as an empty compatibility alias for existing ``ier[full]`` users.
+full = []
 plot = ["matplotlib>=3.8.0,<4"]
+
+[dependency-groups]
+test = [
+    "matplotlib>=3.8.0,<4",
+    "pytest>=9.0.3,<10",
+    "pytest-cov>=7.0.0,<8",
+    "hypothesis>=6.150.0,<7",
+]
+integration = [
+    { include-group = "test" },
+    "pandas>=2.2.0,<4",
+    "polars>=1.0.0,<2",
+]
+lint = [
+    "matplotlib>=3.8.0,<4",
+    "mypy>=1.19.0,<3",
+    "ruff>=0.14.0,<1",
+]
 docs = [
     "mkdocs>=1.6.0,<2",
     "mkdocs-material>=9.5.0,<10",
     "mkdocstrings[python]>=0.26.0,<2",
 ]
-dev = [
-    "insufficient-effort[full,plot,docs]",
-    "scipy-stubs>=1.16.3,<1.18",
-    "pandas>=2.2.0,<4",
-    "polars>=1.0.0,<2",
-    "pytest>=9.0.3,<10",
-    "pytest-cov>=7.0.0,<8",
-    "mypy>=1.19.0,<3",
-    "ruff>=0.14.0,<1",
-    "pylint>=4.0.0,<5",
-    "bandit>=1.9.0,<2",
+security = [
     "pip-audit>=2.9.0,<3",
-    "hypothesis>=6.150.0,<7",
-    "pre-commit>=4.0.0,<5",
-    "pillow>=12.2.0,<13",
-    "pygments>=2.20.0,<3",
-    "requests>=2.33.0,<3",
 ]
 
 [project.scripts]
@@ -98,7 +102,13 @@ line-length = 100
 src = ["src"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH", "S", "PLE", "PLC", "PLW"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/ier/_optional_imports.py" = ["PLC0415"]
+"scripts/smoke_test_install.py" = ["S603"]
+"tests/**" = ["PLC0415", "S603"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["ier"]
@@ -119,10 +129,3 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 extra_checks = true
-
-[tool.pylint.format]
-max-line-length = 100
-
-[tool.bandit]
-exclude_dirs = ["tests"]
-skips = ["B101"]

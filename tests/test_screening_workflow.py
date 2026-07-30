@@ -1,7 +1,6 @@
 """Unit tests for acquiescence, screening, and visualization functions."""
 
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -252,9 +251,8 @@ class TestScreen(unittest.TestCase):
         self.assertIn("onset", result["indices_used"])
         self.assertEqual(result["flags"]["onset"].dtype, bool)
 
-    def test_mahad_distances_without_scipy(self) -> None:
-        with patch("ier.mahad.SCIPY_AVAILABLE", False):
-            distances = mahad(self.data, method="chi2")
+    def test_mahad_chi2_distances_are_dependency_free(self) -> None:
+        distances = mahad(self.data, method="chi2")
         self.assertEqual(len(distances), 30)
 
 

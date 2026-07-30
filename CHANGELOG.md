@@ -5,6 +5,33 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-07-29
+
+### Added
+
+- Dependency-free normal density/quantile helpers, bounded Newton IRT theta
+  estimation, and chi-square quantiles backed by regularized incomplete-gamma
+  series and continued-fraction calculations.
+- SciPy-reference regression coverage for chi-square probabilities from
+  `1e-12` through `1 - 1e-12` and 1–1,000 degrees of freedom.
+- Targeted `test`, `integration`, `lint`, `docs`, and `security` dependency groups.
+
+### Changed
+
+- Mahalanobis chi-square and z-score flagging, Mahalanobis Q-Q data, lz theta
+  estimation, and response-time mixtures now run consistently in the base install.
+- The lz theta solver now converges to a tighter score-equation tolerance; locked
+  lz scores can shift by roughly `1e-6` from SciPy's default bounded tolerance.
+- Ruff now owns lint and static-security checks, including selected Pylint and
+  flake8-bandit rules; CI jobs install only their required dependency groups.
+- The legacy `full` extra is an empty compatibility alias.
+
+### Removed
+
+- SciPy and scipy-stubs, the redundant wheel build requirement, direct transitive
+  pins for Pillow/Pygments/Requests, and unused pre-commit project dependency.
+- Redundant Bandit and non-gating Pylint jobs and dependencies.
+
 ## [2.1.7] - 2026-07-28
 
 ### Fixed

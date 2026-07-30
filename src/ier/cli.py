@@ -115,8 +115,8 @@ def _parse_pair_list(raw: str | None) -> list[tuple[int, int]] | None:
     if raw is None:
         return None
     pairs: list[tuple[int, int]] = []
-    for chunk in raw.split(";"):
-        chunk = chunk.strip()
+    for raw_chunk in raw.split(";"):
+        chunk = raw_chunk.strip()
         if not chunk:
             continue
         left, sep, right = chunk.partition(",")

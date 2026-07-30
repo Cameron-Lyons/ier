@@ -16,19 +16,10 @@ from typing import Any
 
 import numpy as np
 
-from ier._optional_imports import require_matplotlib_pyplot, require_scipy, scipy_install_hint
+from ier._optional_imports import require_matplotlib_pyplot
+from ier._statistics import chi_square_quantile, chi_square_quantiles, normal_quantile
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
-
-SCIPY_AVAILABLE = False
-stats: Any = None
-try:
-    from scipy import stats as _stats
-
-    stats = _stats
-    SCIPY_AVAILABLE = True
-except ImportError:
-    pass  # scipy is optional; chi2 / qqplot paths check at call time
 
 
 def mahad(
@@ -62,7 +53,6 @@ def mahad(
     Raises:
     - ValueError: If inputs are invalid (empty data, invalid confidence, etc.)
     - TypeError: If input is not a list or numpy array
-    - RuntimeError: If chi2 flagging is requested but SciPy is unavailable
 
     Example:
         >>> import numpy as np
@@ -83,10 +73,6 @@ def mahad(
 
     if method not in ["chi2", "iqr", "zscore"]:
         raise ValueError("method must be one of: 'chi2', 'iqr', 'zscore'")
-
-    # Distances are NumPy-only; SciPy is needed for chi2 / zscore flagging.
-    if flag and method in ("chi2", "zscore") and not SCIPY_AVAILABLE:
-        raise RuntimeError(scipy_install_hint(f"{method} flagging"))
 
     if na_rm:
         all_nan_mask = np.isnan(x_array).all(axis=1)
@@ -172,7 +158,7 @@ def _flag_outliers(
     - Boolean array indicating outliers
     """
     if method == "chi2":
-        threshold: float = stats.chi2.ppf(confidence, df=n_features)
+        threshold = chi_square_quantile(confidence, n_features)
         result: np.ndarray = distances > np.sqrt(threshold)
         return result
 
@@ -204,8 +190,7 @@ def _flag_outliers(
         if std_dist == 0:
             return np.full_like(distances, False, dtype=bool)
 
-        # SCIPY_AVAILABLE already enforced by mahad() for method="zscore".
-        z_threshold = stats.norm.ppf(1 - (1 - confidence) / 2)
+        z_threshold = normal_quantile(1 - (1 - confidence) / 2)
 
         flags = np.full_like(distances, False, dtype=bool)
         valid_mask = ~np.isnan(distances)
@@ -241,7 +226,6 @@ def mahad_qqplot(
       with p degrees of freedom.
 
     Raises:
-    - RuntimeError: If scipy is not available.
     - RuntimeError: If plot=True and matplotlib is not available.
     - ValueError: If inputs are invalid.
 
@@ -249,9 +233,6 @@ def mahad_qqplot(
         >>> data = [[1, 2], [3, 4], [5, 6], [7, 8]]
         >>> theoretical, observed = mahad_qqplot(data)
     """
-    require_scipy("mahad_qqplot")
-    assert stats is not None
-
     distances = mahad(x, flag=False, na_rm=na_rm)
     assert isinstance(distances, np.ndarray)
 
@@ -265,7 +246,7 @@ def mahad_qqplot(
     p = x_array.shape[1]
 
     probabilities = (np.arange(1, n + 1) - 0.5) / n
-    theoretical: np.ndarray = stats.chi2.ppf(probabilities, df=p)
+    theoretical = chi_square_quantiles(probabilities, p)
 
     if plot:
         plt = require_matplotlib_pyplot()

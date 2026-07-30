@@ -1,7 +1,6 @@
 """Unit tests for response-time IER helpers."""
 
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 
@@ -122,22 +121,6 @@ class TestResponseTimeMixture(unittest.TestCase):
         times = [[1.0, 2.0, 3.0]]
         with self.assertRaises(ValueError):
             response_time_mixture(times, n_components=2)
-
-    def test_requires_scipy(self) -> None:
-        """Test mixture model reports missing optional SciPy dependency."""
-        times = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
-        with (
-            patch(
-                "ier.response_time.require_scipy",
-                side_effect=RuntimeError(
-                    "scipy is required for response_time_mixture. "
-                    "Install with: pip install 'insufficient-effort[full]'"
-                ),
-            ),
-            self.assertRaises(RuntimeError) as ctx,
-        ):
-            response_time_mixture(times)
-        self.assertIn("insufficient-effort[full]", str(ctx.exception))
 
     def test_with_nan(self) -> None:
         """Test handling of NaN values in response times."""
