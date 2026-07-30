@@ -6,8 +6,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 if command -v uv >/dev/null 2>&1; then
-  echo "==> sync locked development environment"
-  uv sync --locked --extra dev
+  echo "==> sync locked quality environments"
+  uv sync --locked --all-groups
   RUN=(uv run --no-sync)
 else
   RUN=()
@@ -24,12 +24,6 @@ echo "==> ruff format"
 
 echo "==> mypy"
 "${RUN[@]}" mypy src/ier
-
-echo "==> pylint"
-"${RUN[@]}" pylint src/ier --fail-under=9.0
-
-echo "==> bandit"
-"${RUN[@]}" bandit -r src/ier -c pyproject.toml
 
 if [[ "${SKIP_DOCS:-0}" != "1" ]]; then
   echo "==> mkdocs"

@@ -1,14 +1,13 @@
 """Unit tests for specialized IER indices."""
 
 import unittest
-from unittest.mock import patch
 
 import numpy as np
 
 from ier.guttman import guttman, guttman_flag
 from ier.infrequency import infrequency, infrequency_flag
 from ier.longstring import longstring_pattern
-from ier.lz import lz, lz_flag
+from ier.lz import _ml_theta, lz, lz_flag
 from ier.mad import mad, mad_flag
 from ier.mahad import mahad_qqplot
 from ier.markov import _transition_entropy, markov, markov_flag, markov_summary
@@ -326,6 +325,28 @@ class TestLz(unittest.TestCase):
         result = lz(data, theta=theta)
         self.assertEqual(len(result), 2)
 
+    def test_local_theta_solver_matches_scipy_reference_values(self) -> None:
+        cases = [
+            ([1, 1, 0, 0], [1, 1, 1, 1], [-1, -0.5, 0.5, 1]),
+            ([1, 0, 1, 0], [0.5, 1, 1.5, 2], [-2, -0.5, 0.5, 2]),
+            ([1, 1, 1, 0, 0], [3, 0.2, 1.2, 2, 0.7], [-3, -1, 0, 1, 3]),
+            ([0, 1, 0, 1, 1], [1, -0.5, 2, 1.5, 0.2], [-2, -1, 0, 1, 2]),
+        ]
+        expected = [0.0, 0.5359047366047544, 0.3859716606867468, -0.6358889853624815]
+        actual = [
+            _ml_theta(np.asarray(responses), np.asarray(discrimination), np.asarray(difficulty))
+            for responses, discrimination, difficulty in cases
+        ]
+        np.testing.assert_allclose(actual, expected, rtol=0.0, atol=2e-6)
+
+        for theta, (responses, discrimination, difficulty) in zip(actual, cases, strict=True):
+            response_array = np.asarray(responses)
+            discrimination_array = np.asarray(discrimination)
+            difficulty_array = np.asarray(difficulty)
+            probabilities = 1.0 / (1.0 + np.exp(-discrimination_array * (theta - difficulty_array)))
+            score = np.sum(discrimination_array * (response_array - probabilities))
+            self.assertAlmostEqual(float(score), 0.0, places=11)
+
     def test_flag_function(self) -> None:
         """Test lz flagging."""
         data = [
@@ -515,23 +536,6 @@ class TestMahadQQPlot(unittest.TestCase):
         theoretical, observed = mahad_qqplot(data)
         self.assertEqual(len(theoretical), 30)
         self.assertEqual(len(observed), 30)
-
-    def test_requires_scipy(self) -> None:
-        """Test Q-Q plot reports missing optional SciPy dependency."""
-        rng = np.random.default_rng(42)
-        data = rng.normal(size=(20, 3))
-        with (
-            patch(
-                "ier.mahad.require_scipy",
-                side_effect=RuntimeError(
-                    "scipy is required for mahad_qqplot. "
-                    "Install with: pip install 'insufficient-effort[full]'"
-                ),
-            ),
-            self.assertRaises(RuntimeError) as ctx,
-        ):
-            mahad_qqplot(data)
-        self.assertIn("insufficient-effort[full]", str(ctx.exception))
 
     def test_shapes_match(self) -> None:
         """Test that output shapes match."""

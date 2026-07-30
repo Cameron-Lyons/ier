@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 class TestCheckScript(unittest.TestCase):
-    def test_uv_bootstraps_locked_dev_environment_before_checks(self) -> None:
+    def test_uv_bootstraps_locked_quality_groups_before_checks(self) -> None:
         bash = shutil.which("bash")
         if bash is None:
             self.skipTest("requires Bash")
@@ -42,7 +42,7 @@ class TestCheckScript(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, result.stderr)
             commands = log.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(commands[0], "sync --locked --extra dev")
+            self.assertEqual(commands[0], "sync --locked --all-groups")
             self.assertTrue(all(command.startswith("run --no-sync ") for command in commands[1:]))
             self.assertIn(
                 "run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing",

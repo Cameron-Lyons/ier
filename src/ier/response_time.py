@@ -6,20 +6,11 @@ careless or inattentive responding.
 """
 
 import warnings
-from typing import Any
 
 import numpy as np
 
-from ier._optional_imports import require_scipy
+from ier._statistics import normal_pdf
 from ier._validation import MatrixLike, validate_matrix_input
-
-_norm: Any = None
-try:
-    from scipy.stats import norm as _scipy_norm
-
-    _norm = _scipy_norm
-except ImportError:
-    pass  # scipy is optional; mixture path requires it at call time
 
 
 def response_time(
@@ -162,16 +153,12 @@ def response_time_mixture(
       (fast) responding.
 
     Raises:
-    - RuntimeError: If scipy is not available.
     - ValueError: If n_components < 2 or data is insufficient.
 
     Example:
         >>> times = [[5.0, 6.0, 4.0], [0.5, 0.6, 0.4], [4.5, 5.5, 5.0]]
         >>> probs = response_time_mixture(times, random_seed=42)
     """
-    require_scipy("response_time_mixture")
-    assert _norm is not None
-
     if n_components < 2:
         raise ValueError("n_components must be at least 2")
 
@@ -227,7 +214,7 @@ def _em_gaussian_mixture(
 
     for _ in range(max_iter):
         for j in range(k):
-            resp[:, j] = weights[j] * _norm.pdf(data, loc=means[j], scale=np.sqrt(variances[j]))
+            resp[:, j] = weights[j] * normal_pdf(data, loc=means[j], scale=np.sqrt(variances[j]))
 
         row_sums = resp.sum(axis=1, keepdims=True)
         row_sums = np.maximum(row_sums, 1e-300)
@@ -249,7 +236,7 @@ def _em_gaussian_mixture(
         prev_ll = ll
 
     for j in range(k):
-        resp[:, j] = weights[j] * _norm.pdf(data, loc=means[j], scale=np.sqrt(variances[j]))
+        resp[:, j] = weights[j] * normal_pdf(data, loc=means[j], scale=np.sqrt(variances[j]))
     row_sums = resp.sum(axis=1, keepdims=True)
     row_sums = np.maximum(row_sums, 1e-300)
     resp /= row_sums

@@ -12,11 +12,12 @@ pip install insufficient-effort
 Optional extras:
 
 ```bash
-pip install "insufficient-effort[full]"   # SciPy-backed mahad chi2 flagging, RT mixture
 pip install "insufficient-effort[plot]"   # matplotlib visualizations
 ```
 
-Base install is NumPy-only. Default `screen()` and `composite()` work without SciPy.
+The NumPy-only base install includes chi-square flagging, Q-Q quantiles, IRT
+theta estimation, and response-time mixture scoring. The legacy `full` extra
+is retained as an empty compatibility alias.
 
 ## Quick start
 

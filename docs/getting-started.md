@@ -11,15 +11,13 @@ pip install insufficient-effort
 ### With optional dependencies
 
 ```bash
-pip install "insufficient-effort[full]"
 pip install "insufficient-effort[plot]"
-pip install "insufficient-effort[full,plot]"
 ```
 
 | Extra | Provides |
 |-------|----------|
-| *(none)* | NumPy-only indices and default `screen()` / `composite()` |
-| `full` | SciPy for `mahad(..., method="chi2", flag=True)` and `response_time_mixture()` |
+| *(none)* | All statistical indices, including chi-square and response-time mixture helpers |
+| `full` | Empty compatibility alias retained for existing installation commands |
 | `plot` | matplotlib helpers (`plot_distributions`, etc.) |
 
 ### From source (development)
@@ -27,7 +25,7 @@ pip install "insufficient-effort[full,plot]"
 ```bash
 git clone https://github.com/Cameron-Lyons/ier.git
 cd ier
-uv sync --extra dev
+uv sync --all-groups
 ```
 
 ## Input shapes

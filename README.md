@@ -24,13 +24,13 @@ pip install insufficient-effort
 Optional extras:
 
 ```bash
-pip install "insufficient-effort[full]"   # SciPy helpers
 pip install "insufficient-effort[plot]"   # matplotlib visualizations
 ```
 
-Base install is NumPy-only. Default `screen()` / `composite()` work without SciPy.
-SciPy is required for `mahad(..., flag=True, method="chi2")` and
-`response_time_mixture()`.
+The base install is NumPy-only. Chi-square flagging, Q-Q quantiles, IRT theta
+estimation, and response-time mixture scoring are implemented locally and do
+not require SciPy. The legacy `full` extra remains accepted as an empty
+compatibility alias.
 
 ## Quick Start
 
@@ -85,8 +85,8 @@ Full docs live in [`docs/`](docs/) (MkDocs):
 Build locally:
 
 ```bash
-uv sync --extra docs
-uv run mkdocs serve
+uv sync --group docs
+uv run --no-sync mkdocs serve
 ```
 
 Examples:

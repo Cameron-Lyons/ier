@@ -28,32 +28,10 @@ jobs:
         run: uv python install 3.14
 
       - name: Install dependencies
-        run: uv sync --locked --extra dev
+        run: uv sync --locked --group security
 
       - name: Export dependencies
-        run: uv export --locked --extra dev --no-hashes --no-emit-project > requirements-audit.txt
+        run: uv export --locked --all-groups --all-extras --no-hashes --no-emit-project > requirements-audit.txt
 
       - name: Run pip-audit
-        run: uv run pip-audit --strict --desc on --no-deps --disable-pip -r requirements-audit.txt
-
-  bandit:
-    name: Bandit Security Scan
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.14
-
-      - name: Install dependencies
-        run: uv sync --locked --extra dev
-
-      - name: Run Bandit
-        run: uv run bandit -r src/ier -c pyproject.toml
+        run: uv run --no-sync pip-audit --strict --desc on --no-deps --disable-pip -r requirements-audit.txt

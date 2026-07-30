@@ -15,25 +15,9 @@ References:
   Applied Psychological Measurement, 25(2), 107-135.
 """
 
-import logging
-from typing import Any
-
 import numpy as np
 
 from ier._validation import MatrixLike, validate_matrix_input
-
-logger = logging.getLogger(__name__)
-
-SCIPY_AVAILABLE = False
-optimize: Any = None
-try:
-    from scipy import optimize as _optimize
-
-    optimize = _optimize
-    SCIPY_AVAILABLE = True
-except ImportError as e:
-    # SciPy is optional; ML theta estimation falls back to logit transformation
-    logger.debug("SciPy not available, ML theta estimation disabled: %s", e)
 
 
 def lz(
@@ -248,29 +232,46 @@ def _estimate_theta(x: np.ndarray, a: np.ndarray, b: np.ndarray, na_rm: bool = T
             theta[i] = 3.0
         elif np.all(responses == 0):
             theta[i] = -3.0
-        elif SCIPY_AVAILABLE:
-            theta[i] = _ml_theta(responses, a_valid, b_valid)
         else:
-            p = np.mean(responses)
-            p = np.clip(p, 0.01, 0.99)
-            theta[i] = np.log(p / (1 - p))
+            theta[i] = _ml_theta(responses, a_valid, b_valid)
 
     return theta
 
 
 def _ml_theta(responses: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
-    """Maximum likelihood estimation of theta for a single person."""
-    assert optimize is not None
+    """Estimate theta with safeguarded Newton iterations on the score equation."""
+    lower = -4.0
+    upper = 4.0
+    proportion = float(np.clip(np.mean(responses), 0.01, 0.99))
+    theta = float(np.clip(np.log(proportion / (1.0 - proportion)), lower, upper))
 
-    def neg_log_likelihood(theta_val: float) -> float:
-        prob = 1 / (1 + np.exp(-a * (theta_val - b)))
-        prob = np.clip(prob, 1e-10, 1 - 1e-10)
-        ll: float = float(np.sum(responses * np.log(prob) + (1 - responses) * np.log(1 - prob)))
-        return -ll
+    for _ in range(64):
+        linear_predictor = a * (theta - b)
+        probabilities = np.empty_like(linear_predictor, dtype=float)
+        non_negative = linear_predictor >= 0.0
+        probabilities[non_negative] = 1.0 / (1.0 + np.exp(-linear_predictor[non_negative]))
+        exponential = np.exp(linear_predictor[~non_negative])
+        probabilities[~non_negative] = exponential / (1.0 + exponential)
 
-    result = optimize.minimize_scalar(neg_log_likelihood, bounds=(-4, 4), method="bounded")
-    x_val: float = float(result.x)
-    return x_val
+        score = float(np.sum(a * (responses - probabilities)))
+        if abs(score) <= 1e-12:
+            return theta
+
+        if score > 0.0:
+            lower = theta
+        else:
+            upper = theta
+
+        information = float(np.sum(a**2 * probabilities * (1.0 - probabilities)))
+        candidate = theta + score / information if information > 0.0 else np.nan
+        if not np.isfinite(candidate) or not lower < candidate < upper:
+            candidate = (lower + upper) / 2.0
+
+        if abs(candidate - theta) <= 1e-12:
+            return float(candidate)
+        theta = float(candidate)
+
+    return theta
 
 
 def _compute_lz(

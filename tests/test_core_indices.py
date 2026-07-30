@@ -3,11 +3,9 @@
 import unittest
 import warnings
 from typing import Any
-from unittest.mock import patch
 
 import numpy as np
 import numpy.typing as npt
-import scipy.stats as stats
 
 from ier.evenodd import calculate_correlations, evenodd
 from ier.irv import irv
@@ -290,7 +288,7 @@ class TestMahadFunction(unittest.TestCase):
         distances: npt.NDArray[np.float64]
         flags: npt.NDArray[np.bool_]
         distances, flags = mahad(self.data, flag=True, confidence=0.99)
-        threshold: float = stats.chi2.ppf(0.99, df=self.data.shape[1])
+        threshold = 11.34486673014437
         flagged_distances: npt.NDArray[np.float64] = distances[flags]
         self.assertTrue((flagged_distances**2 > threshold).all())
 
@@ -312,18 +310,6 @@ class TestMahadFunction(unittest.TestCase):
         distances = mahad(data)
         self.assertTrue(np.all(np.isfinite(distances)))
         self.assertTrue(np.all(distances >= 0))
-
-    def test_chi2_requires_scipy(self) -> None:
-        """Test chi-square flagging reports missing optional SciPy dependency."""
-        with patch("ier.mahad.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError) as ctx:
-            mahad(self.data, flag=True, method="chi2")
-        self.assertIn("insufficient-effort[full]", str(ctx.exception))
-
-    def test_zscore_requires_scipy(self) -> None:
-        """Test z-score flagging reports missing optional SciPy dependency."""
-        with patch("ier.mahad.SCIPY_AVAILABLE", False), self.assertRaises(RuntimeError) as ctx:
-            mahad(self.data, flag=True, method="zscore")
-        self.assertIn("insufficient-effort[full]", str(ctx.exception))
 
     def test_invalid_confidence(self) -> None:
         """Test MAHAD raises ValueError for invalid confidence values."""

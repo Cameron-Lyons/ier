@@ -73,10 +73,9 @@ accident.
 
 ## Optional dependencies
 
-Install hints are centralized in `_optional_imports.py`:
-
-- SciPy → `pip install 'insufficient-effort[full]'`
-- matplotlib → `pip install 'insufficient-effort[plot]'`
+All statistical functionality is available in the NumPy-only base install.
+Plotting remains optional and reports a centralized install hint from
+`_optional_imports.py`: `pip install 'insufficient-effort[plot]'`.
 
 ## Parity and simulation
 
