@@ -6,6 +6,7 @@ import builtins
 import sys
 import unittest
 from contextlib import contextmanager
+from typing import Any
 from unittest.mock import patch
 
 from ier._optional_imports import require_matplotlib_pyplot
@@ -19,8 +20,8 @@ def _block_imports(*blocked: str):
 
     def _import(
         name: str,
-        globals=None,  # noqa: ANN001
-        locals=None,  # noqa: ANN001
+        globals: dict[str, Any] | None = None,
+        locals: dict[str, Any] | None = None,
         fromlist: tuple[str, ...] = (),
         level: int = 0,
     ) -> object:

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Smoke-test an installed wheel's import, metadata version, and CLI entry point."""
 
 from __future__ import annotations

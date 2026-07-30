@@ -26,7 +26,6 @@ def simulate(n_attentive: int = 80, n_careless: int = 20, n_items: int = 20, see
     rng = np.random.default_rng(seed)
     attentive = rng.integers(1, 6, size=(n_attentive, n_items)).astype(float)
     careless = np.full((n_careless, n_items), 3.0)
-    # Mix in a few alternating careless rows
     for i in range(0, n_careless, 4):
         careless[i, :] = np.tile([1.0, 5.0], n_items // 2)
     labels = np.array([0] * n_attentive + [1] * n_careless)

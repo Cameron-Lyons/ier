@@ -2,7 +2,7 @@
 
 import unittest
 import warnings
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -557,7 +557,7 @@ class TestPsychometricFunctions(unittest.TestCase):
         with self.assertRaises(ValueError):
             psychsyn([[1]])
         with self.assertRaises(ValueError):
-            psychsyn(self.data, critval="high")  # type: ignore[arg-type]
+            psychsyn(self.data, critval=cast("float", "high"))
         with self.assertRaises(ValueError):
             psychsyn(self.data, critval=-0.5, anto=False)
         with self.assertRaises(ValueError):

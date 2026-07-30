@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Simulate attentive vs careless responders and report screen() detection rates.
 
 This is a labeled synthetic study for applied credibility checks — not a claim

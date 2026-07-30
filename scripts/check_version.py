@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Require a candidate pyproject version to be valid SemVer and newer than a base."""
 
 from __future__ import annotations

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Run the full local quality suite used before opening a PR.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

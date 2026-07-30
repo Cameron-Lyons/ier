@@ -12,7 +12,7 @@ pip install insufficient-effort
 Optional extras:
 
 ```bash
-pip install "insufficient-effort[plot]"   # matplotlib visualizations
+pip install "insufficient-effort[plot]"
 ```
 
 The NumPy-only base install includes chi-square flagging, Q-Q quantiles, IRT
@@ -27,7 +27,7 @@ from ier import IndexOptions, composite, screen
 
 data = np.array([
     [1, 2, 3, 4, 5, 4],
-    [3, 3, 3, 3, 3, 3],  # straightlining
+    [3, 3, 3, 3, 3, 3],
     [1, 5, 1, 5, 1, 5],
 ], dtype=float)
 

@@ -53,7 +53,6 @@ library(jsonlite)
 library(careless)
 fix <- fromJSON("tests/fixtures/parity/irv_longstring.json")
 x <- as.matrix(fix$matrix)
-# Compare definitions carefully before overwriting expected$irv / longstring.
 ```
 
 ## Suggested validation workflow

@@ -61,7 +61,7 @@ from .visualize import plot_flagged_heatmap as plot_flagged_heatmap
 
 try:
     __version__ = version("insufficient-effort")
-except PackageNotFoundError:  # pragma: no cover - editable/uninstalled fallback
+except PackageNotFoundError:
     __version__ = "0.0.0"
 
 __all__ = [
