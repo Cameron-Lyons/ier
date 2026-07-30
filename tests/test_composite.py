@@ -1,6 +1,7 @@
 """Unit tests for composite IER scorers."""
 
 import unittest
+from typing import Any, cast
 
 import numpy as np
 
@@ -119,7 +120,7 @@ class TestComposite(unittest.TestCase):
         """Test that invalid method raises ValueError."""
         data = [[1, 2, 3, 4, 5]]
         with self.assertRaises(ValueError):
-            composite(data, method="invalid")  # type: ignore[arg-type]
+            composite(data, method=cast("Any", "invalid"))
 
     def test_return_diagnostics(self) -> None:
         """Test composite can return index diagnostics."""

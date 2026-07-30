@@ -26,7 +26,6 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-# Retained as an empty compatibility alias for existing ``ier[full]`` users.
 full = []
 plot = ["matplotlib>=3.8.0,<4"]
 

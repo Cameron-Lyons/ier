@@ -103,7 +103,6 @@ def _require_infrequency_config(options: IndexOptions) -> str | None:
 
 
 def _mahad_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
-    # Distances are NumPy-only; screen/composite apply their own flagging.
     result = mahad(x, na_rm=options.na_rm, method="iqr")
     if not isinstance(result, np.ndarray):
         raise ValueError("mahad returned non-array output")
@@ -303,8 +302,6 @@ INDEX_REGISTRY: dict[str, IndexSpec] = {
         scorer=_guttman_scores,
         flag_direction="high",
         default_screen=True,
-        # Available in composite(), but not default: Guttman errors can dilute
-        # pattern-based signals like straightlining in small samples.
         default_composite=False,
     ),
     "individual_reliability": IndexSpec(

@@ -91,7 +91,6 @@ def semantic_syn(
 
     zero_std = valid_rows & (row_std == 0)
     if np.any(zero_std):
-        # Zero-variance rows are maximally consistent only when pair differences are zero.
         scores[zero_std] = np.where(np.isclose(pair_mean_diffs[zero_std], 0.0), 1.0, -1.0)
 
     result: np.ndarray = np.clip(scores, -1, 1)

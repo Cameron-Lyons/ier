@@ -81,7 +81,6 @@ jobs:
       - name: Generate release notes
         id: changelog
         run: |
-          # Write to a temp file — never overwrite the curated CHANGELOG.md
           NOTES="$(mktemp)"
           {
             echo "## What's Changed"

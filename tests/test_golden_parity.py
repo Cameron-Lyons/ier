@@ -46,14 +46,13 @@ from ier.u3_poly import midpoint_responding
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "parity"
 
-# Respondent × item matrix chosen so each row has an obvious analytic answer.
 GOLDEN_MATRIX = np.array(
     [
-        [1, 1, 1, 1, 1],  # straightline: IRV=0, longstring=5
-        [1, 2, 3, 4, 5],  # ascending: IRV=std(1..5), longstring=1
-        [5, 5, 5, 1, 2],  # early straightline: longstring=3
-        [1, 2, 2, 2, 2],  # late straightline: longstring=4
-        [1, 2, 1, 2, 1],  # alternating: longstring=1
+        [1, 1, 1, 1, 1],
+        [1, 2, 3, 4, 5],
+        [5, 5, 5, 1, 2],
+        [1, 2, 2, 2, 2],
+        [1, 2, 1, 2, 1],
     ],
     dtype=float,
 )
@@ -71,7 +70,6 @@ EXPECTED_IRV = np.array(
 EXPECTED_LONGSTRING = np.array([5.0, 1.0, 3.0, 4.0, 1.0])
 EXPECTED_LONGSTRING_PATTERN = np.array([0.0, 0.0, 0.0, 0.0, 5.0])
 
-# Broader matrix for multivariate / consistency indices.
 PARITY_MATRIX = np.array(
     [
         [1, 2, 3, 4, 5, 4],

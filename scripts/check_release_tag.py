@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Require a release tag to match the project version exactly."""
 
 from __future__ import annotations

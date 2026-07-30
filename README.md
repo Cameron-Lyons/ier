@@ -24,7 +24,7 @@ pip install insufficient-effort
 Optional extras:
 
 ```bash
-pip install "insufficient-effort[plot]"   # matplotlib visualizations
+pip install "insufficient-effort[plot]"
 ```
 
 The base install is NumPy-only. Chi-square flagging, Q-Q quantiles, IRT theta
@@ -41,8 +41,8 @@ from ier import IndexOptions, composite, irv, screen
 data = np.array([
     [1, 2, 3, 4, 5, 4],
     [2, 3, 4, 3, 2, 1],
-    [3, 3, 3, 3, 3, 3],  # straightlining
-    [1, 5, 1, 5, 1, 5],  # alternating
+    [3, 3, 3, 3, 3, 3],
+    [1, 5, 1, 5, 1, 5],
 ], dtype=float)
 
 print("IRV:", irv(data))

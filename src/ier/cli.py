@@ -65,8 +65,6 @@ def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
     if not rows:
         raise ValueError(f"no data rows found in {path}")
 
-    # Drop a header row if its first non-empty cell is non-numeric. Blank cells are
-    # valid missing values and must not cause the first data row to be discarded.
     start = int(_row_starts_with_non_numeric_value(rows[0]))
 
     data_rows = rows[start:]
@@ -427,5 +425,5 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     raise SystemExit(main())

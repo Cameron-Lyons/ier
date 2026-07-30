@@ -1,7 +1,5 @@
 ## Summary
 
-<!-- What changed and why (1–3 bullets). -->
-
 ## Test plan
 
 - [ ] `./scripts/check.sh` (or equivalent CI jobs) passes

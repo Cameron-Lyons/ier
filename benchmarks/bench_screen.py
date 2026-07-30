@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Benchmark default screen() on synthetic survey matrices.
 
 Usage:
@@ -20,7 +19,6 @@ from ier import IndexOptions, screen
 def _make_data(n_respondents: int, n_items: int, seed: int) -> np.ndarray:
     rng = np.random.default_rng(seed)
     data = rng.integers(1, 6, size=(n_respondents, n_items)).astype(float)
-    # Inject a few pathological rows
     data[0, :] = 3.0
     if n_items >= 6:
         data[1, :] = np.tile([1.0, 5.0], n_items // 2 + 1)[:n_items]

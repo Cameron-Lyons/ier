@@ -42,7 +42,6 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
-          # Tokenless uploads are rejected; keep CI green when CODECOV_TOKEN is unset.
           fail_ci_if_error: false
           verbose: true
 

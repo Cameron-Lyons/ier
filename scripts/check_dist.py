@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Verify metadata and required files in built wheel and source distributions."""
 
 from __future__ import annotations
