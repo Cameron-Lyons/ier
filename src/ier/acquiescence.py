@@ -127,7 +127,7 @@ def acquiescence_flag(
     - scale_max: Maximum value of the response scale.
     - positive_items: List of column indices for positively-worded items.
     - negative_items: List of column indices for negatively-worded items.
-    - threshold: Absolute threshold above which to flag. If None, uses percentile.
+    - threshold: Absolute threshold at or above which to flag. If None, uses percentile.
     - percentile: Percentile cutoff for flagging (default 95th percentile).
     - na_rm: Boolean indicating whether to ignore missing values.
 

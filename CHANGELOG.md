@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2] - 2026-08-02
+
+### Changed
+
+- Public percentile-capable flag helpers now share one cutoff-boundary policy:
+  explicit thresholds include scores exactly at the cutoff, while
+  sample-percentile thresholds continue to flag only the strict tail. This
+  brings direct helper behavior in line with fixed thresholds in `screen()`.
+
 ## [2.7.1] - 2026-08-02
 
 ### Changed

@@ -91,6 +91,5 @@ def missing_rate_flag(
         threshold=threshold,
         percentile=percentile,
         direction="high",
-        inclusive=threshold is not None,
     )
     return scores, flags

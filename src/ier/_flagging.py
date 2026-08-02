@@ -55,9 +55,11 @@ def threshold_flags(
     threshold: float | None,
     percentile: float,
     direction: Literal["high", "low"],
-    inclusive: bool = False,
+    inclusive: bool | None = None,
 ) -> np.ndarray:
-    """Create boolean flags from scores using explicit or percentile thresholding."""
+    """Create flags, including fixed-cutoff equality but excluding percentile ties."""
+    if inclusive is None:
+        inclusive = threshold is not None
     cutoff = resolve_threshold(scores, threshold, percentile)
 
     flags = np.zeros(len(scores), dtype=bool)
