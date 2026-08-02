@@ -7,6 +7,7 @@ import csv
 import gzip
 import json
 import sys
+from array import array
 from io import StringIO
 from itertools import chain
 from pathlib import Path
@@ -27,6 +28,8 @@ from ier import (
 from ier._flagging import resolve_threshold, threshold_flags
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from ier.types import IndexCatalog, ScreenResult
 
 
@@ -48,8 +51,8 @@ def _parse_numeric_cell(cell: str) -> float:
     return float(cell) if cell.strip() else np.nan
 
 
-def _read_rows_from_stream(handle: TextIO, delimiter: str | None) -> list[list[str]]:
-    """Read non-empty rows from a forward-only text stream."""
+def _iter_rows_from_stream(handle: TextIO, delimiter: str | None) -> Iterator[list[str]]:
+    """Yield non-empty rows from a forward-only text stream."""
     sample_lines: list[str] = []
     sample_size = 0
     while sample_size < 4096:
@@ -65,15 +68,16 @@ def _read_rows_from_stream(handle: TextIO, delimiter: str | None) -> list[list[s
         try:
             delimiter = csv.Sniffer().sniff(sample, delimiters=",\t;").delimiter
         except csv.Error:
-            rows = []
             for line in lines:
                 row = line.split()
                 if row:
-                    rows.append(row)
-            return rows
+                    yield row
+            return
 
     reader = csv.reader(lines, delimiter=delimiter)
-    return [row for row in reader if row and any(cell.strip() for cell in row)]
+    for row in reader:
+        if row and any(cell.strip() for cell in row):
+            yield row
 
 
 def _input_label(path: Path) -> str:
@@ -81,23 +85,29 @@ def _input_label(path: Path) -> str:
     return "standard input" if path == Path("-") else str(path)
 
 
-def _read_rows(path: Path, delimiter: str | None) -> list[list[str]]:
-    """Read plain, gzip-compressed, or standard-input delimited rows."""
+def _iter_rows(path: Path, delimiter: str | None) -> Iterator[list[str]]:
+    """Yield plain, gzip-compressed, or standard-input delimited rows."""
     if delimiter is not None and (len(delimiter) != 1 or delimiter in "\r\n"):
         raise ValueError("delimiter must be exactly one non-newline character")
 
+    found = False
     if path == Path("-"):
-        rows = _read_rows_from_stream(sys.stdin, delimiter)
+        for row in _iter_rows_from_stream(sys.stdin, delimiter):
+            found = True
+            yield row
     elif path.suffix.casefold() == ".gz":
         with gzip.open(path, mode="rt", newline="", encoding="utf-8") as handle:
-            rows = _read_rows_from_stream(handle, delimiter)
+            for row in _iter_rows_from_stream(handle, delimiter):
+                found = True
+                yield row
     else:
         with path.open(newline="", encoding="utf-8") as handle:
-            rows = _read_rows_from_stream(handle, delimiter)
+            for row in _iter_rows_from_stream(handle, delimiter):
+                found = True
+                yield row
 
-    if not rows:
+    if not found:
         raise ValueError(f"no data rows found in {_input_label(path)}")
-    return rows
 
 
 def _load_input(
@@ -106,9 +116,10 @@ def _load_input(
     id_column: str | None = None,
     item_columns: list[str] | None = None,
 ) -> tuple[np.ndarray, list[str] | None]:
-    """Load selected numeric items and optionally preserve a named identifier."""
-    rows = _read_rows(path, delimiter)
+    """Stream selected numeric items and optionally preserve a named identifier."""
     source = _input_label(path)
+    row_iterator = iter(_iter_rows(path, delimiter))
+    first_row = next(row_iterator)
 
     selected_names: list[str] | None = None
     if item_columns is not None:
@@ -118,13 +129,19 @@ def _load_input(
         if len(set(selected_names)) != len(selected_names):
             raise ValueError("item columns cannot contain duplicate names")
 
-    identifiers: list[str] | None = None
     id_index: int | None = None
     item_indices: list[int] | None = None
     header: list[str] | None = None
     if id_column is not None or selected_names is not None:
-        header = [cell.strip() for cell in rows[0]]
-        start = 1
+        header = [cell.strip() for cell in first_row]
+        data_rows: Iterator[list[str]] = row_iterator
+        expected_width: int | None = len(header)
+    elif _row_starts_with_non_numeric_value(first_row):
+        data_rows = row_iterator
+        expected_width = None
+    else:
+        data_rows = chain((first_row,), row_iterator)
+        expected_width = len(first_row)
 
     if id_column is not None:
         assert header is not None
@@ -149,47 +166,54 @@ def _load_input(
                     f"ID column '{id_column}' cannot also be selected as an item column"
                 )
             item_indices.append(matches[0])
-
-    if header is None:
-        start = int(_row_starts_with_non_numeric_value(rows[0]))
-
-    data_rows = rows[start:]
-    if not data_rows:
-        raise ValueError(f"no numeric data rows found in {source}")
-
-    widths = {len(row) for row in data_rows}
-    if header is not None:
-        widths.add(len(header))
-    if len(widths) != 1:
-        raise ValueError(
-            f"jagged delimited input in {source}: rows have unequal lengths {sorted(widths)}; "
-            "expected a rectangular respondent×item matrix"
-        )
-
-    if id_index is not None:
-        identifiers = [row[id_index].strip() for row in data_rows]
-        if any(not identifier for identifier in identifiers):
-            raise ValueError(f"ID column '{id_column}' contains blank values")
-        if len(set(identifiers)) != len(identifiers):
-            raise ValueError(f"ID column '{id_column}' contains duplicate values")
-
-    if item_indices is not None:
-        data_rows = [[row[index] for index in item_indices] for row in data_rows]
     elif id_index is not None:
-        data_rows = [row[:id_index] + row[id_index + 1 :] for row in data_rows]
-        if not data_rows[0]:
+        assert header is not None
+        item_indices = [index for index in range(len(header)) if index != id_index]
+        if not item_indices:
             raise ValueError("input must contain at least one item column besides the ID column")
 
-    try:
-        matrix = np.array(
-            [[_parse_numeric_cell(cell) for cell in row] for row in data_rows],
-            dtype=float,
-        )
-    except ValueError as err:
-        raise ValueError(f"failed to parse numeric matrix from {source}: {err}") from err
+    identifiers: list[str] | None = [] if id_index is not None else None
+    seen_identifiers: set[str] = set()
+    numeric_values = array("d")
+    n_rows = 0
+    n_items = len(item_indices) if item_indices is not None else None
 
-    if matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0:
-        raise ValueError(f"expected a 2D respondent×item matrix in {source}")
+    for row in data_rows:
+        if expected_width is None:
+            expected_width = len(row)
+        elif len(row) != expected_width:
+            widths = sorted({expected_width, len(row)})
+            raise ValueError(
+                f"jagged delimited input in {source}: rows have unequal lengths {widths}; "
+                "expected a rectangular respondent×item matrix"
+            )
+
+        if id_index is not None:
+            assert identifiers is not None
+            identifier = row[id_index].strip()
+            if not identifier:
+                raise ValueError(f"ID column '{id_column}' contains blank values")
+            if identifier in seen_identifiers:
+                raise ValueError(f"ID column '{id_column}' contains duplicate values")
+            identifiers.append(identifier)
+            seen_identifiers.add(identifier)
+
+        selected_cells = (
+            (row[index] for index in item_indices) if item_indices is not None else iter(row)
+        )
+        try:
+            numeric_values.extend(_parse_numeric_cell(cell) for cell in selected_cells)
+        except ValueError as err:
+            raise ValueError(f"failed to parse numeric matrix from {source}: {err}") from err
+
+        if n_items is None:
+            n_items = len(row)
+        n_rows += 1
+
+    if n_rows == 0 or n_items is None:
+        raise ValueError(f"no numeric data rows found in {source}")
+
+    matrix = np.frombuffer(numeric_values, dtype=np.float64).reshape(n_rows, n_items)
     return matrix, identifiers
 
 
