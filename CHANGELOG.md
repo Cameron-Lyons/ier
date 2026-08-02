@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-08-02
+
+### Changed
+
+- Mahalanobis distance evaluation now uses a BLAS-backed matrix product for the
+  quadratic form; the 10,000-respondent, 80-item index benchmark runs roughly
+  31 times faster and default screening runs roughly twice as fast.
+
 ## [2.4.0] - 2026-08-02
 
 ### Added
