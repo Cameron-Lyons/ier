@@ -3,6 +3,23 @@
 Registry-backed indices can be selected in `screen()` / `composite()`. Response-time
 helpers use a different input domain and are listed separately.
 
+Inspect the same registry metadata programmatically or from the command line:
+
+```python
+from ier import index_catalog
+
+catalog = index_catalog()
+print(catalog["evenodd"]["required_options"])
+```
+
+```bash
+ier indices
+ier indices --format json --output indices.json
+```
+
+The catalog reports flag direction and mode, screen/composite availability and
+defaults, and options that must be configured before an index can run.
+
 ## Matrix indices
 
 | Name | Construct | Flag when | Screen default | Composite | Extra config |

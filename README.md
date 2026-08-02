@@ -12,6 +12,7 @@ For a comprehensive methods review, see
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Configurable multi-index consensus decisions for respondent-level screening
 - Fixed or sample-relative per-index screening thresholds
+- Programmatic and CLI index catalog with defaults and configuration requirements
 - CLI: `ier screen data.csv` / `ier composite data.csv` (text / JSON / CSV)
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Soft per-index errors during screening and composite scoring
@@ -66,6 +67,7 @@ ier screen data.csv --format json --output screen.json
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier composite data.csv --indices irv longstring
 ier composite data.csv --format csv --output scores.csv
+ier indices --format json
 ier --version
 ```
 

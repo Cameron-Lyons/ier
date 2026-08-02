@@ -17,6 +17,20 @@ IndexThresholdMap: TypeAlias = dict[str, float | None]
 CompositeMethod: TypeAlias = Literal["mean", "sum", "max", "best_subset"]
 
 
+class IndexMetadata(TypedDict):
+    """Public metadata for one registered IER index."""
+
+    flag_direction: Literal["high", "low"]
+    flag_mode: Literal["percentile", "present"]
+    default_screen: bool
+    default_composite: bool
+    composite_enabled: bool
+    required_options: tuple[str, ...]
+
+
+IndexCatalog: TypeAlias = dict[str, IndexMetadata]
+
+
 class ScreenIndexSummary(TypedDict):
     """Summary statistics for one index in screen()."""
 

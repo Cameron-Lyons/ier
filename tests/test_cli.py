@@ -88,6 +88,35 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(code, 0)
 
+    def test_indices_command_text_output(self) -> None:
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            code = main(["indices"])
+
+        self.assertEqual(code, 0)
+        self.assertIn("index\tdirection\tflag_mode", stdout.getvalue())
+        self.assertIn("irv\tlow\tpercentile", stdout.getvalue())
+
+    def test_indices_command_json_output(self) -> None:
+        out = self.root / "indices.json"
+        code = main(["indices", "--format", "json", "--output", str(out)])
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["n_indices"], 20)
+        self.assertEqual(payload["indices"]["onset"]["flag_mode"], "present")
+        self.assertEqual(payload["indices"]["evenodd"]["required_options"], ["evenodd_factors"])
+
+    def test_indices_command_csv_output(self) -> None:
+        out = self.root / "indices.csv"
+        code = main(["indices", "--format", "csv", "--output", str(out)])
+
+        self.assertEqual(code, 0)
+        rows = list(csv.DictReader(StringIO(out.read_text(encoding="utf-8"))))
+        self.assertEqual(len(rows), 20)
+        onset = next(row for row in rows if row["index"] == "onset")
+        self.assertEqual(onset["flag_mode"], "present")
+
     def test_screen_json_output(self) -> None:
         out = self.root / "screen.json"
         code = main(
