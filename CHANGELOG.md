@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.5] - 2026-08-02
+
+### Changed
+
+- Repeating-pattern scoring now evaluates complete matrices in vectorized batches;
+  the 1,000-respondent, 50-item index benchmark runs roughly 36 times faster and
+  default screening runs roughly three times faster.
+
 ## [2.2.4] - 2026-08-02
 
 ### Added
