@@ -128,7 +128,7 @@ def composite(
               "mahad", "psychsyn", "psychant", "evenodd", "person_total", "lz",
               "mad", "markov", "longstring_pattern", "guttman",
               "individual_reliability", "semantic_syn", "semantic_ant",
-              "infrequency". Default includes NumPy-safe indices that do not
+              "infrequency", "missing_rate". Default includes NumPy-safe indices that do not
               require extra config.
     - method: How to combine indices. "mean" (default), "sum", "max", or
               "best_subset" (overrides indices to ["mad", "irv", "longstring", "lz"],

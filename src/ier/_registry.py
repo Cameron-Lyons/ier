@@ -16,6 +16,7 @@ from ier.lz import lz
 from ier.mad import run_mad_index
 from ier.mahad import mahad
 from ier.markov import markov
+from ier.missing import missing_rate
 from ier.onset import onset
 from ier.person_total import person_total
 from ier.psychsyn import psychant, psychsyn
@@ -270,6 +271,11 @@ INDEX_REGISTRY: dict[str, IndexSpec] = {
         flag_direction="low",
         composite_multiplier=-1.0,
         default_screen=True,
+    ),
+    "missing_rate": IndexSpec(
+        name="missing_rate",
+        scorer=lambda x, options: missing_rate(x),
+        flag_direction="high",
     ),
     "u3_poly": IndexSpec(
         name="u3_poly",

@@ -32,6 +32,7 @@ defaults, and options that must be configured before an index can run.
 | `psychant` | Psychometric antonym consistency | low | no | yes | `psychant_critval` |
 | `person_total` | Extreme total scores | low* | yes | yes | — |
 | `markov` | Transition entropy | low | yes | yes | — |
+| `missing_rate` | Missing-response proportion | high | no | yes | optional item subset via direct API |
 | `u3_poly` | Polytomous person-fit / Guttman-like | high | yes | no | `scale_min` / `scale_max` |
 | `midpoint` | Midpoint responding | high | yes | no | `scale_min` / `scale_max`, `midpoint_tolerance` |
 | `acquiescence` | Agreeing / yea-saying | high | yes | no | scale bounds; optional item lists |
@@ -56,6 +57,11 @@ rejects numeric or multidimensional arrays.
 computing consistency. Pass `scale_min` and `scale_max` through `IndexOptions`
 when the matrix does not contain both response-scale endpoints; otherwise the
 bounds are inferred from the observed data.
+
+`missing_rate` is opt-in because planned skip logic and matrix preprocessing can
+create legitimate omissions. Use the standalone function's `item_indices` option
+to restrict the calculation to required items, or select it explicitly in
+`screen()` / `composite()` when all matrix columns share a missingness policy.
 
 ## Response-time indices (standalone — not in the registry)
 

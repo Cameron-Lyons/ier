@@ -20,6 +20,8 @@
         - psychant
         - person_total
         - markov
+        - missing_rate
+        - missing_rate_flag
         - u3_poly
         - midpoint_responding
         - acquiescence

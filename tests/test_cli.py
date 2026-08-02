@@ -104,8 +104,9 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(code, 0)
         payload = json.loads(out.read_text(encoding="utf-8"))
-        self.assertEqual(payload["n_indices"], 20)
+        self.assertEqual(payload["n_indices"], 21)
         self.assertEqual(payload["indices"]["onset"]["flag_mode"], "present")
+        self.assertEqual(payload["indices"]["missing_rate"]["flag_direction"], "high")
         self.assertEqual(payload["indices"]["evenodd"]["required_options"], ["evenodd_factors"])
 
     def test_indices_command_csv_output(self) -> None:
@@ -114,9 +115,36 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(code, 0)
         rows = list(csv.DictReader(StringIO(out.read_text(encoding="utf-8"))))
-        self.assertEqual(len(rows), 20)
+        self.assertEqual(len(rows), 21)
         onset = next(row for row in rows if row["index"] == "onset")
         self.assertEqual(onset["flag_mode"], "present")
+
+    def test_screen_missing_rate_index(self) -> None:
+        missing = self.root / "missing-rate.csv"
+        missing.write_text("i1,i2,i3\n1,2,3\n1,,3\n,,3\n", encoding="utf-8")
+        out = self.root / "missing-rate.json"
+
+        code = main(
+            [
+                "screen",
+                str(missing),
+                "--indices",
+                "missing_rate",
+                "--threshold",
+                "missing_rate=0.5",
+                "--min-flags",
+                "1",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        np.testing.assert_allclose(payload["scores"]["missing_rate"], [0.0, 1 / 3, 2 / 3])
+        self.assertEqual(payload["consensus_flags"], [False, False, True])
 
     def test_screen_json_output(self) -> None:
         out = self.root / "screen.json"
