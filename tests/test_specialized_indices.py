@@ -567,12 +567,32 @@ class TestLongstringPattern(unittest.TestCase):
     def test_complete_matrix_fast_path_matches_row_scoring(self) -> None:
         """Test complete matrix scoring against the missing-data row path."""
         rng = np.random.default_rng(42)
-        data = rng.integers(1, 6, size=(200, 24)).astype(float)
+        for n_items in [4, 5, 12, 24]:
+            for max_pattern_length in [2, 3, 5, 8, 20]:
+                with self.subTest(n_items=n_items, max_pattern_length=max_pattern_length):
+                    data = rng.integers(1, 6, size=(100, n_items)).astype(float)
+                    result = longstring_pattern(
+                        data,
+                        max_pattern_length=max_pattern_length,
+                    )
+                    row_path_data = np.column_stack((data, np.full(data.shape[0], np.nan)))
+                    row_path_result = longstring_pattern(
+                        row_path_data,
+                        max_pattern_length=max_pattern_length,
+                    )
+                    np.testing.assert_array_equal(result, row_path_result)
+
+    def test_complete_matrix_fast_path_handles_wide_sequences(self) -> None:
+        """Pattern counts remain exact after the workspace widens past uint8."""
+        rng = np.random.default_rng(7)
+        data = rng.integers(1, 6, size=(20, 300)).astype(float)
+        data[0] = np.tile([1.0, 5.0], 150)
 
         result = longstring_pattern(data, max_pattern_length=8)
         row_path_data = np.column_stack((data, np.full(data.shape[0], np.nan)))
         row_path_result = longstring_pattern(row_path_data, max_pattern_length=8)
 
+        self.assertEqual(result[0], 300.0)
         np.testing.assert_array_equal(result, row_path_result)
 
     def test_min_columns(self) -> None:
