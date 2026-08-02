@@ -31,7 +31,7 @@ These are illustrative defaults from common practice, not package guarantees:
 | Even-odd | Low even-odd consistency | Requires known factor lengths |
 | Infrequency | ≥1 failed attention check | Threshold of 1 is common for short batteries |
 | Response time | Very fast page/item times | Absolute cutoffs are survey-specific |
-| Mahalanobis | High multivariate distance | chi² flagging needs SciPy; screening uses percentiles |
+| Mahalanobis | High multivariate distance | Direct chi² flagging and sample-relative screening percentiles are available |
 
 See Curran (2016) and Meade & Craig (2012) for broader methodological discussion.
 

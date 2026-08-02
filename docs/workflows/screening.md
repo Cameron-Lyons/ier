@@ -33,8 +33,8 @@ Default indices are NumPy-only and require no extra item metadata:
 `irv`, `longstring`, `longstring_pattern`, `mahad`, `psychsyn`, `person_total`,
 `markov`, `u3_poly`, `midpoint`, `acquiescence`, `guttman`
 
-Mahalanobis distances in screening use a NumPy-safe path; SciPy is only needed
-when you call `mahad(..., flag=True, method="chi2"|"zscore")` directly.
+Mahalanobis distances and all direct flagging methods (`"chi2"`, `"iqr"`, and
+`"zscore"`) are available in the NumPy-only base install.
 
 ## Config-gated indices
 

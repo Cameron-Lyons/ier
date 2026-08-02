@@ -69,7 +69,7 @@ If you need parity with an existing R pipeline:
 - Unified `screen()` / `composite()` registry with soft per-index errors
 - Shared `IndexOptions` config object (sole config surface for orchestration APIs)
 - Strict typing (`py.typed`) and CI across Python 3.11–3.14
-- Optional SciPy / matplotlib extras without forcing them on base installs
+- Dependency-free statistical routines with an optional matplotlib plotting extra
 - CLI: `ier screen data.csv` / `ier composite data.csv` with JSON/CSV export
 - Explicit documentation that composite logistic scores are uncalibrated
 - Response-time helpers kept out of band (timing matrices ≠ item responses)

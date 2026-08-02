@@ -52,7 +52,7 @@ flags in your analysis code if needed.
 | `response_time` | Central tendency of RT | low (too fast) |
 | `response_time_consistency` | RT coefficient of variation | low (too uniform) |
 | `response_time_flag` | Percentile / threshold flagging | low |
-| `response_time_mixture` | Mixture P(fast component); needs SciPy | high |
+| `response_time_mixture` | Mixture P(fast component) | high |
 
 ## Plot helpers
 
@@ -61,4 +61,4 @@ Requires `insufficient-effort[plot]`:
 - `plot_distributions(screen_result)`
 - `plot_flag_counts(screen_result)`
 - `plot_flagged_heatmap(screen_result)`
-- `mahad_qqplot(...)` (also needs SciPy)
+- `mahad_qqplot(...)`
