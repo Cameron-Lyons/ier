@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - 2026-08-02
+
+### Changed
+
+- Guttman scoring now counts ordered response pairs without materializing every
+  respondent-by-item-pair value matrix, using an adaptive categorical fast path
+  and bounded-memory fallback for high-cardinality data; the 3,000-respondent,
+  100-item categorical benchmark uses roughly one-sixth the peak process memory
+  and runs about 1.7 times faster.
+
+### Fixed
+
+- All-missing Guttman inputs now return missing scores without emitting empty-mean
+  runtime warnings.
+
 ## [2.2.2] - 2026-08-02
 
 ### Changed
