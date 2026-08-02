@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.3] - 2026-08-02
+
+### Changed
+
+- Complete-matrix carelessness-onset detection now evaluates sliding-window
+  variability and changepoint statistics in bounded vectorized batches instead
+  of nested respondent/window loops. The 10,000-respondent, 80-item benchmark
+  runs over 200 times as fast while missing-data rows retain the established
+  fallback behavior.
+
 ## [2.7.2] - 2026-08-02
 
 ### Changed
