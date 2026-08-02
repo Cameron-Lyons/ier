@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-08-02
+
+### Changed
+
+- Transition-entropy scoring now uses its vectorized batch implementation for
+  complete matrices under the default missing-value policy; the 10,000-respondent,
+  80-item transition benchmark is roughly five times faster.
+
 ## [2.2.1] - 2026-08-02
 
 ### Changed
