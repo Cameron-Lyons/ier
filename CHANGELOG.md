@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-08-02
+
+### Added
+
+- `screen()` accepts fixed per-index `thresholds` alongside percentile defaults
+  and returns the actual cutoff applied for each successful index.
+- The CLI accepts repeatable `--threshold INDEX=VALUE` options and includes
+  applied thresholds in JSON and text output.
+
 ## [2.2.6] - 2026-08-02
 
 ### Changed

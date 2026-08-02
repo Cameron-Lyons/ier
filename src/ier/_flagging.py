@@ -5,6 +5,19 @@ from typing import Literal
 import numpy as np
 
 
+def resolve_threshold(
+    scores: np.ndarray,
+    threshold: float | None,
+    percentile: float,
+) -> float:
+    """Resolve an explicit threshold or derive one from valid scores."""
+    if threshold is not None:
+        return threshold
+
+    valid_scores = scores[~np.isnan(scores)]
+    return 0.0 if len(valid_scores) == 0 else float(np.percentile(valid_scores, percentile))
+
+
 def threshold_flags(
     scores: np.ndarray,
     threshold: float | None,
@@ -13,11 +26,7 @@ def threshold_flags(
     inclusive: bool = False,
 ) -> np.ndarray:
     """Create boolean flags from scores using explicit or percentile thresholding."""
-    valid_scores = scores[~np.isnan(scores)]
-
-    cutoff = threshold
-    if cutoff is None:
-        cutoff = 0.0 if len(valid_scores) == 0 else float(np.percentile(valid_scores, percentile))
+    cutoff = resolve_threshold(scores, threshold, percentile)
 
     flags = np.zeros(len(scores), dtype=bool)
     valid_mask = ~np.isnan(scores)

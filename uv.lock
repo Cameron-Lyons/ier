@@ -506,7 +506,7 @@ wheels = [
 
 [[package]]
 name = "insufficient-effort"
-version = "2.2.6"
+version = "2.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },

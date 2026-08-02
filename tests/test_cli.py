@@ -19,6 +19,7 @@ from ier.cli import (
     _parse_float_list,
     _parse_int_list,
     _parse_pair_list,
+    _parse_thresholds,
     main,
 )
 
@@ -108,6 +109,32 @@ class TestCli(unittest.TestCase):
         self.assertIn("flag_counts", payload)
         self.assertIn("consensus_flags", payload)
         self.assertEqual(payload["min_flags"], 2)
+        self.assertEqual(set(payload["thresholds"]), {"irv", "longstring"})
+
+    def test_screen_fixed_threshold(self) -> None:
+        out = self.root / "screen-threshold.json"
+        code = main(
+            [
+                "screen",
+                str(self.csv_path),
+                "--indices",
+                "longstring",
+                "--threshold",
+                "longstring=1",
+                "--min-flags",
+                "1",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["thresholds"], {"longstring": 1.0})
+        self.assertEqual(payload["flags"]["longstring"], [True, True, True])
+        self.assertEqual(payload["consensus_flags"], [True, True, True])
 
     def test_screen_custom_consensus_threshold(self) -> None:
         out = self.root / "screen-consensus.json"
@@ -337,8 +364,25 @@ class TestCli(unittest.TestCase):
         self.assertIsNone(_parse_pair_list(None))
         self.assertEqual(_parse_pair_list("0,1;2,3"), [(0, 1), (2, 3)])
         self.assertIsNone(_parse_pair_list(";;"))
+        self.assertIsNone(_parse_thresholds(None))
+        self.assertEqual(
+            _parse_thresholds(["irv=0.5", "longstring = 4"]), {"irv": 0.5, "longstring": 4.0}
+        )
         with self.assertRaises(ValueError):
             _parse_pair_list("0-1")
+        with self.assertRaises(ValueError):
+            _parse_thresholds(["irv"])
+        with self.assertRaises(ValueError):
+            _parse_thresholds(["irv=1", "irv=2"])
+
+    def test_invalid_fixed_threshold_returns_structured_error(self) -> None:
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(["screen", str(self.csv_path), "--threshold", "irv=nan"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("error: threshold for irv must be a finite number", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_invalid_semantic_pairs_cli(self) -> None:
         code = main(

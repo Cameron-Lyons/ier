@@ -21,6 +21,7 @@ print(result["errors"])
 |-----|---------|
 | `scores` | Per-index score arrays |
 | `flags` | Per-index boolean flags |
+| `thresholds` | Actual per-index cutoffs (`None` for presence flagging) |
 | `flag_counts` | Total flags per respondent |
 | `consensus_flags` | Respondents meeting the configured multi-index agreement threshold |
 | `min_flags` | Number of per-index flags required for consensus (default: 2) |
@@ -68,6 +69,10 @@ the whole screening run. `composite()` uses the same soft-fail policy.
 - Most indices use percentile thresholds (`percentile=95` by default).
 - High-direction indices flag above the percentile; low-direction indices flag
   below `100 - percentile`.
+- Pass fixed cutoffs with `thresholds={"irv": 0.25, "longstring": 8}`. Fixed
+  thresholds are inclusive: high-direction scores at or above the cutoff and
+  low-direction scores at or below the cutoff are flagged. Other indices keep
+  using the configured percentile.
 - `onset` uses presence flagging: any detected changepoint is flagged.
 - `consensus_flags` marks respondents flagged by at least `min_flags` indices.
   Use `screen(..., min_flags=1)` for single-index workflows.
@@ -94,6 +99,7 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 ```bash
 ier screen data.csv --scale-min 1 --scale-max 5 --indices irv longstring
 ier screen data.csv --min-flags 3
+ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier --version

@@ -13,11 +13,14 @@ structure, and base rate of IER.
 2. **Use sample-relative percentiles carefully.** Default `screen(..., percentile=95)`
    and `composite_flag(..., percentile=95)` are convenient starting points, not
    gold standards. With small *N*, percentiles are unstable.
-3. **Anchor with designed checks.** Infrequency / instructed-response items give
+3. **Reuse validated cutoffs.** When prior validation supports fixed cutoffs, pass
+   them by index (for example, `screen(data, thresholds={"irv": 0.25,
+   "longstring": 8})`). The result reports the actual cutoff used for every index.
+4. **Anchor with designed checks.** Infrequency / instructed-response items give
    confirmatory evidence when available (`infrequency`).
-4. **Inspect before excluding.** Review open-ended responses, timestamps, and
+5. **Inspect before excluding.** Review open-ended responses, timestamps, and
    substantive patterns before listwise deletion.
-5. **Report sensitivity.** Show how results change under alternate cutoffs
+6. **Report sensitivity.** Show how results change under alternate cutoffs
    (e.g., 90th vs 95th vs 99th percentile).
 
 ## Literature-informed starting points
