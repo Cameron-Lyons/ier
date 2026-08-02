@@ -9,7 +9,7 @@ from collections.abc import Mapping
 
 import numpy as np
 
-from ier._flagging import resolve_threshold, threshold_flags
+from ier._flagging import resolve_threshold, threshold_flags, validate_percentile
 from ier._registry import (
     INDEX_REGISTRY,
     IndexOptions,
@@ -112,14 +112,7 @@ def screen(
     """
     if isinstance(min_flags, bool) or not isinstance(min_flags, int) or min_flags < 1:
         raise ValueError("min_flags must be a positive integer")
-    if isinstance(percentile, bool):
-        raise ValueError("percentile must be a finite number between 0 and 100")
-    try:
-        percentile = float(percentile)
-    except (TypeError, ValueError) as err:
-        raise ValueError("percentile must be a finite number between 0 and 100") from err
-    if not np.isfinite(percentile) or not 0.0 <= percentile <= 100.0:
-        raise ValueError("percentile must be a finite number between 0 and 100")
+    percentile = validate_percentile(percentile)
 
     x_array = validate_matrix_input(x, check_type=False)
     n_respondents = x_array.shape[0]
