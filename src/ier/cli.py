@@ -71,22 +71,52 @@ def _load_input(
     path: Path,
     delimiter: str | None,
     id_column: str | None = None,
+    item_columns: list[str] | None = None,
 ) -> tuple[np.ndarray, list[str] | None]:
-    """Load a respondent matrix and optionally preserve a named identifier column."""
+    """Load selected numeric items and optionally preserve a named identifier."""
     rows = _read_rows(path, delimiter)
+
+    selected_names: list[str] | None = None
+    if item_columns is not None:
+        selected_names = [name.strip() for name in item_columns]
+        if not selected_names or any(not name for name in selected_names):
+            raise ValueError("item columns must include at least one nonblank name")
+        if len(set(selected_names)) != len(selected_names):
+            raise ValueError("item columns cannot contain duplicate names")
 
     identifiers: list[str] | None = None
     id_index: int | None = None
-    if id_column is not None:
+    item_indices: list[int] | None = None
+    header: list[str] | None = None
+    if id_column is not None or selected_names is not None:
         header = [cell.strip() for cell in rows[0]]
+        start = 1
+
+    if id_column is not None:
+        assert header is not None
         matches = [index for index, name in enumerate(header) if name == id_column]
         if not matches:
             raise ValueError(f"ID column '{id_column}' was not found in the header")
         if len(matches) > 1:
             raise ValueError(f"ID column '{id_column}' appears more than once in the header")
         id_index = matches[0]
-        start = 1
-    else:
+
+    if selected_names is not None:
+        assert header is not None
+        item_indices = []
+        for name in selected_names:
+            matches = [index for index, header_name in enumerate(header) if header_name == name]
+            if not matches:
+                raise ValueError(f"item column '{name}' was not found in the header")
+            if len(matches) > 1:
+                raise ValueError(f"item column '{name}' appears more than once in the header")
+            if matches[0] == id_index:
+                raise ValueError(
+                    f"ID column '{id_column}' cannot also be selected as an item column"
+                )
+            item_indices.append(matches[0])
+
+    if header is None:
         start = int(_row_starts_with_non_numeric_value(rows[0]))
 
     data_rows = rows[start:]
@@ -94,8 +124,8 @@ def _load_input(
         raise ValueError(f"no numeric data rows found in {path}")
 
     widths = {len(row) for row in data_rows}
-    if id_index is not None:
-        widths.add(len(rows[0]))
+    if header is not None:
+        widths.add(len(header))
     if len(widths) != 1:
         raise ValueError(
             f"jagged delimited input in {path}: rows have unequal lengths {sorted(widths)}; "
@@ -108,6 +138,10 @@ def _load_input(
             raise ValueError(f"ID column '{id_column}' contains blank values")
         if len(set(identifiers)) != len(identifiers):
             raise ValueError(f"ID column '{id_column}' contains duplicate values")
+
+    if item_indices is not None:
+        data_rows = [[row[index] for index in item_indices] for row in data_rows]
+    elif id_index is not None:
         data_rows = [row[:id_index] + row[id_index + 1 :] for row in data_rows]
         if not data_rows[0]:
             raise ValueError("input must contain at least one item column besides the ID column")
@@ -147,6 +181,16 @@ def _parse_float_list(raw: str | None) -> list[float] | None:
     if not parts:
         return None
     return [float(part) for part in parts]
+
+
+def _parse_name_list(raw: list[str] | None) -> list[str] | None:
+    """Parse repeated comma-separated column-name arguments."""
+    if raw is None:
+        return None
+    names = [name.strip() for entry in raw for name in entry.split(",") if name.strip()]
+    if not names:
+        raise ValueError("--item-columns must include at least one column name")
+    return names
 
 
 def _parse_pair_list(raw: str | None) -> list[tuple[int, int]] | None:
@@ -222,6 +266,13 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="NAME",
         help="Named header column to preserve as respondent identifiers",
+    )
+    parser.add_argument(
+        "--item-columns",
+        action="append",
+        default=None,
+        metavar="NAME[,NAME...]",
+        help="Named header columns to score, in order; comma-separate or repeat",
     )
     parser.add_argument("--scale-min", type=float, default=None)
     parser.add_argument("--scale-max", type=float, default=None)
@@ -613,7 +664,12 @@ def _run_command(args: argparse.Namespace) -> int:
         _write_output(text, args.output)
         return 0
 
-    matrix, respondent_ids = _load_input(args.data, args.delimiter, args.id_column)
+    matrix, respondent_ids = _load_input(
+        args.data,
+        args.delimiter,
+        args.id_column,
+        _parse_name_list(args.item_columns),
+    )
     options = _options_from_args(args)
     if args.command == "screen":
         result = screen(

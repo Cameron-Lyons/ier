@@ -122,8 +122,14 @@ ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
+ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier --version
 ```
+
+`--item-columns` accepts comma-separated header names and may be repeated. It
+lets screen and composite commands ignore unselected metadata columns while
+preserving the requested item order. Any item-index options refer to that
+selected order.
 
 JSON output is standards-compliant: unavailable or non-finite scores and summary
 statistics are encoded as `null`. CSV output represents non-finite scores as empty

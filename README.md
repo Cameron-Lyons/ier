@@ -14,6 +14,7 @@ For a comprehensive methods review, see
 - Fixed or sample-relative per-index screening thresholds
 - Programmatic and CLI index catalog with defaults and configuration requirements
 - CLI preservation of named respondent identifier columns
+- CLI selection of named item columns from files containing metadata
 - CLI: `ier screen data.csv` / `ier composite data.csv` (text / JSON / CSV)
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Configurable soft or strict per-index failures during screening and composite scoring
@@ -68,6 +69,7 @@ ier screen data.csv --format json --output screen.json
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
+ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier composite data.csv --indices irv longstring
 ier composite data.csv --format csv --output scores.csv
 ier indices --format json
@@ -78,7 +80,9 @@ Input matrices may be comma-, tab-, semicolon-, or whitespace-delimited. Common
 delimiters are auto-detected unless `--delimiter` is supplied. Blank fields in
 delimited files are loaded as missing values (`NaN`). Use `--id-column NAME` to
 remove a named header column from scoring and preserve its unique, nonblank values
-in text, JSON, and CSV output.
+in text, JSON, and CSV output. Use `--item-columns q1,q2,...` to select and order
+the numeric item matrix while ignoring unselected metadata columns; repeat the
+option to build the selection in groups.
 
 ## Documentation
 
