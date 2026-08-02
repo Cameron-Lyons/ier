@@ -8,7 +8,8 @@ structure, and base rate of IER.
 
 1. **Prefer multi-index agreement.** Flag respondents who are extreme on several
    independent families (consistency, pattern, outlier, attention check) rather
-   than a single index.
+   than a single index. `screen()` exposes this decision as `consensus_flags` and
+   defaults to requiring two per-index flags; tune it with `min_flags`.
 2. **Use sample-relative percentiles carefully.** Default `screen(..., percentile=95)`
    and `composite_flag(..., percentile=95)` are convenient starting points, not
    gold standards. With small *N*, percentiles are unstable.

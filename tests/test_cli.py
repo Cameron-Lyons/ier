@@ -104,7 +104,44 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
-        self.assertIn("flag_counts", out.read_text(encoding="utf-8"))
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertIn("flag_counts", payload)
+        self.assertIn("consensus_flags", payload)
+        self.assertEqual(payload["min_flags"], 2)
+
+    def test_screen_custom_consensus_threshold(self) -> None:
+        out = self.root / "screen-consensus.json"
+        code = main(
+            [
+                "screen",
+                str(self.csv_path),
+                "--indices",
+                "irv",
+                "longstring",
+                "--min-flags",
+                "1",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["min_flags"], 1)
+        self.assertEqual(
+            payload["consensus_flags"],
+            [count >= 1 for count in payload["flag_counts"]],
+        )
+
+    def test_screen_invalid_consensus_threshold_returns_structured_error(self) -> None:
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(["screen", str(self.csv_path), "--min-flags", "0"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("error: min_flags must be a positive integer", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_screen_json_uses_null_for_non_finite_scores(self) -> None:
         constant = self.root / "constant.csv"
@@ -174,6 +211,7 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 0)
         rows = list(csv.DictReader(StringIO(out.read_text(encoding="utf-8"))))
         self.assertEqual([row["psychsyn_score"] for row in rows], ["", "", ""])
+        self.assertTrue(all(row["consensus_flag"] in {"0", "1"} for row in rows))
 
     def test_composite_csv_output(self) -> None:
         out = self.root / "scores.csv"

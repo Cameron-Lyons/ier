@@ -240,6 +240,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Index names to compute (default: package screen defaults)",
     )
     screen_parser.add_argument("--percentile", type=float, default=95.0)
+    screen_parser.add_argument(
+        "--min-flags",
+        type=int,
+        default=2,
+        help="Minimum per-index flags for a consensus flag (default: 2)",
+    )
     _add_shared_options(screen_parser)
 
     composite_parser = sub.add_parser(
@@ -285,6 +291,10 @@ def _emit_screen_text(result: ScreenResult, top: int) -> str:
     lines = [
         f"respondents: {result['n_respondents']}",
         f"indices: {', '.join(result['indices_used'])}",
+        (
+            f"consensus flagged: {int(np.sum(result['consensus_flags']))} "
+            f"(min_flags={result['min_flags']})"
+        ),
     ]
     if result["errors"]:
         lines.append("errors:")
@@ -315,6 +325,8 @@ def _emit_screen_json(result: ScreenResult) -> str:
         "indices_used": result["indices_used"],
         "errors": result["errors"],
         "flag_counts": np.asarray(result["flag_counts"]).tolist(),
+        "consensus_flags": np.asarray(result["consensus_flags"]).astype(bool).tolist(),
+        "min_flags": result["min_flags"],
         "scores": {name: _json_numbers(np.asarray(arr)) for name, arr in result["scores"].items()},
         "flags": {
             name: np.asarray(arr).astype(bool).tolist() for name, arr in result["flags"].items()
@@ -328,14 +340,19 @@ def _emit_screen_csv(result: ScreenResult) -> str:
     n = result["n_respondents"]
     scores = result["scores"]
     flags = result["flags"]
-    fieldnames = ["respondent", "flag_count"]
+    fieldnames = ["respondent", "flag_count", "consensus_flag"]
     for name in result["indices_used"]:
         fieldnames.extend([f"{name}_score", f"{name}_flag"])
 
     rows: list[dict[str, object]] = []
     counts = np.asarray(result["flag_counts"])
+    consensus = np.asarray(result["consensus_flags"])
     for i in range(n):
-        row: dict[str, object] = {"respondent": i, "flag_count": int(counts[i])}
+        row: dict[str, object] = {
+            "respondent": i,
+            "flag_count": int(counts[i]),
+            "consensus_flag": int(bool(consensus[i])),
+        }
         for name in result["indices_used"]:
             row[f"{name}_score"] = _csv_number(scores[name][i])
             row[f"{name}_flag"] = int(bool(flags[name][i]))
@@ -387,6 +404,7 @@ def _run_command(args: argparse.Namespace) -> int:
             indices=args.indices,
             options=options,
             percentile=args.percentile,
+            min_flags=args.min_flags,
         )
         if args.format == "json":
             text = _emit_screen_json(result)

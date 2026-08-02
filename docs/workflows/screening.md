@@ -11,6 +11,7 @@ from ier import IndexOptions, screen
 result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print(result["indices_used"])
 print(result["flag_counts"])
+print(result["consensus_flags"])
 print(result["errors"])
 ```
 
@@ -21,6 +22,8 @@ print(result["errors"])
 | `scores` | Per-index score arrays |
 | `flags` | Per-index boolean flags |
 | `flag_counts` | Total flags per respondent |
+| `consensus_flags` | Respondents meeting the configured multi-index agreement threshold |
+| `min_flags` | Number of per-index flags required for consensus (default: 2) |
 | `indices_used` | Successfully computed indices |
 | `errors` | Soft failures (missing config, invalid data for an index) |
 | `summary` | Mean/std/min/max/`n_flagged` per index |
@@ -66,6 +69,8 @@ the whole screening run. `composite()` uses the same soft-fail policy.
 - High-direction indices flag above the percentile; low-direction indices flag
   below `100 - percentile`.
 - `onset` uses presence flagging: any detected changepoint is flagged.
+- `consensus_flags` marks respondents flagged by at least `min_flags` indices.
+  Use `screen(..., min_flags=1)` for single-index workflows.
 
 ## Response times (out of band)
 
@@ -88,6 +93,7 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 
 ```bash
 ier screen data.csv --scale-min 1 --scale-max 5 --indices irv longstring
+ier screen data.csv --min-flags 3
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier --version

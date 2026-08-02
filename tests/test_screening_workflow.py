@@ -120,6 +120,8 @@ class TestScreen(unittest.TestCase):
         self.assertIn("scores", result)
         self.assertIn("flags", result)
         self.assertIn("flag_counts", result)
+        self.assertIn("consensus_flags", result)
+        self.assertIn("min_flags", result)
         self.assertIn("n_indices", result)
         self.assertIn("indices_used", result)
         self.assertIn("errors", result)
@@ -139,6 +141,26 @@ class TestScreen(unittest.TestCase):
     def test_flag_counts_length(self) -> None:
         result = screen(self.data)
         self.assertEqual(len(result["flag_counts"]), 30)
+
+    def test_default_consensus_requires_two_index_flags(self) -> None:
+        result = screen(self.data)
+        np.testing.assert_array_equal(
+            result["consensus_flags"],
+            result["flag_counts"] >= 2,
+        )
+        self.assertEqual(result["min_flags"], 2)
+
+    def test_custom_consensus_threshold(self) -> None:
+        result = screen(self.data, indices=["irv", "longstring"], min_flags=1)
+        np.testing.assert_array_equal(
+            result["consensus_flags"],
+            result["flag_counts"] >= 1,
+        )
+
+    def test_invalid_consensus_threshold_raises(self) -> None:
+        for value in [0, -1, 1.5, True]:
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "min_flags"):
+                screen(self.data, min_flags=value)
 
     def test_straightliner_flagged(self) -> None:
         result = screen(self.data)
