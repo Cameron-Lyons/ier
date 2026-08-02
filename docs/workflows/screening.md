@@ -101,7 +101,7 @@ should contribute to the rate.
 `response_time*` helpers take **timing matrices** (seconds or other duration
 units), not Likert item responses. They are intentionally **not** registered in
 `screen()` / `composite()` because mixing domains would silently mis-score
-respondents. Call them directly and combine flags yourself if needed:
+respondents. Call them directly or use the dedicated CLI command:
 
 ```python
 from ier import response_time, response_time_flag
@@ -109,6 +109,16 @@ from ier import response_time, response_time_flag
 median_rt = response_time(times, metric="median")
 flags = response_time_flag(times, cutoff_percentile=5)
 ```
+
+```bash
+ier response-time timings.csv --metric median --percentile 5
+ier response-time timings.csv --metric consistency --threshold 0.05 --format csv
+ier response-time timings.csv --metric mixture --components 2 --random-seed 42
+```
+
+Direct timing metrics and consistency scores use low-tail flagging. Mixture
+probabilities use high-tail flagging. Fixed thresholds include equality; derived
+percentile cutoffs exclude ties, matching the other public flagging workflows.
 
 ## CLI
 
@@ -123,6 +133,7 @@ ier screen data.csv --indices irv mad --strict
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
+ier response-time timings.csv --metric median --threshold 1.0
 ier --version
 ```
 

@@ -108,6 +108,152 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(code, 0)
 
+    def test_response_time_json_preserves_ids_and_fixed_cutoff(self) -> None:
+        timings = self.root / "timings.csv"
+        timings.write_text(
+            "participant,t1,t2,t3\nfast,0.4,0.5,0.6\nsteady,1,1,1\ntypical,2,3,4\n",
+            encoding="utf-8",
+        )
+        out = self.root / "timings.json"
+
+        code = main(
+            [
+                "response-time",
+                str(timings),
+                "--id-column",
+                "participant",
+                "--metric",
+                "median",
+                "--threshold",
+                "1",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["metric"], "median")
+        self.assertEqual(payload["flag_direction"], "low")
+        self.assertEqual(payload["threshold"], 1.0)
+        self.assertEqual(payload["respondent_ids"], ["fast", "steady", "typical"])
+        self.assertEqual(payload["scores"], [0.5, 1.0, 3.0])
+        self.assertEqual(payload["flags"], [True, True, False])
+
+    def test_response_time_consistency_csv_selects_timing_columns(self) -> None:
+        timings = self.root / "mixed-timings.csv"
+        timings.write_text(
+            "participant,cohort,t1,t2,t3\nfast,A,0.4,0.5,0.6\nsteady,B,1,1,1\ntypical,A,2,3,4\n",
+            encoding="utf-8",
+        )
+        out = self.root / "timings.csv.out"
+
+        code = main(
+            [
+                "response-time",
+                str(timings),
+                "--id-column",
+                "participant",
+                "--item-columns",
+                "t1,t2,t3",
+                "--metric",
+                "consistency",
+                "--threshold",
+                "0",
+                "--format",
+                "csv",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        rows = list(csv.DictReader(StringIO(out.read_text(encoding="utf-8"))))
+        self.assertEqual([row["respondent"] for row in rows], ["fast", "steady", "typical"])
+        self.assertEqual([row["response_time_flag"] for row in rows], ["0", "1", "0"])
+
+    def test_response_time_text_uses_default_low_tail(self) -> None:
+        timings = self.root / "text-timings.csv"
+        timings.write_text(
+            "participant,t1,t2,t3\nfast,0.4,0.5,0.6\nsteady,1,1,1\ntypical,2,3,4\n",
+            encoding="utf-8",
+        )
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            code = main(
+                [
+                    "response-time",
+                    str(timings),
+                    "--id-column",
+                    "participant",
+                    "--metric",
+                    "mean",
+                    "--top",
+                    "2",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        text = stdout.getvalue()
+        self.assertIn("flag direction: low", text)
+        self.assertIn("threshold: 0.55", text)
+        self.assertIn("flagged: 1", text)
+        self.assertLess(text.index("fast\t"), text.index("steady\t"))
+
+    def test_response_time_mixture_flags_fast_component(self) -> None:
+        timings = self.root / "mixture-timings.csv"
+        timings.write_text(
+            "t1,t2,t3\n"
+            "0.4,0.5,0.6\n0.5,0.6,0.7\n0.3,0.4,0.5\n0.6,0.7,0.8\n"
+            "4,5,6\n5,6,7\n6,7,8\n4.5,5,5.5\n",
+            encoding="utf-8",
+        )
+        out = self.root / "mixture.json"
+
+        code = main(
+            [
+                "response-time",
+                str(timings),
+                "--metric",
+                "mixture",
+                "--threshold",
+                "0.5",
+                "--random-seed",
+                "42",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["flag_direction"], "high")
+        self.assertEqual(payload["flags"], [True, True, True, True, False, False, False, False])
+        self.assertTrue(all(0.0 <= score <= 1.0 for score in payload["scores"]))
+
+    def test_response_time_invalid_components_returns_structured_error(self) -> None:
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "response-time",
+                    str(self.csv_path),
+                    "--metric",
+                    "mixture",
+                    "--components",
+                    "1",
+                ]
+            )
+
+        self.assertEqual(code, 1)
+        self.assertIn("error: n_components must be at least 2", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_indices_command_text_output(self) -> None:
         stdout = StringIO()
         with patch("sys.stdout", stdout):

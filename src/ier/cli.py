@@ -8,11 +8,21 @@ import json
 import sys
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from ier import IndexOptions, __version__, composite, index_catalog, screen
+from ier import (
+    IndexOptions,
+    __version__,
+    composite,
+    index_catalog,
+    response_time,
+    response_time_consistency,
+    response_time_mixture,
+    screen,
+)
+from ier._flagging import resolve_threshold, threshold_flags
 
 if TYPE_CHECKING:
     from ier.types import IndexCatalog, ScreenResult
@@ -255,7 +265,8 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
     )
 
 
-def _add_shared_options(parser: argparse.ArgumentParser) -> None:
+def _add_matrix_input_options(parser: argparse.ArgumentParser) -> None:
+    """Add delimited-matrix selection options shared by scoring commands."""
     parser.add_argument(
         "--delimiter",
         default=None,
@@ -274,6 +285,32 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         metavar="NAME[,NAME...]",
         help="Named header columns to score, in order; comma-separate or repeat",
     )
+
+
+def _add_output_options(parser: argparse.ArgumentParser) -> None:
+    """Add output controls shared by scoring commands."""
+    parser.add_argument(
+        "--format",
+        choices=["text", "json", "csv"],
+        default="text",
+        help="Output format (default: text summary)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write JSON/CSV output to this path (default: stdout)",
+    )
+    parser.add_argument(
+        "--top",
+        type=int,
+        default=10,
+        help="For text format: show the top N respondents (default: 10)",
+    )
+
+
+def _add_shared_options(parser: argparse.ArgumentParser) -> None:
+    _add_matrix_input_options(parser)
     parser.add_argument("--scale-min", type=float, default=None)
     parser.add_argument("--scale-max", type=float, default=None)
     parser.add_argument(
@@ -320,24 +357,7 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument(
-        "--format",
-        choices=["text", "json", "csv"],
-        default="text",
-        help="Output format (default: text summary)",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="Write JSON/CSV output to this path (default: stdout)",
-    )
-    parser.add_argument(
-        "--top",
-        type=int,
-        default=10,
-        help="For text format: show the top N respondents (default: 10)",
-    )
+    _add_output_options(parser)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -397,6 +417,49 @@ def _build_parser() -> argparse.ArgumentParser:
         default="mean",
     )
     _add_shared_options(composite_parser)
+
+    response_time_parser = sub.add_parser(
+        "response-time",
+        help="Score and flag a delimited response-time matrix.",
+    )
+    response_time_parser.add_argument(
+        "data",
+        type=Path,
+        help="Path to CSV/TSV/whitespace respondent × timing values",
+    )
+    response_time_parser.add_argument(
+        "--metric",
+        choices=["mean", "median", "sd", "min", "consistency", "mixture"],
+        default="median",
+        help="Timing score to compute (default: median)",
+    )
+    response_time_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Fixed inclusive flag cutoff in score units",
+    )
+    response_time_parser.add_argument(
+        "--percentile",
+        type=float,
+        default=None,
+        help="Percentile cutoff (default: 5 for low scores, 95 for mixture)",
+    )
+    response_time_parser.add_argument(
+        "--components",
+        type=int,
+        default=2,
+        help="Gaussian components for the mixture metric (default: 2)",
+    )
+    response_time_parser.add_argument(
+        "--log-transform",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Log-transform median times for the mixture metric (default: true)",
+    )
+    response_time_parser.add_argument("--random-seed", type=int, default=None)
+    _add_matrix_input_options(response_time_parser)
+    _add_output_options(response_time_parser)
 
     indices_parser = sub.add_parser(
         "indices", help="List registered indices and orchestration metadata."
@@ -651,6 +714,96 @@ def _emit_composite_csv(
     return buf.getvalue()
 
 
+def _score_response_times(
+    matrix: np.ndarray,
+    metric: str,
+    components: int,
+    log_transform: bool,
+    random_seed: int | None,
+) -> tuple[np.ndarray, Literal["high", "low"]]:
+    """Compute one timing metric and its suspicious-score direction."""
+    if metric == "consistency":
+        return response_time_consistency(matrix), "low"
+    if metric == "mixture":
+        return (
+            response_time_mixture(
+                matrix,
+                n_components=components,
+                log_transform=log_transform,
+                random_seed=random_seed,
+            ),
+            "high",
+        )
+    return response_time(matrix, metric=metric), "low"
+
+
+def _emit_response_time_text(
+    scores: np.ndarray,
+    flags: np.ndarray,
+    metric: str,
+    direction: Literal["high", "low"],
+    cutoff: float,
+    top: int,
+    respondent_ids: list[str] | None = None,
+) -> str:
+    """Render timing results as a compact human-readable summary."""
+    labels = _respondent_labels(len(scores), respondent_ids)
+    valid_indices = np.flatnonzero(np.isfinite(scores))
+    order = valid_indices[np.argsort(scores[valid_indices])]
+    if direction == "high":
+        order = order[::-1]
+    order = order[: max(top, 0)]
+    label_name = "identifier" if respondent_ids is not None else "index"
+    lines = [
+        f"respondents: {len(scores)}",
+        f"metric: {metric}",
+        f"flag direction: {direction}",
+        f"threshold: {cutoff:g}",
+        f"flagged: {int(np.sum(flags))}",
+        f"top suspicious respondents ({label_name}, score):",
+    ]
+    for index in order:
+        lines.append(f"  {labels[int(index)]}\t{float(scores[index]):.6f}")
+    return "\n".join(lines)
+
+
+def _emit_response_time_json(
+    scores: np.ndarray,
+    flags: np.ndarray,
+    metric: str,
+    direction: Literal["high", "low"],
+    cutoff: float,
+    respondent_ids: list[str] | None = None,
+) -> str:
+    """Render timing results as strict JSON."""
+    payload: dict[str, object] = {
+        "n_respondents": len(scores),
+        "metric": metric,
+        "flag_direction": direction,
+        "threshold": cutoff,
+        "scores": _json_numbers(scores),
+        "flags": flags.astype(bool).tolist(),
+    }
+    if respondent_ids is not None:
+        payload["respondent_ids"] = _respondent_labels(len(scores), respondent_ids)
+    return json.dumps(payload, indent=2, allow_nan=False)
+
+
+def _emit_response_time_csv(
+    scores: np.ndarray,
+    flags: np.ndarray,
+    respondent_ids: list[str] | None = None,
+) -> str:
+    """Render respondent-aligned timing scores and flags as CSV."""
+    buf = StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["respondent", "response_time_score", "response_time_flag"])
+    labels = _respondent_labels(len(scores), respondent_ids)
+    for label, score, flag in zip(labels, scores, flags, strict=True):
+        writer.writerow([label, _csv_number(score), int(bool(flag))])
+    return buf.getvalue()
+
+
 def _run_command(args: argparse.Namespace) -> int:
     """Execute one parsed CLI command, allowing user-facing failures to bubble to main()."""
     if args.command == "indices":
@@ -670,6 +823,50 @@ def _run_command(args: argparse.Namespace) -> int:
         args.id_column,
         _parse_name_list(args.item_columns),
     )
+    if args.command == "response-time":
+        scores, direction = _score_response_times(
+            matrix,
+            args.metric,
+            args.components,
+            args.log_transform,
+            args.random_seed,
+        )
+        percentile = args.percentile
+        if percentile is None:
+            percentile = 95.0 if direction == "high" else 5.0
+        cutoff = resolve_threshold(scores, args.threshold, percentile)
+        flags = threshold_flags(
+            scores,
+            threshold=cutoff,
+            percentile=percentile,
+            direction=direction,
+            inclusive=args.threshold is not None,
+        )
+
+        if args.format == "json":
+            text = _emit_response_time_json(
+                scores,
+                flags,
+                args.metric,
+                direction,
+                cutoff,
+                respondent_ids,
+            )
+        elif args.format == "csv":
+            text = _emit_response_time_csv(scores, flags, respondent_ids)
+        else:
+            text = _emit_response_time_text(
+                scores,
+                flags,
+                args.metric,
+                direction,
+                cutoff,
+                args.top,
+                respondent_ids,
+            )
+        _write_output(text, args.output)
+        return 0
+
     options = _options_from_args(args)
     if args.command == "screen":
         result = screen(

@@ -117,6 +117,14 @@ Named item selection requires a header. Item-index options such as
 `--mad-positive-items` use zero-based positions in the selected order, not the
 original file's column positions.
 
+Timing matrices have a dedicated command so their units cannot be mixed with
+item-response indices:
+
+```bash
+ier response-time timings.csv --metric median --threshold 1.0
+ier response-time timings.csv --metric mixture --random-seed 42 --format json
+```
+
 ## Next steps
 
 - Run multi-index screening with [`screen()`](workflows/screening.md)

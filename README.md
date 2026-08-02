@@ -15,7 +15,7 @@ For a comprehensive methods review, see
 - Programmatic and CLI index catalog with defaults and configuration requirements
 - CLI preservation of named respondent identifier columns
 - CLI selection of named item columns from files containing metadata
-- CLI: `ier screen data.csv` / `ier composite data.csv` (text / JSON / CSV)
+- CLI workflows for item screening, composite scores, and response-time analysis
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Configurable soft or strict per-index failures during screening and composite scoring
 - Full type annotations (`py.typed`)
@@ -72,6 +72,8 @@ ier screen data.csv --id-column participant_id --format csv --output screening.c
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier composite data.csv --indices irv longstring
 ier composite data.csv --format csv --output scores.csv
+ier response-time timings.csv --metric median --threshold 1.0
+ier response-time timings.csv --metric mixture --random-seed 42 --format json
 ier indices --format json
 ier --version
 ```
@@ -83,6 +85,11 @@ remove a named header column from scoring and preserve its unique, nonblank valu
 in text, JSON, and CSV output. Use `--item-columns q1,q2,...` to select and order
 the numeric item matrix while ignoring unselected metadata columns; repeat the
 option to build the selection in groups.
+
+`ier response-time` accepts a separate respondent-by-timing matrix and supports
+mean, median, standard-deviation, minimum, consistency, and Gaussian-mixture
+scores. Fixed thresholds are inclusive; sample-relative defaults flag the low
+5% for direct timing metrics and the high 5% for mixture probabilities.
 
 ## Documentation
 
