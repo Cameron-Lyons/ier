@@ -85,6 +85,37 @@ def _input_label(path: Path) -> str:
     return "standard input" if path == Path("-") else str(path)
 
 
+def _load_npy_input(
+    path: Path,
+    delimiter: str | None,
+    id_column: str | None,
+    item_columns: list[str] | None,
+) -> tuple[np.ndarray, None]:
+    """Memory-map one headerless real numeric NumPy matrix."""
+    if delimiter is not None:
+        raise ValueError("--delimiter is not supported with .npy input")
+    if id_column is not None or item_columns is not None:
+        raise ValueError("--id-column and --item-columns are not supported with .npy input")
+
+    try:
+        loaded = np.load(path, allow_pickle=False, mmap_mode="r")
+    except (EOFError, ValueError) as err:
+        raise ValueError(f"failed to load NumPy matrix from {path}: {err}") from err
+
+    if not isinstance(loaded, np.ndarray):
+        loaded.close()
+        raise ValueError(f"expected one NumPy array in {path}, not an archive")
+    matrix = loaded
+
+    if matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0:
+        raise ValueError(f"expected a non-empty 2D NumPy matrix in {path}")
+    if not np.issubdtype(matrix.dtype, np.number) or np.issubdtype(
+        matrix.dtype, np.complexfloating
+    ):
+        raise ValueError(f"expected a real numeric NumPy matrix in {path}, got {matrix.dtype}")
+    return matrix, None
+
+
 def _iter_rows(path: Path, delimiter: str | None) -> Iterator[list[str]]:
     """Yield plain, gzip-compressed, or standard-input delimited rows."""
     if delimiter is not None and (len(delimiter) != 1 or delimiter in "\r\n"):
@@ -117,6 +148,11 @@ def _load_input(
     item_columns: list[str] | None = None,
 ) -> tuple[np.ndarray, list[str] | None]:
     """Stream selected numeric items and optionally preserve a named identifier."""
+    if path.name.casefold().endswith(".npy.gz"):
+        raise ValueError("compressed .npy input is not supported; use uncompressed .npy")
+    if path.suffix.casefold() == ".npy":
+        return _load_npy_input(path, delimiter, id_column, item_columns)
+
     source = _input_label(path)
     row_iterator = iter(_iter_rows(path, delimiter))
     first_row = next(row_iterator)
@@ -218,7 +254,7 @@ def _load_input(
 
 
 def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
-    """Load a respondent × item matrix from CSV/TSV/whitespace text."""
+    """Load a respondent × item matrix from delimited text or NumPy binary."""
     matrix, _ = _load_input(path, delimiter)
     return matrix
 
@@ -314,7 +350,7 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
 
 
 def _add_matrix_input_options(parser: argparse.ArgumentParser) -> None:
-    """Add delimited-matrix selection options shared by scoring commands."""
+    """Add matrix selection options shared by scoring commands."""
     parser.add_argument(
         "--delimiter",
         default=None,
@@ -417,13 +453,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    screen_parser = sub.add_parser(
-        "screen", help="Run multi-index screening on a delimited matrix."
-    )
+    screen_parser = sub.add_parser("screen", help="Run multi-index screening on a matrix.")
     screen_parser.add_argument(
         "data",
         type=Path,
-        help="CSV/TSV/whitespace item scores; use '-' for standard input",
+        help="CSV/TSV/whitespace or .npy item scores; use '-' for standard input",
     )
     screen_parser.add_argument(
         "--indices",
@@ -453,7 +487,7 @@ def _build_parser() -> argparse.ArgumentParser:
     composite_parser.add_argument(
         "data",
         type=Path,
-        help="CSV/TSV/whitespace item scores; use '-' for standard input",
+        help="CSV/TSV/whitespace or .npy item scores; use '-' for standard input",
     )
     composite_parser.add_argument(
         "--indices",
@@ -470,12 +504,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     response_time_parser = sub.add_parser(
         "response-time",
-        help="Score and flag a delimited response-time matrix.",
+        help="Score and flag a response-time matrix.",
     )
     response_time_parser.add_argument(
         "data",
         type=Path,
-        help="CSV/TSV/whitespace timing values; use '-' for standard input",
+        help="CSV/TSV/whitespace or .npy timing values; use '-' for standard input",
     )
     response_time_parser.add_argument(
         "--metric",

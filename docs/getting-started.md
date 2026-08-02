@@ -117,6 +117,16 @@ Named item selection requires a header. Item-index options such as
 `--mad-positive-items` use zero-based positions in the selected order, not the
 original file's column positions.
 
+For large headerless numeric matrices, save an uncompressed NumPy array and pass
+it directly. The CLI memory-maps `.npy` input read-only instead of copying it:
+
+```bash
+ier screen responses.npy --indices irv longstring --format json
+```
+
+Binary input must contain one non-empty, two-dimensional, real numeric array.
+Header options, `--delimiter`, and `.npy.gz` input are not supported.
+
 Timing matrices have a dedicated command so their units cannot be mixed with
 item-response indices:
 

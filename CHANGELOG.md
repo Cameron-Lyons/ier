@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-08-02
+
+### Added
+
+- CLI scoring commands now accept uncompressed `.npy` matrices and memory-map
+  them read-only for fast, low-overhead loading without new dependencies. A
+  25,000-respondent, 80-column benchmark initializes mapped input in about
+  0.3 ms with 0.3 MiB peak allocation, versus 343 ms and 16.4 MiB for CSV.
+
 ## [2.9.2] - 2026-08-02
 
 ### Changed
