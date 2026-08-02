@@ -36,8 +36,8 @@ def _parse_numeric_cell(cell: str) -> float:
     return float(cell) if cell.strip() else np.nan
 
 
-def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
-    """Load a respondent × item matrix from CSV/TSV/whitespace text."""
+def _read_rows(path: Path, delimiter: str | None) -> list[list[str]]:
+    """Read non-empty delimited rows with automatic delimiter detection."""
     if delimiter is not None and (len(delimiter) != 1 or delimiter in "\r\n"):
         raise ValueError("delimiter must be exactly one non-newline character")
 
@@ -64,19 +64,53 @@ def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
 
     if not rows:
         raise ValueError(f"no data rows found in {path}")
+    return rows
 
-    start = int(_row_starts_with_non_numeric_value(rows[0]))
+
+def _load_input(
+    path: Path,
+    delimiter: str | None,
+    id_column: str | None = None,
+) -> tuple[np.ndarray, list[str] | None]:
+    """Load a respondent matrix and optionally preserve a named identifier column."""
+    rows = _read_rows(path, delimiter)
+
+    identifiers: list[str] | None = None
+    id_index: int | None = None
+    if id_column is not None:
+        header = [cell.strip() for cell in rows[0]]
+        matches = [index for index, name in enumerate(header) if name == id_column]
+        if not matches:
+            raise ValueError(f"ID column '{id_column}' was not found in the header")
+        if len(matches) > 1:
+            raise ValueError(f"ID column '{id_column}' appears more than once in the header")
+        id_index = matches[0]
+        start = 1
+    else:
+        start = int(_row_starts_with_non_numeric_value(rows[0]))
 
     data_rows = rows[start:]
     if not data_rows:
         raise ValueError(f"no numeric data rows found in {path}")
 
     widths = {len(row) for row in data_rows}
+    if id_index is not None:
+        widths.add(len(rows[0]))
     if len(widths) != 1:
         raise ValueError(
             f"jagged delimited input in {path}: rows have unequal lengths {sorted(widths)}; "
             "expected a rectangular respondent×item matrix"
         )
+
+    if id_index is not None:
+        identifiers = [row[id_index].strip() for row in data_rows]
+        if any(not identifier for identifier in identifiers):
+            raise ValueError(f"ID column '{id_column}' contains blank values")
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError(f"ID column '{id_column}' contains duplicate values")
+        data_rows = [row[:id_index] + row[id_index + 1 :] for row in data_rows]
+        if not data_rows[0]:
+            raise ValueError("input must contain at least one item column besides the ID column")
 
     try:
         matrix = np.array(
@@ -88,6 +122,12 @@ def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
 
     if matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0:
         raise ValueError(f"expected a 2D respondent×item matrix in {path}")
+    return matrix, identifiers
+
+
+def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
+    """Load a respondent × item matrix from CSV/TSV/whitespace text."""
+    matrix, _ = _load_input(path, delimiter)
     return matrix
 
 
@@ -176,6 +216,12 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         "--delimiter",
         default=None,
         help="Input delimiter (auto-detect comma, tab, semicolon, or whitespace if omitted)",
+    )
+    parser.add_argument(
+        "--id-column",
+        default=None,
+        metavar="NAME",
+        help="Named header column to preserve as respondent identifiers",
     )
     parser.add_argument("--scale-min", type=float, default=None)
     parser.add_argument("--scale-max", type=float, default=None)
@@ -332,6 +378,19 @@ def _csv_number(value: float) -> float | None:
     return float(value) if np.isfinite(value) else None
 
 
+def _respondent_labels(
+    n_respondents: int,
+    respondent_ids: list[str] | None,
+) -> list[int | str]:
+    """Return validated output labels for respondent-aligned results."""
+    if respondent_ids is None:
+        return list(range(n_respondents))
+    if len(respondent_ids) != n_respondents:
+        raise ValueError("respondent ID count must match result length")
+    labels: list[int | str] = list(respondent_ids)
+    return labels
+
+
 def _emit_index_catalog_text(catalog: IndexCatalog) -> str:
     lines = [
         "index\tdirection\tflag_mode\tscreen_default\tcomposite\tcomposite_default"
@@ -390,7 +449,11 @@ def _emit_index_catalog_csv(catalog: IndexCatalog) -> str:
     return buf.getvalue()
 
 
-def _emit_screen_text(result: ScreenResult, top: int) -> str:
+def _emit_screen_text(
+    result: ScreenResult,
+    top: int,
+    respondent_ids: list[str] | None = None,
+) -> str:
     lines = [
         f"respondents: {result['n_respondents']}",
         f"indices: {', '.join(result['indices_used'])}",
@@ -409,14 +472,19 @@ def _emit_screen_text(result: ScreenResult, top: int) -> str:
         for name, message in sorted(result["errors"].items()):
             lines.append(f"  {name}: {message}")
     counts = result["flag_counts"]
+    labels = _respondent_labels(result["n_respondents"], respondent_ids)
     order = np.argsort(counts)[::-1][: max(top, 0)]
-    lines.append("top flagged respondents (index, flag_count):")
+    label_name = "identifier" if respondent_ids is not None else "index"
+    lines.append(f"top flagged respondents ({label_name}, flag_count):")
     for idx in order:
-        lines.append(f"  {int(idx)}\t{int(counts[idx])}")
+        lines.append(f"  {labels[int(idx)]}\t{int(counts[idx])}")
     return "\n".join(lines)
 
 
-def _emit_screen_json(result: ScreenResult) -> str:
+def _emit_screen_json(
+    result: ScreenResult,
+    respondent_ids: list[str] | None = None,
+) -> str:
     summary = {
         name: {
             "mean": stats["mean"] if np.isfinite(stats["mean"]) else None,
@@ -442,10 +510,15 @@ def _emit_screen_json(result: ScreenResult) -> str:
         },
         "summary": summary,
     }
+    if respondent_ids is not None:
+        payload["respondent_ids"] = _respondent_labels(result["n_respondents"], respondent_ids)
     return json.dumps(payload, indent=2, allow_nan=False)
 
 
-def _emit_screen_csv(result: ScreenResult) -> str:
+def _emit_screen_csv(
+    result: ScreenResult,
+    respondent_ids: list[str] | None = None,
+) -> str:
     n = result["n_respondents"]
     scores = result["scores"]
     flags = result["flags"]
@@ -456,9 +529,10 @@ def _emit_screen_csv(result: ScreenResult) -> str:
     rows: list[dict[str, object]] = []
     counts = np.asarray(result["flag_counts"])
     consensus = np.asarray(result["consensus_flags"])
+    labels = _respondent_labels(n, respondent_ids)
     for i in range(n):
         row: dict[str, object] = {
-            "respondent": i,
+            "respondent": labels[i],
             "flag_count": int(counts[i]),
             "consensus_flag": int(bool(consensus[i])),
         }
@@ -474,32 +548,50 @@ def _emit_screen_csv(result: ScreenResult) -> str:
     return buf.getvalue()
 
 
-def _emit_composite_text(scores: np.ndarray, method: str, top: int) -> str:
+def _emit_composite_text(
+    scores: np.ndarray,
+    method: str,
+    top: int,
+    respondent_ids: list[str] | None = None,
+) -> str:
     order = np.argsort(scores)[::-1][: max(top, 0)]
+    labels = _respondent_labels(len(scores), respondent_ids)
+    label_name = "identifier" if respondent_ids is not None else "index"
     lines = [
         f"respondents: {len(scores)}",
         f"method: {method}",
-        "top composite scores (index, score):",
+        f"top composite scores ({label_name}, score):",
     ]
     for idx in order:
-        lines.append(f"  {int(idx)}\t{float(scores[idx]):.6f}")
+        lines.append(f"  {labels[int(idx)]}\t{float(scores[idx]):.6f}")
     return "\n".join(lines)
 
 
-def _emit_composite_json(scores: np.ndarray, method: str) -> str:
-    return json.dumps(
-        {"method": method, "scores": _json_numbers(scores), "n_respondents": len(scores)},
-        indent=2,
-        allow_nan=False,
-    )
+def _emit_composite_json(
+    scores: np.ndarray,
+    method: str,
+    respondent_ids: list[str] | None = None,
+) -> str:
+    payload: dict[str, object] = {
+        "method": method,
+        "scores": _json_numbers(scores),
+        "n_respondents": len(scores),
+    }
+    if respondent_ids is not None:
+        payload["respondent_ids"] = _respondent_labels(len(scores), respondent_ids)
+    return json.dumps(payload, indent=2, allow_nan=False)
 
 
-def _emit_composite_csv(scores: np.ndarray) -> str:
+def _emit_composite_csv(
+    scores: np.ndarray,
+    respondent_ids: list[str] | None = None,
+) -> str:
     buf = StringIO()
     writer = csv.writer(buf)
     writer.writerow(["respondent", "composite_score"])
-    for i, score in enumerate(scores):
-        writer.writerow([i, _csv_number(score)])
+    labels = _respondent_labels(len(scores), respondent_ids)
+    for label, score in zip(labels, scores, strict=True):
+        writer.writerow([label, _csv_number(score)])
     return buf.getvalue()
 
 
@@ -516,7 +608,7 @@ def _run_command(args: argparse.Namespace) -> int:
         _write_output(text, args.output)
         return 0
 
-    matrix = _load_matrix(args.data, args.delimiter)
+    matrix, respondent_ids = _load_input(args.data, args.delimiter, args.id_column)
     options = _options_from_args(args)
     if args.command == "screen":
         result = screen(
@@ -528,11 +620,11 @@ def _run_command(args: argparse.Namespace) -> int:
             thresholds=_parse_thresholds(args.threshold),
         )
         if args.format == "json":
-            text = _emit_screen_json(result)
+            text = _emit_screen_json(result, respondent_ids)
         elif args.format == "csv":
-            text = _emit_screen_csv(result)
+            text = _emit_screen_csv(result, respondent_ids)
         else:
-            text = _emit_screen_text(result, args.top)
+            text = _emit_screen_text(result, args.top, respondent_ids)
         _write_output(text, args.output)
         return 0
 
@@ -543,11 +635,11 @@ def _run_command(args: argparse.Namespace) -> int:
     scores = scores_result
 
     if args.format == "json":
-        text = _emit_composite_json(scores, args.method)
+        text = _emit_composite_json(scores, args.method, respondent_ids)
     elif args.format == "csv":
-        text = _emit_composite_csv(scores)
+        text = _emit_composite_csv(scores, respondent_ids)
     else:
-        text = _emit_composite_text(scores, args.method, args.top)
+        text = _emit_composite_text(scores, args.method, args.top, respondent_ids)
     _write_output(text, args.output)
     return 0
 
