@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import json
 import tempfile
 import unittest
@@ -253,6 +254,64 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("error: n_components must be at least 2", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_standard_stream_pipeline_is_forward_only(self) -> None:
+        class ForwardOnlyInput(StringIO):
+            def seek(self, *args: object, **kwargs: object) -> int:
+                raise AssertionError("standard input must not be rewound")
+
+        stdin = ForwardOnlyInput("participant,i1,i2,i3\nfast,1,1,1\ntypical,1,2,3\n")
+        stdout = StringIO()
+
+        with patch("sys.stdin", stdin), patch("sys.stdout", stdout):
+            code = main(
+                [
+                    "screen",
+                    "-",
+                    "--id-column",
+                    "participant",
+                    "--indices",
+                    "irv",
+                    "--format",
+                    "json",
+                    "--output",
+                    "-",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertFalse(stdin.closed)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["respondent_ids"], ["fast", "typical"])
+        self.assertEqual(payload["scores"]["irv"], [0.0, np.std([1.0, 2.0, 3.0])])
+
+    def test_gzip_input_and_output(self) -> None:
+        timings = self.root / "timings.csv.gz"
+        with gzip.open(timings, mode="wt", newline="", encoding="utf-8") as handle:
+            handle.write("participant,t1,t2,t3\nfast,0.4,0.5,0.6\nsteady,1,1,1\ntypical,2,3,4\n")
+        out = self.root / "timing-scores.json.gz"
+
+        code = main(
+            [
+                "response-time",
+                str(timings),
+                "--id-column",
+                "participant",
+                "--threshold",
+                "1",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        with gzip.open(out, mode="rt", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        self.assertEqual(payload["respondent_ids"], ["fast", "steady", "typical"])
+        self.assertEqual(payload["scores"], [0.5, 1.0, 3.0])
+        self.assertEqual(payload["flags"], [True, True, False])
 
     def test_indices_command_text_output(self) -> None:
         stdout = StringIO()

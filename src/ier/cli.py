@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import json
 import sys
 from io import StringIO
+from itertools import chain
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, TextIO
 
 import numpy as np
 
@@ -46,34 +48,55 @@ def _parse_numeric_cell(cell: str) -> float:
     return float(cell) if cell.strip() else np.nan
 
 
+def _read_rows_from_stream(handle: TextIO, delimiter: str | None) -> list[list[str]]:
+    """Read non-empty rows from a forward-only text stream."""
+    sample_lines: list[str] = []
+    sample_size = 0
+    while sample_size < 4096:
+        line = handle.readline()
+        if not line:
+            break
+        sample_lines.append(line)
+        sample_size += len(line)
+
+    lines = chain(sample_lines, handle)
+    if delimiter is None:
+        sample = "".join(sample_lines)
+        try:
+            delimiter = csv.Sniffer().sniff(sample, delimiters=",\t;").delimiter
+        except csv.Error:
+            rows = []
+            for line in lines:
+                row = line.split()
+                if row:
+                    rows.append(row)
+            return rows
+
+    reader = csv.reader(lines, delimiter=delimiter)
+    return [row for row in reader if row and any(cell.strip() for cell in row)]
+
+
+def _input_label(path: Path) -> str:
+    """Return a readable source label for errors."""
+    return "standard input" if path == Path("-") else str(path)
+
+
 def _read_rows(path: Path, delimiter: str | None) -> list[list[str]]:
-    """Read non-empty delimited rows with automatic delimiter detection."""
+    """Read plain, gzip-compressed, or standard-input delimited rows."""
     if delimiter is not None and (len(delimiter) != 1 or delimiter in "\r\n"):
         raise ValueError("delimiter must be exactly one non-newline character")
 
-    if delimiter is None:
-        with path.open(newline="", encoding="utf-8") as handle:
-            sample = handle.read(4096)
-            handle.seek(0)
-            try:
-                dialect = csv.Sniffer().sniff(sample, delimiters=",\t;")
-                delim = dialect.delimiter
-            except csv.Error:
-                rows = []
-                for line in handle:
-                    row = line.split()
-                    if row:
-                        rows.append(row)
-            else:
-                reader = csv.reader(handle, delimiter=delim)
-                rows = [row for row in reader if row and any(cell.strip() for cell in row)]
+    if path == Path("-"):
+        rows = _read_rows_from_stream(sys.stdin, delimiter)
+    elif path.suffix.casefold() == ".gz":
+        with gzip.open(path, mode="rt", newline="", encoding="utf-8") as handle:
+            rows = _read_rows_from_stream(handle, delimiter)
     else:
         with path.open(newline="", encoding="utf-8") as handle:
-            reader = csv.reader(handle, delimiter=delimiter)
-            rows = [row for row in reader if row and any(cell.strip() for cell in row)]
+            rows = _read_rows_from_stream(handle, delimiter)
 
     if not rows:
-        raise ValueError(f"no data rows found in {path}")
+        raise ValueError(f"no data rows found in {_input_label(path)}")
     return rows
 
 
@@ -85,6 +108,7 @@ def _load_input(
 ) -> tuple[np.ndarray, list[str] | None]:
     """Load selected numeric items and optionally preserve a named identifier."""
     rows = _read_rows(path, delimiter)
+    source = _input_label(path)
 
     selected_names: list[str] | None = None
     if item_columns is not None:
@@ -131,14 +155,14 @@ def _load_input(
 
     data_rows = rows[start:]
     if not data_rows:
-        raise ValueError(f"no numeric data rows found in {path}")
+        raise ValueError(f"no numeric data rows found in {source}")
 
     widths = {len(row) for row in data_rows}
     if header is not None:
         widths.add(len(header))
     if len(widths) != 1:
         raise ValueError(
-            f"jagged delimited input in {path}: rows have unequal lengths {sorted(widths)}; "
+            f"jagged delimited input in {source}: rows have unequal lengths {sorted(widths)}; "
             "expected a rectangular respondent×item matrix"
         )
 
@@ -162,10 +186,10 @@ def _load_input(
             dtype=float,
         )
     except ValueError as err:
-        raise ValueError(f"failed to parse numeric matrix from {path}: {err}") from err
+        raise ValueError(f"failed to parse numeric matrix from {source}: {err}") from err
 
     if matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0:
-        raise ValueError(f"expected a 2D respondent×item matrix in {path}")
+        raise ValueError(f"expected a 2D respondent×item matrix in {source}")
     return matrix, identifiers
 
 
@@ -299,7 +323,7 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
         "--output",
         type=Path,
         default=None,
-        help="Write JSON/CSV output to this path (default: stdout)",
+        help="Write output to a path, optionally .gz; use '-' for stdout",
     )
     parser.add_argument(
         "--top",
@@ -375,7 +399,7 @@ def _build_parser() -> argparse.ArgumentParser:
     screen_parser.add_argument(
         "data",
         type=Path,
-        help="Path to CSV/TSV/whitespace respondent × item scores",
+        help="CSV/TSV/whitespace item scores; use '-' for standard input",
     )
     screen_parser.add_argument(
         "--indices",
@@ -403,7 +427,9 @@ def _build_parser() -> argparse.ArgumentParser:
         "composite", help="Compute a composite IER score for each respondent."
     )
     composite_parser.add_argument(
-        "data", type=Path, help="Path to CSV/TSV/whitespace respondent × item scores"
+        "data",
+        type=Path,
+        help="CSV/TSV/whitespace item scores; use '-' for standard input",
     )
     composite_parser.add_argument(
         "--indices",
@@ -425,7 +451,7 @@ def _build_parser() -> argparse.ArgumentParser:
     response_time_parser.add_argument(
         "data",
         type=Path,
-        help="Path to CSV/TSV/whitespace respondent × timing values",
+        help="CSV/TSV/whitespace timing values; use '-' for standard input",
     )
     response_time_parser.add_argument(
         "--metric",
@@ -474,15 +500,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=None,
-        help="Write output to this path (default: stdout)",
+        help="Write output to a path, optionally .gz; use '-' for stdout",
     )
 
     return parser
 
 
 def _write_output(text: str, path: Path | None) -> None:
-    if path is None:
+    if path is None or path == Path("-"):
         print(text)
+        return
+    if path.suffix.casefold() == ".gz":
+        with gzip.open(path, mode="wt", newline="", encoding="utf-8") as handle:
+            handle.write(text)
         return
     path.write_text(text, encoding="utf-8")
 

@@ -134,6 +134,8 @@ ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier response-time timings.csv --metric median --threshold 1.0
+ier screen data.csv.gz --format json --output screening.json.gz
+cat data.csv | ier screen - --indices irv longstring --format json
 ier --version
 ```
 
@@ -141,6 +143,10 @@ ier --version
 lets screen and composite commands ignore unselected metadata columns while
 preserving the requested item order. Any item-index options refer to that
 selected order.
+
+Use `-` as the data path to read a forward-only standard-input stream, and use
+`--output -` to select standard output explicitly. Input and output paths ending
+in `.gz` are compressed or decompressed transparently with no optional package.
 
 JSON output is standards-compliant: unavailable or non-finite scores and summary
 statistics are encoded as `null`. CSV output represents non-finite scores as empty
