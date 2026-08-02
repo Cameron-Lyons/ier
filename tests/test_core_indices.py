@@ -3,6 +3,7 @@
 import unittest
 import warnings
 from typing import Any, cast
+from unittest.mock import patch
 
 import numpy as np
 import numpy.typing as npt
@@ -18,6 +19,7 @@ from ier.longstring import (
 )
 from ier.mahad import _compute_mahalanobis_distance, mahad, mahad_summary
 from ier.psychsyn import (
+    _compute_complete_person_scores,
     _resample_missing_correlations,
     compute_person_correlations,
     get_highly_correlated_pairs,
@@ -587,6 +589,30 @@ class TestPsychometricFunctions(unittest.TestCase):
         self.assertTrue(np.all(np.isnan(info_scores)))
         self.assertTrue(np.all(info_diag == 0))
         self.assertEqual(pairs.shape[0], 0)
+
+    def test_complete_psychsyn_batches_match_expanded_formula(self) -> None:
+        """Finite response batches preserve the expanded pairwise formula."""
+        rng = np.random.default_rng(20260802)
+        latent = rng.normal(size=(257, 1))
+        offsets = np.linspace(-1.0, 1.0, 20)
+        data = latent + offsets + rng.normal(scale=0.05, size=(257, 20))
+        correlations = np.corrcoef(data, rowvar=False)
+        item_pairs = get_highly_correlated_pairs(correlations, critval=0.8, anto=False)
+
+        response_i = data[:, item_pairs[:, 0]]
+        response_j = data[:, item_pairs[:, 1]]
+        person_corrs = compute_person_correlations(response_i, response_j)
+        expected_scores = np.mean(person_corrs, axis=1)
+        expected_diag = np.sum(~np.isnan(person_corrs), axis=1)
+
+        with patch("ier.psychsyn._PSYCHSYN_BATCH_ELEMENTS", 760):
+            scores, diag = _compute_complete_person_scores(data, item_pairs)
+            public_scores, public_diag = psychsyn(data, critval=0.8, diag=True)
+
+        np.testing.assert_allclose(scores, expected_scores, rtol=0.0, atol=1e-15)
+        np.testing.assert_array_equal(diag, expected_diag)
+        np.testing.assert_allclose(public_scores, expected_scores, rtol=0.0, atol=1e-15)
+        np.testing.assert_array_equal(public_diag, expected_diag)
 
     def test_resample_missing_correlations_edge_cases(self) -> None:
         """Test missing-correlation resampling covers all-missing and partial rows."""
