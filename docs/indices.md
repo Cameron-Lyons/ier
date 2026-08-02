@@ -49,6 +49,9 @@ defaults, and options that must be configured before an index can run.
 \* `person_total` flags unusually low totals under the default low-direction
 percentile rule; interpret in context of your scale coding.
 
+`individual_reliability(..., random_seed=...)` uses an isolated reproducible
+random stream. It does not reset or advance NumPy's process-wide random state.
+
 The registry's `longstring` index uses `longstring_scores()` for numeric response
 matrices. The standalone `longstring()` helper analyzes text strings only and
 rejects numeric or multidimensional arrays.
