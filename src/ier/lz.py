@@ -19,6 +19,8 @@ import numpy as np
 
 from ier._validation import MatrixLike, validate_matrix_input
 
+_LZ_BATCH_ELEMENTS = 10_240
+
 
 def lz(
     x: MatrixLike,
@@ -210,6 +212,9 @@ def _estimate_discrimination(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
 
 def _estimate_theta(x: np.ndarray, a: np.ndarray, b: np.ndarray, na_rm: bool = True) -> np.ndarray:
     """Estimate person ability using ML or sum score transformation."""
+    if not np.isnan(x).any():
+        return _estimate_theta_complete(x, a, b)
+
     n_persons = x.shape[0]
     theta = np.zeros(n_persons)
 
@@ -235,6 +240,75 @@ def _estimate_theta(x: np.ndarray, a: np.ndarray, b: np.ndarray, na_rm: bool = T
         else:
             theta[i] = _ml_theta(responses, a_valid, b_valid)
 
+    return theta
+
+
+def _estimate_theta_complete(x: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Estimate complete-row abilities in cache-sized batches."""
+    theta = np.empty(x.shape[0])
+    batch_rows = max(1, _LZ_BATCH_ELEMENTS // x.shape[1])
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        theta[start:stop] = _ml_theta_batch(x[start:stop], a, b)
+    return theta
+
+
+def _ml_theta_batch(responses: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Apply safeguarded Newton iterations to a complete response batch."""
+    theta = np.empty(len(responses))
+    all_correct = np.all(responses == 1, axis=1)
+    all_incorrect = np.all(responses == 0, axis=1)
+    theta[all_correct] = 3.0
+    theta[all_incorrect] = -3.0
+
+    interior = ~(all_correct | all_incorrect)
+    active_responses = responses[interior]
+    if len(active_responses) == 0:
+        return theta
+
+    proportion = np.clip(np.mean(active_responses, axis=1), 0.01, 0.99)
+    estimates = np.clip(np.log(proportion / (1.0 - proportion)), -4.0, 4.0)
+    lower = np.full(len(active_responses), -4.0)
+    upper = np.full(len(active_responses), 4.0)
+    active = np.ones(len(active_responses), dtype=bool)
+    a_squared = a**2
+
+    for _ in range(64):
+        linear_predictor = a * (estimates[:, None] - b)
+        probabilities = np.empty_like(linear_predictor, dtype=float)
+        non_negative = linear_predictor >= 0.0
+        probabilities[non_negative] = 1.0 / (1.0 + np.exp(-linear_predictor[non_negative]))
+        exponential = np.exp(linear_predictor[~non_negative])
+        probabilities[~non_negative] = exponential / (1.0 + exponential)
+
+        score = np.sum(a * (active_responses - probabilities), axis=1)
+        score_converged = active & (np.abs(score) <= 1e-12)
+        active[score_converged] = False
+        if not np.any(active):
+            break
+
+        positive = active & (score > 0.0)
+        negative = active & ~positive
+        lower[positive] = estimates[positive]
+        upper[negative] = estimates[negative]
+
+        information = np.sum(a_squared * probabilities * (1.0 - probabilities), axis=1)
+        candidates = estimates + np.divide(
+            score,
+            information,
+            out=np.full(len(active_responses), np.nan),
+            where=information > 0.0,
+        )
+        invalid = ~np.isfinite(candidates) | (candidates <= lower) | (candidates >= upper)
+        candidates[invalid] = (lower[invalid] + upper[invalid]) / 2.0
+
+        step_converged = active & (np.abs(candidates - estimates) <= 1e-12)
+        estimates[active] = candidates[active]
+        active[step_converged] = False
+        if not np.any(active):
+            break
+
+    theta[interior] = estimates
     return theta
 
 
@@ -278,6 +352,9 @@ def _compute_lz(
     x: np.ndarray, a: np.ndarray, b: np.ndarray, theta: np.ndarray, na_rm: bool = True
 ) -> np.ndarray:
     """Compute standardized log-likelihood for each person."""
+    if not np.isnan(x).any():
+        return _compute_lz_complete(x, a, b, theta)
+
     n_persons = x.shape[0]
     lz_values = np.zeros(n_persons)
 
@@ -300,19 +377,79 @@ def _compute_lz(
             lz_values[i] = np.nan
             continue
 
-        prob = 1 / (1 + np.exp(-a_valid * (theta[i] - b_valid)))
-        prob = np.clip(prob, 1e-10, 1 - 1e-10)
-
-        log_l = np.sum(responses * np.log(prob) + (1 - responses) * np.log(1 - prob))
-
-        expected_l = np.sum(prob * np.log(prob) + (1 - prob) * np.log(1 - prob))
-
-        log_odds = np.log(prob / (1 - prob))
-        var_l = np.sum(prob * (1 - prob) * log_odds**2)
-
-        if var_l <= 0:
-            lz_values[i] = 0.0
-        else:
-            lz_values[i] = (log_l - expected_l) / np.sqrt(var_l)
+        lz_values[i] = _compute_lz_row(responses, a_valid, b_valid, theta[i])
 
     return lz_values
+
+
+def _compute_lz_complete(
+    x: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    theta: np.ndarray,
+) -> np.ndarray:
+    """Compute complete-row lz scores in cache-sized batches."""
+    result = np.empty(len(x))
+    batch_rows = max(1, _LZ_BATCH_ELEMENTS // x.shape[1])
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        batch_result = np.full(stop - start, np.nan)
+        batch_theta = theta[start:stop]
+        valid = ~np.isnan(batch_theta)
+        if np.any(valid):
+            batch_result[valid] = _compute_lz_batch(
+                x[start:stop][valid],
+                a,
+                b,
+                batch_theta[valid],
+            )
+        result[start:stop] = batch_result
+    return result
+
+
+def _compute_lz_batch(
+    responses: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    theta: np.ndarray,
+) -> np.ndarray:
+    """Compute lz scores for one complete response batch."""
+    prob = 1 / (1 + np.exp(-a * (theta[:, None] - b)))
+    prob = np.clip(prob, 1e-10, 1 - 1e-10)
+    log_prob = np.log(prob)
+    log_one_minus_prob = np.log(1 - prob)
+
+    log_l = np.sum(
+        responses * log_prob + (1 - responses) * log_one_minus_prob,
+        axis=1,
+    )
+    expected_l = np.sum(
+        prob * log_prob + (1 - prob) * log_one_minus_prob,
+        axis=1,
+    )
+    log_odds = np.log(prob / (1 - prob))
+    var_l = np.sum(prob * (1 - prob) * log_odds**2, axis=1)
+    result = np.zeros(len(responses))
+    np.divide(
+        log_l - expected_l,
+        np.sqrt(var_l),
+        out=result,
+        where=var_l > 0,
+    )
+    return result
+
+
+def _compute_lz_row(
+    responses: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    theta: float,
+) -> float:
+    """Compute one lz score for the missing-data fallback path."""
+    prob = 1 / (1 + np.exp(-a * (theta - b)))
+    prob = np.clip(prob, 1e-10, 1 - 1e-10)
+    log_l = np.sum(responses * np.log(prob) + (1 - responses) * np.log(1 - prob))
+    expected_l = np.sum(prob * np.log(prob) + (1 - prob) * np.log(1 - prob))
+    log_odds = np.log(prob / (1 - prob))
+    var_l = np.sum(prob * (1 - prob) * log_odds**2)
+    return 0.0 if var_l <= 0 else float((log_l - expected_l) / np.sqrt(var_l))

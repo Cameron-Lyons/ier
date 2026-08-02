@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.1] - 2026-08-02
+
+### Changed
+
+- Complete-matrix lz person-fit scoring now batches safeguarded theta estimation
+  and likelihood calculations in cache-sized workspaces instead of looping over
+  respondents. The 10,000-respondent, 80-item benchmark runs roughly six times
+  as fast, while missing-data rows retain the scalar fallback.
+
 ## [2.8.0] - 2026-08-02
 
 ### Added
