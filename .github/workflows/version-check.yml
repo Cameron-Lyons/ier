@@ -32,6 +32,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Require project and lock versions to match
+        run: python3 scripts/check_lock_version.py
+
       - name: Detect whether a version bump is required
         id: scope
         run: |

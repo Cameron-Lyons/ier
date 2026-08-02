@@ -33,9 +33,10 @@ Run the unified suite before opening a PR:
 ./scripts/check.sh
 ```
 
-When `uv` is available, the script first synchronizes all locked dependency groups,
-then runs every command without further environment mutation. Without `uv`, it
-uses tools from the active environment.
+The script first verifies that the editable project version in `uv.lock` matches
+`pyproject.toml`. When `uv` is available, it then synchronizes all locked dependency
+groups and runs every command without further environment mutation. Without `uv`,
+it uses tools from the active environment.
 
 Skip the docs build with `SKIP_DOCS=1 ./scripts/check.sh`.
 
@@ -115,6 +116,8 @@ The repository supports two release paths:
 - Use semantic versioning (`MAJOR.MINOR.PATCH`).
 - Source-changing PRs must set a valid semantic version strictly greater than
   the version on `main`; CI rejects unchanged versions and downgrades.
+- Keep the editable project version in `uv.lock` equal to `project.version`;
+  local and CI checks reject drift before dependency synchronization.
 - Bump `/pyproject.toml` when preparing a new public package release.
 - PyPI does not allow uploading new files for a version that already exists.
   If you need to correct packaging for the same code, publish a new patch version.

@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   modes, orchestration defaults, composite availability, and required options.
 - `ier indices` discovery output in text, JSON, or CSV format.
 
+### Changed
+
+- Local and CI version checks now verify that the editable project entry in
+  `uv.lock` matches `project.version` before dependency synchronization.
+
 ## [2.3.0] - 2026-08-02
 
 ### Added
