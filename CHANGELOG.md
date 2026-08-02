@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.6] - 2026-08-02
+
+### Changed
+
+- Longest-run scoring now processes complete matrices column-wise instead of
+  looping over respondents; the 10,000-respondent, 80-item index benchmark runs
+  roughly 47 times faster and the 1,000-respondent, 50-item default screening
+  benchmark runs roughly 1.6 times faster.
+
 ## [2.2.5] - 2026-08-02
 
 ### Changed

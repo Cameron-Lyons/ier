@@ -226,8 +226,12 @@ def longstring_scores(
     """
     x_array = validate_matrix_input(x, min_columns=1, check_type=False)
 
-    if not na_rm and np.isnan(x_array).any():
+    has_missing = np.isnan(x_array).any()
+    if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
+
+    if not has_missing:
+        return _longstring_scores_complete(x_array)
 
     scores = np.zeros(x_array.shape[0], dtype=float)
 
@@ -241,6 +245,18 @@ def longstring_scores(
         scores[i] = float(np.max(run_lengths))
 
     return scores
+
+
+def _longstring_scores_complete(x: np.ndarray) -> np.ndarray:
+    """Compute longest runs across complete matrix rows."""
+    current = np.ones(x.shape[0], dtype=float)
+    longest = current.copy()
+
+    for column in range(1, x.shape[1]):
+        current = np.where(x[:, column] == x[:, column - 1], current + 1.0, 1.0)
+        longest = np.maximum(longest, current)
+
+    return longest
 
 
 def _longest_repeating_patterns(x: np.ndarray, max_k: int) -> np.ndarray:
