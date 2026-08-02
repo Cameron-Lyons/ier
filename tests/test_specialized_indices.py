@@ -118,6 +118,22 @@ class TestGuttman(unittest.TestCase):
         result = guttman(data)
         np.testing.assert_allclose(result, [2.0 / 3.0, 2.0 / 3.0])
 
+    def test_sparse_categorical_fast_path_matches_pairwise_definition(self) -> None:
+        """Sparse integer codes retain exact ordered-pair counts with missing data."""
+        rng = np.random.default_rng(17)
+        data = rng.choice([-2.0, 0.0, 5.0], size=(40, 12))
+        data[rng.random(data.shape) < 0.1] = np.nan
+
+        item_difficulty = np.nanmean(data, axis=0)
+        ordered = data[:, np.argsort(item_difficulty)]
+        expected = np.zeros(data.shape[0])
+        for column in range(1, data.shape[1]):
+            expected += np.count_nonzero(
+                ordered[:, :column] < ordered[:, column, np.newaxis], axis=1
+            )
+
+        np.testing.assert_array_equal(guttman(data, normalize=False), expected)
+
     def test_high_cardinality_raw_counts(self) -> None:
         """Test the bounded-memory fallback on continuous-style response data."""
         n_items = 70
