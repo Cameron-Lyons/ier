@@ -106,6 +106,7 @@ def composite(
     *,
     options: IndexOptions | None = None,
     return_diagnostics: bool = False,
+    strict: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, dict[str, str]]:
     """
     Calculate a composite IER index combining multiple detection methods.
@@ -114,9 +115,9 @@ def composite(
     and combines them into a single composite score. Higher composite scores
     indicate greater likelihood of careless responding.
 
-    Configure indices with a single ``IndexOptions`` via ``options=``. Missing
-    required config for an index is recorded in diagnostics (soft-fail), matching
-    ``screen()`` — it does not abort other indices.
+    Configure indices with a single ``IndexOptions`` via ``options=``. By default,
+    missing required config is recorded in diagnostics without aborting other
+    indices. Set ``strict=True`` to require every selected index to succeed.
 
     The composite score is a sample-relative signal, not a calibrated probability
     of careless responding. Prefer multi-index agreement and substantive review
@@ -136,6 +137,8 @@ def composite(
     - standardize: If True (default), standardize each index to z-scores before combining.
     - options: Shared index configuration (``IndexOptions``).
     - return_diagnostics: If True, also return per-index soft-failure messages.
+    - strict: If True, raise when any selected index fails instead of collecting
+              diagnostics (default False).
 
     Returns:
     - A numpy array of composite scores for each individual. Higher scores indicate
@@ -160,6 +163,7 @@ def composite(
         selected_indices,
         resolved,
         apply_composite_direction=True,
+        strict=strict,
     )
     result = _combine_scores(index_scores, diagnostics, combine_method, standardize)
 
@@ -178,12 +182,13 @@ def composite_flag(
     *,
     options: IndexOptions | None = None,
     return_diagnostics: bool = False,
+    strict: bool = False,
 ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, dict[str, str]]:
     """
     Calculate composite IER scores and flag potential careless responders.
 
-    Configure with ``options=IndexOptions(...)``. Soft-fails missing index config
-    like ``screen()`` / ``composite()``.
+    Configure with ``options=IndexOptions(...)``. Missing index config soft-fails
+    by default; set ``strict=True`` to require every selected index to succeed.
 
     Returns:
     - Tuple of (composite_scores, flags) where flags is True for suspected
@@ -196,6 +201,7 @@ def composite_flag(
         standardize=standardize,
         options=options,
         return_diagnostics=return_diagnostics,
+        strict=strict,
     )
     if return_diagnostics:
         if not isinstance(composite_result, tuple):
@@ -220,18 +226,25 @@ def composite_summary(
     standardize: bool = True,
     *,
     options: IndexOptions | None = None,
+    strict: bool = False,
 ) -> CompositeSummary:
     """
     Calculate composite scores with detailed summary statistics.
 
-    Configure with ``options=IndexOptions(...)``.
+    Configure with ``options=IndexOptions(...)``. Set ``strict=True`` to require
+    every selected index to succeed.
     """
     x_array = validate_matrix_input(x, check_type=False)
     resolved = resolve_index_options(options)
     selected_indices = _resolve_composite_indices(indices, method, resolved)
     combine_method = _validate_composite_request(selected_indices, method)
 
-    individual_scores, diagnostics = score_registered_indices(x_array, selected_indices, resolved)
+    individual_scores, diagnostics = score_registered_indices(
+        x_array,
+        selected_indices,
+        resolved,
+        strict=strict,
+    )
     composite_inputs = {
         name: INDEX_REGISTRY[name].composite_multiplier * scores
         for name, scores in individual_scores.items()
@@ -262,6 +275,7 @@ def composite_probability(
     method: CompositeMethod = "mean",
     *,
     options: IndexOptions | None = None,
+    strict: bool = False,
 ) -> np.ndarray:
     """
     Compute an uncalibrated logistic composite IER score.
@@ -270,7 +284,8 @@ def composite_probability(
     logistic transformation to map it into the interval [0, 1]. The returned
     values are sample-relative scores, not calibrated probabilities of IER.
 
-    Configure with ``options=IndexOptions(...)``.
+    Configure with ``options=IndexOptions(...)``. Set ``strict=True`` to require
+    every selected index to succeed.
     """
     z_scores_result = composite(
         x,
@@ -278,6 +293,7 @@ def composite_probability(
         method=method,
         standardize=True,
         options=options,
+        strict=strict,
     )
     z_scores = z_scores_result[0] if isinstance(z_scores_result, tuple) else z_scores_result
 

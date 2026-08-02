@@ -64,6 +64,13 @@ result = screen(
 Missing required config is recorded in `result["errors"]` instead of aborting
 the whole screening run. `composite()` uses the same soft-fail policy.
 
+For production batches that require every requested index to succeed, enable
+strict mode. The first failed index raises a contextual `ValueError`:
+
+```python
+result = screen(data, indices=["irv", "mad"], options=options, strict=True)
+```
+
 ## Missing responses
 
 Missing-response rate is available as an opt-in registry index:
@@ -112,6 +119,7 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 ier screen data.csv --scale-min 1 --scale-max 5 --indices irv longstring
 ier screen data.csv --min-flags 3
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
+ier screen data.csv --indices irv mad --strict
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier --version

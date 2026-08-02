@@ -116,6 +116,24 @@ class TestComposite(unittest.TestCase):
         _, diagnostics = composite(data, indices=["irv", "evenodd"], return_diagnostics=True)
         self.assertIn("evenodd", diagnostics)
 
+    def test_strict_mode_propagates_across_composite_apis(self) -> None:
+        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
+        calls = {
+            "composite": lambda: composite(data, indices=["irv", "mad"], strict=True),
+            "flag": lambda: composite_flag(data, indices=["irv", "mad"], strict=True),
+            "summary": lambda: composite_summary(data, indices=["irv", "mad"], strict=True),
+            "probability": lambda: composite_probability(data, indices=["irv", "mad"], strict=True),
+        }
+        for name, call in calls.items():
+            with (
+                self.subTest(name=name),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "index 'mad' failed: mad_positive_items",
+                ),
+            ):
+                call()
+
     def test_invalid_method_raises(self) -> None:
         """Test that invalid method raises ValueError."""
         data = [[1, 2, 3, 4, 5]]

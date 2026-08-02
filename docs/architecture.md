@@ -26,8 +26,9 @@ _validation / _flagging    ← shared input checks and threshold helpers
   fields (e.g. `evenodd_factors`).
 - **Soft per-index errors.** `score_registered_indices()` catches validation /
   runtime failures per index and returns them in an `errors` dict instead of
-  aborting the whole screen. Callers still raise if *no* index succeeds where
-  that is required (composite).
+  aborting the whole screen. Public orchestration APIs also accept `strict=True`
+  to raise a contextual error as soon as a selected index fails. Composite
+  callers still raise if *no* index succeeds under the default soft policy.
 
 ## IndexOptions
 

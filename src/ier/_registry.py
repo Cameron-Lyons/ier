@@ -416,8 +416,12 @@ def score_registered_indices(
     options: IndexOptions,
     *,
     apply_composite_direction: bool = False,
+    strict: bool = False,
 ) -> tuple[dict[str, np.ndarray], dict[str, str]]:
-    """Compute registered indices and collect per-index validation failures."""
+    """Compute registered indices, collecting or raising per-index failures."""
+    if not isinstance(strict, bool):
+        raise ValueError("strict must be a boolean")
+
     scores: dict[str, np.ndarray] = {}
     errors: dict[str, str] = {}
 
@@ -425,12 +429,16 @@ def score_registered_indices(
         spec = INDEX_REGISTRY[name]
         required_error = spec.required_error(options) if spec.required_error is not None else None
         if required_error is not None:
+            if strict:
+                raise ValueError(f"index '{name}' failed: {required_error}")
             errors[name] = required_error
             continue
 
         try:
             score = spec.scorer(x, options)
         except (ValueError, RuntimeError, TypeError) as err:
+            if strict:
+                raise ValueError(f"index '{name}' failed: {err}") from err
             errors[name] = str(err)
             continue
 

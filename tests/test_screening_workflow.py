@@ -1,6 +1,7 @@
 """Unit tests for acquiescence, screening, and visualization functions."""
 
 import unittest
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -260,6 +261,16 @@ class TestScreen(unittest.TestCase):
         result = screen(self.data, indices=["mad", "evenodd"])
         self.assertIn("mad", result["errors"])
         self.assertIn("evenodd", result["errors"])
+
+    def test_strict_mode_raises_on_index_failure(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "index 'mad' failed: mad_positive_items",
+        ):
+            screen(self.data, indices=["irv", "mad"], strict=True)
+
+        with self.assertRaisesRegex(ValueError, "strict must be a boolean"):
+            screen(self.data, indices=["irv"], strict=cast("Any", 1))
 
     def test_summary_stats(self) -> None:
         result = screen(self.data, indices=["irv"])

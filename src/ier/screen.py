@@ -57,6 +57,7 @@ def screen(
     percentile: float = 95.0,
     min_flags: int = 2,
     thresholds: Mapping[str, float] | None = None,
+    strict: bool = False,
 ) -> ScreenResult:
     """
     Screen respondents across multiple IER detection indices.
@@ -84,6 +85,8 @@ def screen(
                  consensus flag (default 2).
     - thresholds: Optional fixed per-index cutoffs. Scores at or beyond a fixed
                   cutoff are flagged; indices without an override use percentiles.
+    - strict: If True, raise when any selected index fails instead of recording
+              the failure in ``errors`` (default False).
 
     Returns:
     - Dictionary with:
@@ -124,7 +127,7 @@ def screen(
 
     fixed_thresholds = _resolve_screen_thresholds(thresholds, indices)
     resolved = resolve_index_options(options)
-    scores, errors = score_registered_indices(x_array, indices, resolved)
+    scores, errors = score_registered_indices(x_array, indices, resolved, strict=strict)
 
     flags: dict[str, np.ndarray] = {}
     applied_thresholds: dict[str, float | None] = {}
