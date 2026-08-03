@@ -183,6 +183,20 @@ strict = screen_scores(
 
 This returns a fresh screening result without recalculating any index.
 
+Detailed composite results support the same reuse pattern for alternative
+weights, reductions, or completeness rules:
+
+```python
+from ier import composite_scores, composite_summary
+
+details = composite_summary(responses, indices=["irv", "longstring", "person_total"])
+weighted = composite_scores(
+    details["indices"],
+    weights={"irv": 2.0, "person_total": 0.5},
+    min_valid_indices=2,
+)
+```
+
 For fast, lossless NumPy workflows, write a versioned, pickle-free archive:
 
 ```bash

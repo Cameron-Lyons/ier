@@ -31,10 +31,12 @@ from ier._registry import (
     validate_worker_count,
 )
 from ier._statistics import logistic_transform
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_matrix_input, validate_score_vectors
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from numpy.typing import ArrayLike
 
     from ier.types import CompositeMethod, CompositeSummary
 
@@ -90,6 +92,13 @@ def _resolve_composite_weights(
     return resolved
 
 
+def _validate_standardize(standardize: bool) -> bool:
+    """Return a validated score-standardization control."""
+    if not isinstance(standardize, bool):
+        raise ValueError("standardize must be a boolean")
+    return standardize
+
+
 def _standardize_index_scores(scores: np.ndarray) -> np.ndarray:
     """Return z-scores while retaining established sparse and constant behavior."""
     valid_mask = ~np.isnan(scores)
@@ -115,6 +124,7 @@ def _combine_scores(
     *,
     min_valid_indices: int | None = None,
     valid_counts_out: np.ndarray | None = None,
+    multipliers: Mapping[str, float] | None = None,
 ) -> np.ndarray:
     if len(index_scores) == 0:
         failed = "; ".join(f"{name}: {msg}" for name, msg in sorted(diagnostics.items()))
@@ -152,7 +162,15 @@ def _combine_scores(
     for name, scores in index_scores.items():
         values = _standardize_index_scores(scores) if standardize else scores
         weight = weights.get(name, 1.0) if weights is not None else 1.0
-        weighted_values = values * weight if weight != 1.0 else values
+        multiplier = multipliers.get(name, 1.0) if multipliers is not None else 1.0
+        scale = weight * multiplier
+        if scale == 1.0:
+            weighted_values = values
+        elif standardize and values is not scores:
+            np.multiply(values, scale, out=values)
+            weighted_values = values
+        else:
+            weighted_values = values * scale
         valid_mask = ~np.isnan(weighted_values)
         if tracked_counts is not None:
             tracked_counts += valid_mask
@@ -183,6 +201,67 @@ def _combine_scores(
         combined[available_counts < min_valid_indices] = np.nan
 
     return combined
+
+
+def composite_scores(
+    scores: Mapping[str, ArrayLike],
+    method: Literal["mean", "sum", "max"] = "mean",
+    standardize: bool = True,
+    *,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+) -> np.ndarray:
+    """
+    Combine already-computed registered-index score vectors.
+
+    This reusable counterpart to :func:`composite` supports fast weight,
+    standardization, completeness, and reduction-method sensitivity analysis
+    without calculating any index again. Input scores use their original public
+    directions; low-is-suspicious indices are reversed automatically so higher
+    composite values consistently represent more evidence of careless responding.
+
+    Score mappings preserve insertion order. Every vector must be non-empty,
+    one-dimensional, respondent-aligned, and contain only finite values or
+    ``NaN``. The function does not mutate input arrays.
+
+    Parameters:
+    - scores: Mapping from composite-enabled registered index names to raw score vectors.
+    - method: Reduction across available directed scores: ``"mean"``, ``"sum"``,
+              or ``"max"``.
+    - standardize: Standardize each index before applying direction and weights.
+    - weights: Optional positive finite per-index weight overrides.
+    - min_valid_indices: Optional minimum available component count per respondent.
+
+    Returns:
+    - A respondent-aligned NumPy array of composite scores.
+
+    Example:
+        >>> from ier import composite_scores, composite_summary
+        >>> initial = composite_summary(data, indices=["irv", "longstring"])
+        >>> weighted = composite_scores(
+        ...     initial["indices"],
+        ...     weights={"irv": 2.0, "longstring": 0.5},
+        ... )
+    """
+    validated_scores, _ = validate_score_vectors(scores)
+    indices = list(validated_scores)
+    validate_index_names(indices, composite_index_names())
+    if method not in {"mean", "sum", "max"}:
+        raise ValueError("method must be 'mean', 'sum', or 'max' for precomputed scores")
+    standardize = _validate_standardize(standardize)
+    resolved_weights = _resolve_composite_weights(weights, indices)
+    min_valid_indices = validate_min_valid_indices(min_valid_indices, len(indices))
+    multipliers = {name: INDEX_REGISTRY[name].composite_multiplier for name in indices}
+
+    return _combine_scores(
+        validated_scores,
+        {},
+        method,
+        standardize,
+        resolved_weights if weights is not None else None,
+        min_valid_indices=min_valid_indices,
+        multipliers=multipliers,
+    )
 
 
 def composite(
@@ -252,6 +331,7 @@ def composite(
         >>> print(scores)
     """
     workers = validate_worker_count(workers)
+    standardize = _validate_standardize(standardize)
     x_array = validate_matrix_input(x, check_type=False)
     resolved = resolve_index_options(options)
     selected_indices = _resolve_composite_indices(indices, method, resolved)
@@ -263,10 +343,10 @@ def composite(
         x_array,
         selected_indices,
         resolved,
-        apply_composite_direction=True,
         strict=strict,
         workers=workers,
     )
+    multipliers = {name: INDEX_REGISTRY[name].composite_multiplier for name in index_scores}
     result = _combine_scores(
         index_scores,
         diagnostics,
@@ -274,6 +354,7 @@ def composite(
         standardize,
         resolved_weights if weights is not None else None,
         min_valid_indices=min_valid_indices,
+        multipliers=multipliers,
     )
 
     if return_diagnostics:
@@ -362,6 +443,7 @@ def composite_summary(
     component count for each respondent before applying ``min_valid_indices``.
     """
     workers = validate_worker_count(workers)
+    standardize = _validate_standardize(standardize)
     x_array = validate_matrix_input(x, check_type=False)
     resolved = resolve_index_options(options)
     selected_indices = _resolve_composite_indices(indices, method, resolved)
@@ -376,25 +458,23 @@ def composite_summary(
         strict=strict,
         workers=workers,
     )
-    composite_inputs = {
-        name: INDEX_REGISTRY[name].composite_multiplier * scores
-        for name, scores in individual_scores.items()
-    }
+    multipliers = {name: INDEX_REGISTRY[name].composite_multiplier for name in individual_scores}
     valid_index_counts = np.zeros(len(x_array), dtype=np.int_)
-    composite_scores = _combine_scores(
-        composite_inputs,
+    combined_scores = _combine_scores(
+        individual_scores,
         diagnostics,
         combine_method,
         standardize,
         resolved_weights if weights is not None else None,
         min_valid_indices=min_valid_indices,
         valid_counts_out=valid_index_counts,
+        multipliers=multipliers,
     )
 
-    valid_composite = composite_scores[~np.isnan(composite_scores)]
+    valid_composite = combined_scores[~np.isnan(combined_scores)]
 
     return {
-        "composite": composite_scores,
+        "composite": combined_scores,
         "indices": individual_scores,
         "indices_used": list(individual_scores.keys()),
         "errors": diagnostics,
@@ -403,12 +483,12 @@ def composite_summary(
         "weights": resolved_weights,
         "min_valid_indices": min_valid_indices,
         "valid_index_counts": valid_index_counts,
-        "mean": float(np.nanmean(composite_scores)) if len(valid_composite) > 0 else float("nan"),
-        "std": float(np.nanstd(composite_scores)) if len(valid_composite) > 0 else float("nan"),
-        "min": float(np.nanmin(composite_scores)) if len(valid_composite) > 0 else float("nan"),
-        "max": float(np.nanmax(composite_scores)) if len(valid_composite) > 0 else float("nan"),
-        "n_total": len(composite_scores),
-        "n_valid": int(np.sum(~np.isnan(composite_scores))),
+        "mean": float(np.nanmean(combined_scores)) if len(valid_composite) > 0 else float("nan"),
+        "std": float(np.nanstd(combined_scores)) if len(valid_composite) > 0 else float("nan"),
+        "min": float(np.nanmin(combined_scores)) if len(valid_composite) > 0 else float("nan"),
+        "max": float(np.nanmax(combined_scores)) if len(valid_composite) > 0 else float("nan"),
+        "n_total": len(combined_scores),
+        "n_valid": int(np.sum(~np.isnan(combined_scores))),
     }
 
 

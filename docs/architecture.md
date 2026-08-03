@@ -9,7 +9,7 @@ flags respondents. It is aimed at contributors and methods-curious users.
 CLI / examples
       │
 screen() / composite()     ← public orchestration
-screen_scores()            ← reusable decision layer
+screen_scores() / composite_scores()  ← reusable decision layer
       │
 IndexOptions + registry    ← shared config + index catalog
       │
@@ -39,10 +39,11 @@ _validation / _flagging    ← shared input checks and threshold helpers
   use the same bounded approach. Orchestration retains its documented per-index
   result vectors but does not construct another complete respondent-by-index
   matrix for final reductions.
-- **Reusable decisions.** `screen_scores()` applies the same direction-aware
-  flagging, completeness, consensus, and summary layer to retained registered
-  score vectors. This supports sensitivity analysis without rerunning scorers or
-  copying compatible floating arrays.
+- **Reusable decisions.** `screen_scores()` reapplies direction-aware flagging,
+  completeness, consensus, and summaries to retained registered score vectors.
+  `composite_scores()` reuses raw composite-enabled vectors for alternative
+  weights, standardization, completeness, and reductions. Both support
+  sensitivity analysis without rerunning scorers.
 
 ## Command-line boundaries
 
@@ -140,6 +141,10 @@ Optional positive weights are applied after direction correction and
 standardization. Weighted means renormalize over available scores per
 respondent, so an unavailable index does not silently dilute the remaining
 evidence.
+Direction multipliers and weights are applied one vector at a time during the
+reduction. Raw component vectors remain available for detailed summaries, while
+ordinary and reusable composite paths avoid retaining a second mapping of
+direction-corrected arrays.
 An optional minimum valid-index rule masks under-supported respondent scores
 after reduction. Equal-weight means reuse their existing denominator counts, so
 the rule needs no additional respondent-sized workspace on that path; other
@@ -234,5 +239,6 @@ Plotting remains optional and reports a centralized install hint from
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
 - Response-time mixture EM and end-to-end scoring: `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
+- Reusable composite sensitivity analysis: `benchmarks/bench_composite.py`.
 - Shared fixed and percentile flagging throughput and memory: `benchmarks/bench_flagging.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.

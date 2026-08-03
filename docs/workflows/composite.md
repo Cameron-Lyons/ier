@@ -110,6 +110,47 @@ Multiplying every weight by the same constant leaves weighted means unchanged.
 `composite_summary()` includes the full resolved weight mapping, including
 default weight 1 values.
 
+## Reusing component scores
+
+Weight, method, standardization, and completeness sensitivity checks do not need
+to recalculate the component indices. Retain the raw component mapping from one
+detailed run and pass it to `composite_scores()`:
+
+```python
+from ier import composite_scores, composite_summary
+
+initial = composite_summary(
+    data,
+    indices=["irv", "longstring", "person_total"],
+)
+
+weighted = composite_scores(
+    initial["indices"],
+    weights={"irv": 2.0, "longstring": 0.75},
+)
+raw_maximum = composite_scores(
+    initial["indices"],
+    method="max",
+    standardize=False,
+    min_valid_indices=2,
+)
+```
+
+Inputs use the original public index directions. Low-is-suspicious signals are
+reversed automatically, matching `composite()`. Only composite-enabled registered
+indices are accepted, and every vector must be one-dimensional, non-empty,
+equally sized, and contain only finite values or `NaN`. The input arrays are never
+mutated.
+
+`best_subset` is intentionally unavailable on this path because its purpose is
+selecting and calculating a predefined component set. Supply that set explicitly
+and use `method="mean"` once its raw scores have been retained.
+
+On the bundled 10,000-respondent, 80-item benchmark, evaluating five weight
+scenarios from retained scores takes 1.4 ms and 0.7 MiB peak temporary allocation
+instead of 39.7 ms and 12.9 MiB for five full runs, a 27.9x speedup without
+another dependency.
+
 ## Composite completeness
 
 By default, composite methods retain their established missing-value behavior:
