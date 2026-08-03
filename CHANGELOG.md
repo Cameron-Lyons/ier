@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.18.0] - 2026-08-02
+
+### Added
+
+- `composite_probability()` now accepts `return_diagnostics=True`, matching
+  the other composite helpers and returning ordered per-index soft-failure
+  messages alongside the unchanged probability vector. The default remains a
+  NumPy array, and the typed overloads preserve precise return types.
+
+### Fixed
+
+- Logistic composite transformation now uses an overflow-safe piecewise
+  calculation that preserves finite-tail precision and maps infinite scores to
+  exact endpoints without warnings. On 500,000 scores spanning -1,000 to 1,000,
+  the transform used 8.1 MiB peak temporary allocation and 1.9 ms median time,
+  without adding a dependency.
+
 ## [2.17.0] - 2026-08-02
 
 ### Added

@@ -576,6 +576,53 @@ class TestCompositeProbability(unittest.TestCase):
         result = composite_probability(data, indices=["irv", "longstring"])
         self.assertEqual(len(result), 2)
 
+    def test_extreme_scores_are_transformed_without_overflow(self) -> None:
+        scores = np.array([-np.inf, -1000.0, -1.0, 0.0, 1.0, 1000.0, np.inf, np.nan])
+
+        with patch("ier.composite.composite", return_value=scores):
+            result = composite_probability([[1.0]])
+
+        expected = np.array(
+            [
+                0.0,
+                0.0,
+                1.0 / (1.0 + np.e),
+                0.5,
+                np.e / (1.0 + np.e),
+                1.0,
+                1.0,
+                np.nan,
+            ]
+        )
+        np.testing.assert_allclose(result, expected, equal_nan=True)
+
+    def test_return_diagnostics_preserves_probabilities(self) -> None:
+        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
+
+        result, diagnostics = composite_probability(
+            data,
+            indices=["irv", "mad"],
+            return_diagnostics=True,
+        )
+
+        expected = composite_probability(data, indices=["irv"])
+        np.testing.assert_allclose(result, expected)
+        self.assertIn("mad", diagnostics)
+        self.assertIn("mad_positive_items", diagnostics["mad"])
+
+    @patch("ier.composite.composite", return_value=np.array([0.0]))
+    def test_diagnostics_requires_diagnostic_pair(self, _composite_mock: Any) -> None:
+        with self.assertRaisesRegex(TypeError, "expected .* diagnostics"):
+            composite_probability([[1.0]], return_diagnostics=True)
+
+    @patch(
+        "ier.composite.composite",
+        return_value=(np.array([0.0]), {"irv": "unavailable"}),
+    )
+    def test_default_rejects_unexpected_diagnostic_pair(self, _composite_mock: Any) -> None:
+        with self.assertRaisesRegex(TypeError, "unexpected diagnostics"):
+            composite_probability([[1.0]])
+
 
 class TestCompositeBestSubset(unittest.TestCase):
     """Tests for composite best_subset method."""
