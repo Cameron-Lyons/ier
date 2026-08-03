@@ -73,6 +73,7 @@ class TestCliJson(unittest.TestCase):
             identifiers,
         )
         composite_payload = json.loads(composite_output.getvalue())
+        self.assertIs(composite_payload["standardized"], True)
         self.assertEqual(composite_payload["scores"], [1.0, None, None, None, 5.0])
         self.assertEqual(composite_payload["respondent_ids"], identifiers)
         self.assertEqual(composite_payload["errors"], {})

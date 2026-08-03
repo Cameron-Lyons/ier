@@ -316,6 +316,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default="mean",
     )
     composite_parser.add_argument(
+        "--standardize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Standardize each directed component before combining (default: true)",
+    )
+    composite_parser.add_argument(
         "--weight",
         action="append",
         default=None,
@@ -549,6 +555,7 @@ def _run_command(args: argparse.Namespace) -> int:
             matrix,
             indices=args.indices,
             method=args.method,
+            standardize=args.standardize,
             options=options,
             weights=weights,
             min_valid_indices=args.min_valid_indices,
@@ -564,6 +571,7 @@ def _run_command(args: argparse.Namespace) -> int:
             matrix,
             indices=args.indices,
             method=args.method,
+            standardize=args.standardize,
             options=options,
             weights=weights,
             min_valid_indices=args.min_valid_indices,
@@ -590,6 +598,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 errors,
                 component_scores,
                 valid_index_counts,
+                standardized=args.standardize,
             ),
         )
         return 0
@@ -614,6 +623,7 @@ def _run_command(args: argparse.Namespace) -> int:
             errors,
             component_scores,
             valid_index_counts,
+            standardized=args.standardize,
         )
         return 0
     else:
@@ -627,6 +637,7 @@ def _run_command(args: argparse.Namespace) -> int:
             errors,
             component_scores,
             valid_index_counts,
+            standardized=args.standardize,
         )
     _write_output(text, args.output)
     return 0

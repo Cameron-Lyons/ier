@@ -69,6 +69,12 @@ constructs and can dilute pattern/consistency signals.
 Direction is handled automatically: low-is-bad indices are sign-flipped before
 combination so that higher composite always means more IER signal.
 
+Each directed index is standardized to a z-score by default so components with
+different units contribute on a comparable scale. Set `standardize=False` in
+Python or pass `ier composite --no-standardize` when original score units are
+required. Raw-score combinations can be dominated by wider-ranging components,
+so report the setting and justify any weights.
+
 ## Index weights
 
 All composite helpers accept a partial `weights` mapping. Values must be
@@ -126,6 +132,7 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 
 ```bash
 ier composite data.csv --indices irv longstring --method mean
+ier composite data.csv --indices irv longstring --no-standardize
 ier composite data.csv --indices irv longstring --weight irv=2 --weight longstring=0.5
 ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --indices irv longstring --include-components --format json
@@ -147,11 +154,11 @@ gzip files, or standard output without retaining the complete export in memory.
 JSON output is standards-compliant: unavailable or non-finite scores are encoded
 as `null`. CSV output represents those scores as empty cells so numeric columns
 remain compatible with spreadsheet and statistics tools.
-NPZ output preserves the numeric score vector, combination method, and optional
-respondent IDs. Text, JSON, and NPZ outputs also record explicitly supplied
-weight overrides; unlisted selected indices use weight 1. When supplied, the
-minimum valid-index rule and any soft failures are recorded alongside those
-fields. See the
+NPZ output preserves the numeric score vector, combination method,
+standardization setting, and optional respondent IDs. Text, JSON, and NPZ
+outputs also record explicitly supplied weight overrides; unlisted selected
+indices use weight 1. When supplied, the minimum valid-index rule and any soft
+failures are recorded alongside those fields. See the
 [versioned archive schema](../cli-output.md).
 
 Add `--include-components` when command-line results need respondent-level

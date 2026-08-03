@@ -107,6 +107,7 @@ class TestCliNpz(unittest.TestCase):
         composite_result = read_all(composite_out)
         self.assertEqual(composite_result["result_type"].item(), "composite")
         self.assertEqual(composite_result["method"].item(), "mean")
+        self.assertTrue(composite_result["standardized"].item())
         self.assertEqual(composite_result["weight_names"].tolist(), ["irv", "longstring"])
         self.assertEqual(composite_result["weights"].tolist(), [2.0, 0.5])
         self.assertEqual(composite_result["min_valid_indices"].item(), 2)
@@ -128,6 +129,33 @@ class TestCliNpz(unittest.TestCase):
         self.assertEqual(timing_result["threshold"].item(), 2.0)
         self.assertEqual(timing_result["flags"].tolist(), [True, False, False])
         self.assertEqual(timing_result["flags"].dtype, np.bool_)
+
+    def test_composite_archive_records_disabled_standardization(self) -> None:
+        source = self.root / "responses.csv"
+        source.write_text("1,1,1,1\n1,2,3,4\n4,4,1,2\n", encoding="utf-8")
+        out = self.root / "raw-composite.npz"
+
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(source),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--no-standardize",
+                    "--format",
+                    "npz",
+                    "--output",
+                    str(out),
+                ]
+            ),
+            0,
+        )
+
+        with np.load(out, allow_pickle=False) as result:
+            self.assertFalse(result["standardized"].item())
+            self.assertEqual(result["standardized"].dtype, np.bool_)
 
     def test_output_preserves_non_finite_values(self) -> None:
         constant = self.root / "constant.csv"

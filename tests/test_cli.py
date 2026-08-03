@@ -164,6 +164,90 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(code, 0)
 
+    def test_composite_standardization_can_be_disabled_across_formats(self) -> None:
+        matrix, _ = _load_input(self.csv_path, None, None)
+        expected_details = composite_summary(
+            matrix,
+            indices=["irv", "longstring"],
+            standardize=False,
+        )
+        expected = composite(
+            matrix,
+            indices=["irv", "longstring"],
+            standardize=False,
+        )
+        self.assertIsInstance(expected, np.ndarray)
+        np.testing.assert_allclose(expected_details["composite"], expected)
+
+        json_out = self.root / "raw-composite.json"
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--no-standardize",
+                    "--include-components",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(json_out),
+                ]
+            ),
+            0,
+        )
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertIs(payload["standardized"], False)
+        np.testing.assert_allclose(payload["scores"], expected)
+        for name in expected_details["indices_used"]:
+            np.testing.assert_allclose(
+                payload["component_scores"][name],
+                expected_details["indices"][name],
+            )
+
+        csv_out = self.root / "raw-composite.csv"
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--no-standardize",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(csv_out),
+                ]
+            ),
+            0,
+        )
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        np.testing.assert_allclose(
+            [float(row["composite_score"]) for row in rows],
+            expected,
+        )
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            self.assertEqual(
+                main(
+                    [
+                        "composite",
+                        str(self.csv_path),
+                        "--indices",
+                        "irv",
+                        "longstring",
+                        "--no-standardize",
+                    ]
+                ),
+                0,
+            )
+        self.assertIn("standardized: false", stdout.getvalue())
+
     def test_composite_soft_errors_are_visible_in_text_json_and_csv(self) -> None:
         json_out = self.root / "partial-composite.json"
         json_stderr = StringIO()
@@ -889,6 +973,7 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(code, 0)
         payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertIs(payload["standardized"], True)
         self.assertEqual(payload["indices_used"], ["irv", "longstring"])
         self.assertEqual(list(payload["component_scores"]), ["irv", "longstring"])
         self.assertEqual(payload["valid_index_counts"], [2, 2, 2])

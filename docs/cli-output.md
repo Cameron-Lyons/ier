@@ -73,12 +73,14 @@ vector. Summary values use `summary_columns`, `summary_statistics`, and
 
 ### Composite schema
 
-`composite` archives include the `method` scalar and respondent-aligned `scores`
-float vector. When `--weight` is supplied, aligned `weight_names` and `weights`
-vectors record the explicit overrides; selected indices not listed there use
-weight 1. When `--min-valid-indices` is supplied, `min_valid_indices` records the
-integer completeness requirement. JSON composite output uses equivalent
-optional `weights` and `min_valid_indices` fields. Aligned `error_names` and
+`composite` archives include the `method` string scalar, `standardized` boolean
+scalar, and respondent-aligned `scores` float vector. When `--weight` is
+supplied, aligned `weight_names` and `weights` vectors record the explicit
+overrides; selected indices not listed there use weight 1. When
+`--min-valid-indices` is supplied, `min_valid_indices` records the integer
+completeness requirement. JSON composite output uses equivalent `method`,
+`standardized`, and optional `weights` and `min_valid_indices` fields. Text also
+records the effective standardization setting. Aligned `error_names` and
 `error_messages` vectors preserve soft failures; JSON uses the `errors` object.
 
 With `--include-components`, composite NPZ adds `index_names`,

@@ -60,6 +60,11 @@ writes separate typed members without stacking another respondent-by-index
 matrix. The default aggregate-only path does not allocate or serialize these
 details.
 
+Composite standardization is resolved before either aggregate-only or detailed
+scoring begins. The same boolean is passed to the public scoring API and written
+to text, JSON, and NPZ metadata, avoiding a second calculation or inference from
+the resulting values. CSV intentionally remains a respondent-only table.
+
 Keeping parsing, matrix construction, serialization, and orchestration separate
 makes format-specific changes independently testable without adding runtime
 packages or coupling them to statistical index implementations.
