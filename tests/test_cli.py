@@ -750,6 +750,52 @@ class TestCli(unittest.TestCase):
         self.assertEqual(text_code, 0)
         self.assertIn("weights: irv=3", stdout.getvalue())
 
+    def test_composite_minimum_valid_indices_are_applied_and_reported(self) -> None:
+        incomplete = self.root / "incomplete-composite.csv"
+        incomplete.write_text(
+            "i1,i2,i3,i4\n1,2,3,4\n1,,,\n",
+            encoding="utf-8",
+        )
+        out = self.root / "complete-enough.json"
+
+        code = main(
+            [
+                "composite",
+                str(incomplete),
+                "--indices",
+                "longstring",
+                "markov",
+                "--min-valid-indices",
+                "2",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["min_valid_indices"], 2)
+        self.assertIsInstance(payload["scores"][0], float)
+        self.assertIsNone(payload["scores"][1])
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            text_code = main(
+                [
+                    "composite",
+                    str(incomplete),
+                    "--indices",
+                    "longstring",
+                    "markov",
+                    "--min-valid-indices",
+                    "2",
+                ]
+            )
+        self.assertEqual(text_code, 0)
+        self.assertIn("minimum valid indices: 2", stdout.getvalue())
+
     def test_named_item_columns_exclude_metadata_and_preserve_order(self) -> None:
         mixed = self.root / "mixed-columns.csv"
         mixed.write_text(
@@ -1195,6 +1241,8 @@ class TestCli(unittest.TestCase):
             (["--weight", "irv=nan"], "positive finite"),
             (["--weight", "irv=1", "--weight", "irv=2"], "duplicate weight"),
             (["--weight", "mahad=2"], "not selected"),
+            (["--min-valid-indices", "0"], "positive integer"),
+            (["--min-valid-indices", "3"], "cannot exceed"),
         ]
         for extra, message in cases:
             stderr = StringIO()

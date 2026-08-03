@@ -88,6 +88,26 @@ def _resolve_composite_weights(
     return resolved
 
 
+def _validate_min_valid_indices(
+    min_valid_indices: int | None,
+    n_selected_indices: int,
+) -> int | None:
+    """Validate an optional respondent-level composite completeness requirement."""
+    if min_valid_indices is None:
+        return None
+    if (
+        isinstance(min_valid_indices, bool)
+        or not isinstance(min_valid_indices, int)
+        or min_valid_indices < 1
+    ):
+        raise ValueError("min_valid_indices must be a positive integer or None")
+    if min_valid_indices > n_selected_indices:
+        raise ValueError(
+            f"min_valid_indices cannot exceed the number of selected indices ({n_selected_indices})"
+        )
+    return min_valid_indices
+
+
 def _standardize_index_scores(scores: np.ndarray) -> np.ndarray:
     """Return z-scores while retaining established sparse and constant behavior."""
     valid_mask = ~np.isnan(scores)
@@ -110,6 +130,9 @@ def _combine_scores(
     method: Literal["mean", "sum", "max"],
     standardize: bool,
     weights: Mapping[str, float] | None = None,
+    *,
+    min_valid_indices: int | None = None,
+    valid_counts_out: np.ndarray | None = None,
 ) -> np.ndarray:
     if len(index_scores) == 0:
         failed = "; ".join(f"{name}: {msg}" for name, msg in sorted(diagnostics.items()))
@@ -118,6 +141,18 @@ def _combine_scores(
         raise ValueError("method must be 'mean', 'sum', or 'max'")
 
     n_respondents = len(next(iter(index_scores.values())))
+    if valid_counts_out is not None:
+        if valid_counts_out.shape != (n_respondents,) or valid_counts_out.dtype.kind not in "iu":
+            raise ValueError("valid_counts_out must be a respondent-length integer array")
+        valid_counts_out.fill(0)
+
+    needs_separate_counts = min_valid_indices is not None and not (
+        method == "mean" and weights is None
+    )
+    tracked_counts = valid_counts_out
+    if tracked_counts is None and needs_separate_counts:
+        tracked_counts = np.zeros(n_respondents, dtype=np.int_)
+
     if method == "max":
         combined = np.full(n_respondents, np.nan)
         denominators = None
@@ -136,12 +171,14 @@ def _combine_scores(
         values = _standardize_index_scores(scores) if standardize else scores
         weight = weights.get(name, 1.0) if weights is not None else 1.0
         weighted_values = values * weight if weight != 1.0 else values
+        valid_mask = ~np.isnan(weighted_values)
+        if tracked_counts is not None:
+            tracked_counts += valid_mask
 
         if method == "max":
             np.fmax(combined, weighted_values, out=combined)
             continue
 
-        valid_mask = ~np.isnan(weighted_values)
         np.add(combined, weighted_values, out=combined, where=valid_mask)
         if denominators is not None:
             if weights is None:
@@ -154,6 +191,15 @@ def _combine_scores(
         np.divide(combined, denominators, out=combined, where=denominators > 0)
         combined[denominators == 0] = np.nan
 
+    if min_valid_indices is not None:
+        available_counts = (
+            denominators
+            if method == "mean" and weights is None and valid_counts_out is None
+            else tracked_counts
+        )
+        assert available_counts is not None
+        combined[available_counts < min_valid_indices] = np.nan
+
     return combined
 
 
@@ -165,6 +211,7 @@ def composite(
     *,
     options: IndexOptions | None = None,
     weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
     return_diagnostics: bool = False,
     strict: bool = False,
     workers: int = 1,
@@ -200,6 +247,8 @@ def composite(
     - weights: Optional positive finite per-index weight overrides. Unspecified
                selected indices retain weight 1. Weighting is applied after
                direction correction and optional standardization.
+    - min_valid_indices: Optional minimum number of available index scores required
+                         per respondent. Respondents below the minimum receive NaN.
     - return_diagnostics: If True, also return per-index soft-failure messages.
     - strict: If True, raise when any selected index fails instead of collecting
               diagnostics (default False).
@@ -226,6 +275,7 @@ def composite(
     selected_indices = _resolve_composite_indices(indices, method, resolved)
     combine_method = _validate_composite_request(selected_indices, method)
     resolved_weights = _resolve_composite_weights(weights, selected_indices)
+    min_valid_indices = _validate_min_valid_indices(min_valid_indices, len(selected_indices))
 
     index_scores, diagnostics = score_registered_indices(
         x_array,
@@ -241,6 +291,7 @@ def composite(
         combine_method,
         standardize,
         resolved_weights if weights is not None else None,
+        min_valid_indices=min_valid_indices,
     )
 
     if return_diagnostics:
@@ -258,6 +309,7 @@ def composite_flag(
     *,
     options: IndexOptions | None = None,
     weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
     return_diagnostics: bool = False,
     strict: bool = False,
     workers: int = 1,
@@ -269,6 +321,7 @@ def composite_flag(
     by default; set ``strict=True`` to require every selected index to succeed.
     Optional ``weights`` follow the same validation and combination semantics as
     ``composite()``.
+    Set ``min_valid_indices`` to suppress scores based on too few available indices.
     Set ``workers`` above 1 to score independent indices concurrently.
     Explicit thresholds include scores equal to the cutoff; percentile cutoffs
     flag only scores strictly above the sample percentile.
@@ -284,6 +337,7 @@ def composite_flag(
         standardize=standardize,
         options=options,
         weights=weights,
+        min_valid_indices=min_valid_indices,
         return_diagnostics=return_diagnostics,
         strict=strict,
         workers=workers,
@@ -312,6 +366,7 @@ def composite_summary(
     *,
     options: IndexOptions | None = None,
     weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
     strict: bool = False,
     workers: int = 1,
 ) -> CompositeSummary:
@@ -321,7 +376,8 @@ def composite_summary(
     Configure with ``options=IndexOptions(...)``. Set ``strict=True`` to require
     every selected index to succeed. Set ``workers`` above 1 to score independent
     indices concurrently. The returned ``weights`` mapping contains every
-    resolved selected-index weight.
+    resolved selected-index weight. ``valid_index_counts`` reports the available
+    component count for each respondent before applying ``min_valid_indices``.
     """
     workers = validate_worker_count(workers)
     x_array = validate_matrix_input(x, check_type=False)
@@ -329,6 +385,7 @@ def composite_summary(
     selected_indices = _resolve_composite_indices(indices, method, resolved)
     combine_method = _validate_composite_request(selected_indices, method)
     resolved_weights = _resolve_composite_weights(weights, selected_indices)
+    min_valid_indices = _validate_min_valid_indices(min_valid_indices, len(selected_indices))
 
     individual_scores, diagnostics = score_registered_indices(
         x_array,
@@ -341,12 +398,15 @@ def composite_summary(
         name: INDEX_REGISTRY[name].composite_multiplier * scores
         for name, scores in individual_scores.items()
     }
+    valid_index_counts = np.zeros(len(x_array), dtype=np.int_)
     composite_scores = _combine_scores(
         composite_inputs,
         diagnostics,
         combine_method,
         standardize,
         resolved_weights if weights is not None else None,
+        min_valid_indices=min_valid_indices,
+        valid_counts_out=valid_index_counts,
     )
 
     valid_composite = composite_scores[~np.isnan(composite_scores)]
@@ -359,6 +419,8 @@ def composite_summary(
         "method": method,
         "standardized": standardize,
         "weights": resolved_weights,
+        "min_valid_indices": min_valid_indices,
+        "valid_index_counts": valid_index_counts,
         "mean": float(np.nanmean(composite_scores)) if len(valid_composite) > 0 else float("nan"),
         "std": float(np.nanstd(composite_scores)) if len(valid_composite) > 0 else float("nan"),
         "min": float(np.nanmin(composite_scores)) if len(valid_composite) > 0 else float("nan"),
@@ -375,6 +437,7 @@ def composite_probability(
     *,
     options: IndexOptions | None = None,
     weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
     strict: bool = False,
     workers: int = 1,
 ) -> np.ndarray:
@@ -388,7 +451,8 @@ def composite_probability(
     Configure with ``options=IndexOptions(...)``. Set ``strict=True`` to require
     every selected index to succeed. Set ``workers`` above 1 to score independent
     indices concurrently. Optional ``weights`` are applied before the logistic
-    transform.
+    transform. ``min_valid_indices`` applies the same completeness rule as
+    ``composite()`` before transformation.
     """
     z_scores_result = composite(
         x,
@@ -397,6 +461,7 @@ def composite_probability(
         standardize=True,
         options=options,
         weights=weights,
+        min_valid_indices=min_valid_indices,
         strict=strict,
         workers=workers,
     )

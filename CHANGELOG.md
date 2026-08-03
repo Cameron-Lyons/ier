@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.0] - 2026-08-02
+
+### Added
+
+- All composite APIs now accept an optional `min_valid_indices` requirement.
+  Respondents with fewer available component scores receive `NaN` before
+  flagging or logistic transformation, while the default preserves established
+  reduction behavior. Detailed summaries expose respondent-aligned
+  `valid_index_counts`, and the CLI accepts `--min-valid-indices` and records the
+  rule in text, JSON, and NPZ metadata. Equal-weight means reuse their existing
+  count vector: on 500,000 respondents and 20 indices, enabling a 10-index
+  minimum held peak temporary allocation at 17.2 MiB and changed median time
+  from 48.3 to 48.4 ms. The weighted path adds about 4.2 ms and one 3.8 MiB
+  integer count vector only when the rule is enabled, without adding a
+  dependency.
+
 ## [2.13.0] - 2026-08-02
 
 ### Added

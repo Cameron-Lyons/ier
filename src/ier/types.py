@@ -67,6 +67,8 @@ class CompositeSummary(TypedDict):
     method: CompositeMethod
     standardized: bool
     weights: dict[str, float]
+    min_valid_indices: int | None
+    valid_index_counts: IntArray
     mean: float
     std: float
     min: float

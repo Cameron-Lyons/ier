@@ -11,6 +11,7 @@ For a comprehensive methods review, see
 - Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Validated per-index weights across all composite scoring helpers
+- Opt-in minimum valid-index requirements for defensible composite coverage
 - Configurable multi-index consensus decisions for respondent-level screening
 - Fixed or sample-relative per-index screening thresholds
 - Programmatic and CLI index catalog with defaults and configuration requirements
@@ -68,6 +69,13 @@ weighted = composite(
 )
 print("Weighted composite:", weighted)
 
+complete_enough = composite(
+    data,
+    indices=["irv", "longstring", "person_total"],
+    min_valid_indices=2,
+)
+print("Coverage-filtered composite:", complete_enough)
+
 # Opt in to concurrent index scoring for larger matrices.
 large_result = screen(data, workers=4)
 ```
@@ -85,6 +93,7 @@ ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --format npz --output screening.npz
 ier composite data.csv --indices irv longstring
 ier composite data.csv --indices irv longstring --weight irv=2 --weight longstring=0.5
+ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --format csv --output scores.csv
 ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
@@ -117,6 +126,11 @@ result.
 All composite helpers accept optional positive finite `weights`. Weighting is
 applied after low-is-suspicious indices are direction-corrected and after
 optional standardization; unspecified selected indices retain weight 1.
+
+Set `min_valid_indices=N` to return `NaN` when fewer than `N` selected index
+scores are available for a respondent. This opt-in rule applies after scoring
+failures and missing-value handling, and `composite_summary()` reports the
+per-respondent valid-index counts used by the rule.
 
 Uncompressed `.npy` files are memory-mapped read-only for fast, low-overhead
 loading of large headerless real numeric matrices. Because binary arrays have no

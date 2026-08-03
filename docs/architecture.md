@@ -89,6 +89,10 @@ Optional positive weights are applied after direction correction and
 standardization. Weighted means renormalize over available scores per
 respondent, so an unavailable index does not silently dilute the remaining
 evidence.
+An optional minimum valid-index rule masks under-supported respondent scores
+after reduction. Equal-weight means reuse their existing denominator counts, so
+the rule needs no additional respondent-sized workspace on that path; other
+methods allocate one integer count vector only when the rule is enabled.
 `composite_probability()` applies a logistic transform for convenience — it is
 **not** a calibrated probability of carelessness. Do not treat it as a
 posterior or diagnostic probability without your own validation study.
