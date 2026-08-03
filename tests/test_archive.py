@@ -319,6 +319,7 @@ def test_response_time_mixture_model_writer_validates_before_replacing(
 def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Path) -> None:
     score_path = tmp_path / "scores.npz"
     timing_path = tmp_path / "timing.npz"
+    model_path = tmp_path / "timing-model.npz"
     save_score_archive(
         score_path,
         {"irv": [0.1, 0.2], "longstring": [2.0, 5.0]},
@@ -331,9 +332,15 @@ def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Pa
         threshold=1.0,
         threshold_source="fixed",
     )
+    model = fit_response_time_mixture(
+        np.asarray([[0.4], [0.5], [4.0], [5.0]]),
+        random_seed=42,
+    )
+    save_response_time_mixture_model(model_path, model)
 
     score_archive = load_archive(score_path)
     timing_archive = load_archive(timing_path)
+    model_archive = load_archive(model_path)
 
     assert score_archive["result_type"] == "screen"
     assert list(score_archive["scores"]) == ["irv", "longstring"]
@@ -341,6 +348,15 @@ def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Pa
     assert timing_archive["result_type"] == "response_time"
     assert timing_archive["threshold_source"] == "fixed"
     np.testing.assert_array_equal(timing_archive["flags"], [True, False])
+    assert model_archive["result_type"] == "response_time_mixture_model"
+    assert model_archive["schema_version"] == 1
+    assert model_archive["n_components"] == model.n_components
+    assert model_archive["fast_component"] == model.fast_component
+    assert model_archive["log_transform"] is True
+    np.testing.assert_array_equal(model_archive["weights"], model.weights)
+    np.testing.assert_array_equal(model_archive["means"], model.means)
+    np.testing.assert_array_equal(model_archive["variances"], model.variances)
+    assert not model_archive["weights"].flags.writeable
 
 
 def test_generic_archive_loader_rejects_plain_and_unknown_results(tmp_path: Path) -> None:
@@ -355,7 +371,7 @@ def test_generic_archive_loader_rejects_plain_and_unknown_results(tmp_path: Path
 
     with pytest.raises(ValueError, match="must be an NPZ archive"):
         load_archive(plain)
-    with pytest.raises(ValueError, match="screen.*composite.*response_time"):
+    with pytest.raises(ValueError, match="screen.*composite.*response_time.*mixture_model"):
         load_archive(unknown)
 
 

@@ -4,8 +4,10 @@
     options:
       members:
         - IndexOptions
+        - InspectableArchive
         - ResponseTimeArchive
         - ResponseTimeMixtureModel
+        - ResponseTimeMixtureModelArchive
         - ResultArchive
         - ResponseTimeFlagDirection
         - ResponseTimeMetric

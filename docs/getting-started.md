@@ -313,16 +313,19 @@ inspect its metadata from the command line:
 from ier import load_archive
 
 saved = load_archive("results.npz")
-print(saved["result_type"], saved["n_respondents"])
+print(saved["result_type"])
 ```
 
 ```bash
 ier archive-info results.npz
 ier archive-info results.npz --format json --output archive-metadata.json
+ier archive-info timing-model.npz --format json
 ```
 
-Both paths auto-detect screen, composite, and response-time results and run the
-same complete pickle-disabled validators as the specialized loaders.
+Both paths auto-detect screen, composite, response-time, and timing-model archives
+and run the same complete pickle-disabled validators as the specialized loaders.
+Generic model results expose read-only parameter vectors in a typed mapping;
+`load_response_time_mixture_model()` remains the direct scoring boundary.
 
 `save_score_archive()` validates every vector and metadata field before opening
 the staged archive and atomically replaces the destination only after every
@@ -395,6 +398,7 @@ Create and reuse the same calibration from the command line:
 ier response-time-fit reference-times.csv timing-model.npz --components 3 --random-seed 42
 ier response-time later-times.csv --mixture-model timing-model.npz --format npz \
   --output later-timing.npz
+ier archive-info timing-model.npz --format json
 ```
 
 The saved model implies the mixture metric, retains the calibrated transform and

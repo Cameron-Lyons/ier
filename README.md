@@ -12,7 +12,7 @@ For a comprehensive methods review, see
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
 - Validated, pickle-free score, timing-result, and timing-model archive persistence
-- Auto-detecting archive loading and text/JSON metadata inspection
+- Auto-detecting result/model archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
 - Reproducible psychometric missing-response retries across shared and CLI workflows
@@ -302,11 +302,14 @@ the legacy schema; pass `threshold_source` and, for derived cutoffs, `percentile
 to produce the richer schema used by current CLI output.
 
 When the archive type is not known in advance, `load_archive()` reads the
-declared result type and applies the complete score or response-time validator
-in one pass. `ier archive-info results.npz` exposes the same auto-detection as a
-compact text summary; add `--format json` for structured metadata. The command
-reports dimensions and identifier presence plus stored index/failure metadata
-or timing cutoff provenance and flag rates without printing respondent vectors.
+declared result type and applies the complete score, response-time, or timing-model
+validator in one pass. Model results expose read-only calibration parameters in
+a typed mapping; use `load_response_time_mixture_model()` when a scoring object is
+needed. `ier archive-info results.npz` exposes the same auto-detection as a compact
+text summary; add `--format json` for structured metadata. The command reports
+dimensions and identifier presence plus stored index/failure metadata, timing
+cutoff provenance and flag rates, or mixture components without printing
+respondent vectors.
 
 Composite scores are standardized per index by default. Pass
 `ier composite --no-standardize` to combine directed scores in their original
@@ -402,6 +405,7 @@ The same workflow is available from the CLI:
 ```bash
 ier response-time-fit reference-times.csv timing-model.npz --components 3 --random-seed 42
 ier response-time later-times.csv --mixture-model timing-model.npz --threshold 0.5
+ier archive-info timing-model.npz --format json
 ```
 
 `--mixture-model` implies the mixture metric and preserves high-tail flagging in

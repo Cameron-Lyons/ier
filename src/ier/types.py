@@ -102,6 +102,22 @@ class ResponseTimeArchive(TypedDict):
 ResultArchive: TypeAlias = ScoreArchive | ResponseTimeArchive
 
 
+class ResponseTimeMixtureModelArchive(TypedDict):
+    """Validated response-time mixture model loaded through generic detection."""
+
+    schema_version: int
+    result_type: Literal["response_time_mixture_model"]
+    n_components: int
+    fast_component: int
+    log_transform: bool
+    weights: FloatArray
+    means: FloatArray
+    variances: FloatArray
+
+
+InspectableArchive: TypeAlias = ResultArchive | ResponseTimeMixtureModelArchive
+
+
 class CompositeSummary(TypedDict):
     """Return value for composite_summary()."""
 

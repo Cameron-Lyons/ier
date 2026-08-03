@@ -14,6 +14,7 @@ from unittest.mock import patch
 import numpy as np
 
 from ier import (
+    ResponseTimeMixtureModel,
     acquiescence,
     composite,
     composite_flag,
@@ -309,6 +310,54 @@ class TestCli(unittest.TestCase):
                 "flag_rate": 2 / 3,
             },
         )
+
+    def test_archive_info_reports_response_time_model_parameters(self) -> None:
+        archive = self.root / "timing-model.npz"
+        output = self.root / "timing-model-info.json"
+        model = ResponseTimeMixtureModel(
+            weights=np.asarray([0.2, 0.3, 0.5]),
+            means=np.asarray([1.0, -2.0, 3.0]),
+            variances=np.asarray([0.5, 0.75, 1.25]),
+            log_transform=False,
+        )
+        save_response_time_mixture_model(archive, model)
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            text_code = main(["archive-info", str(archive)])
+            json_code = main(
+                [
+                    "archive-info",
+                    str(archive),
+                    "--format",
+                    "json",
+                    "--output",
+                    str(output),
+                ]
+            )
+
+        self.assertEqual(text_code, 0)
+        self.assertEqual(json_code, 0)
+        self.assertIn("result type: response_time_mixture_model", stdout.getvalue())
+        self.assertIn("components: 3", stdout.getvalue())
+        self.assertIn("fast component: 1", stdout.getvalue())
+        self.assertIn("1: weight=0.3 mean=-2 variance=0.75", stdout.getvalue())
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(
+            payload,
+            {
+                "schema_version": 1,
+                "result_type": "response_time_mixture_model",
+                "n_components": 3,
+                "fast_component": 1,
+                "log_transform": False,
+                "weights": [0.2, 0.3, 0.5],
+                "means": [1.0, -2.0, 3.0],
+                "variances": [0.5, 0.75, 1.25],
+            },
+        )
+        self.assertNotIn("n_respondents", payload)
+        self.assertNotIn("has_respondent_ids", payload)
 
     def test_screen_reflag_reuses_selected_scores_across_text_json_and_csv(self) -> None:
         archive = self.root / "retained-scores.npz"

@@ -25,11 +25,11 @@ if TYPE_CHECKING:
 
     from ier.types import (
         BoolArray,
+        InspectableArchive,
         ResponseTimeArchive,
         ResponseTimeFlagDirection,
         ResponseTimeMetric,
         ResponseTimeThresholdSource,
-        ResultArchive,
         ScoreArchive,
         ScoreArchiveResultType,
     )
@@ -836,25 +836,26 @@ def load_score_archive(path: str | Path) -> ScoreArchive:
         return _read_score_archive(archive)
 
 
-def load_archive(path: str | Path) -> ResultArchive:
+def load_archive(path: str | Path) -> InspectableArchive:
     """
-    Load and auto-detect any supported reusable result archive.
+    Load and auto-detect any supported result or model archive.
 
     Pickling is always disabled. The archive's declared ``result_type`` selects
-    the complete score or response-time validator, so callers can accept screen,
-    composite, and timing results without inspecting raw NPZ members or guessing
-    which specialized loader to call.
+    the complete score, response-time, or mixture-model validator, so callers can
+    inspect supported archives without opening raw NPZ members or guessing which
+    specialized loader to call. Generic model results retain validated read-only
+    parameter arrays; the dedicated model loader returns the scoring dataclass.
 
     Parameters:
     - path: Path to a supported versioned NPZ result archive.
 
     Returns:
-    - A fully validated ``ScoreArchive`` or ``ResponseTimeArchive``.
+    - A fully validated score, response-time, or mixture-model archive mapping.
 
     Example:
         >>> from ier import load_archive
         >>> saved = load_archive("results.npz")
-        >>> print(saved["result_type"], saved["n_respondents"])
+        >>> print(saved["result_type"])
     """
     with _open_npz_archive(path, label="result") as archive:
         result_type = _string_scalar(archive, "result_type")
@@ -862,7 +863,22 @@ def load_archive(path: str | Path) -> ResultArchive:
             return _read_response_time_archive(archive)
         if result_type in {"screen", "composite"}:
             return _read_score_archive(archive)
-        raise ValueError("archive result_type must be 'screen', 'composite', or 'response_time'")
+        if result_type == "response_time_mixture_model":
+            model = _read_response_time_mixture_model(archive)
+            return {
+                "schema_version": _RESPONSE_TIME_MIXTURE_MODEL_SCHEMA_VERSION,
+                "result_type": "response_time_mixture_model",
+                "n_components": model.n_components,
+                "fast_component": model.fast_component,
+                "log_transform": model.log_transform,
+                "weights": model.weights,
+                "means": model.means,
+                "variances": model.variances,
+            }
+        raise ValueError(
+            "archive result_type must be 'screen', 'composite', 'response_time', "
+            "or 'response_time_mixture_model'"
+        )
 
 
 def load_response_time_archive(path: str | Path) -> ResponseTimeArchive:

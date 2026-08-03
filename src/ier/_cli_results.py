@@ -39,15 +39,15 @@ if TYPE_CHECKING:
     from ier.types import (
         IndexCatalog,
         IndexScoreMap,
+        InspectableArchive,
         ResponseTimeFlagDirection,
         ResponseTimeMetric,
         ResponseTimeThresholdSource,
-        ResultArchive,
         ScreenResult,
     )
 
 
-def write_archive_info_result(args: argparse.Namespace, archive: ResultArchive) -> int:
+def write_archive_info_result(args: argparse.Namespace, archive: InspectableArchive) -> int:
     """Write validated archive metadata through the selected CLI format."""
     if args.format == "json":
         _write_json_output(

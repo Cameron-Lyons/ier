@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.60] - 2026-08-03
+
+### Added
+
+- `load_archive()` and `archive-info` now auto-detect validated response-time
+  mixture model archives alongside respondent result archives. Python callers
+  receive a typed mapping with independent read-only parameters; CLI text and
+  JSON report component count, transform, fastest-component position, weights,
+  means, and variances. The dedicated scoring loader is unchanged, malformed
+  models still fail complete validation, and no dependency is added.
+
 ## [2.19.59] - 2026-08-03
 
 ### Changed
