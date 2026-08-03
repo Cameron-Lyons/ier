@@ -203,6 +203,16 @@ class TestGoldenIrvLongstring(unittest.TestCase):
         scores = longstring_scores(GOLDEN_MATRIX)
         np.testing.assert_array_equal(scores, EXPECTED_LONGSTRING)
 
+    def test_complete_longstring_scores_match_missing_data_row_path(self) -> None:
+        rng = np.random.default_rng(42)
+        data = rng.integers(1, 6, size=(200, 24)).astype(float)
+
+        scores = longstring_scores(data)
+        row_path_data = np.column_stack((data, np.full(data.shape[0], np.nan)))
+        row_path_scores = longstring_scores(row_path_data)
+
+        np.testing.assert_array_equal(scores, row_path_scores)
+
     def test_screen_options_object_uses_same_scores(self) -> None:
         result = screen(
             GOLDEN_MATRIX,
