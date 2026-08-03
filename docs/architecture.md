@@ -155,6 +155,10 @@ Person–total correlation calculates item-profile means and respondent
 correlations in bounded batches as well. The shared kernel accepts the index's
 undefined-correlation policy, so constant person or item profiles remain
 unavailable rather than being assigned a synthetic score.
+IRV, acquiescence, and response-style summaries share bounded row mean and
+population-standard-deviation reductions. Missing-aware blocks track valid
+counts directly, so an entirely unavailable row returns an unavailable score
+without constructing a complete boolean or centered workspace for the input.
 
 ## Optional dependencies
 
@@ -171,6 +175,7 @@ Plotting remains optional and reports a centralized install hint from
 - Multi-factor even–odd throughput and memory: `benchmarks/bench_evenodd.py`.
 - Psychometric synonym missing-data throughput and memory: `benchmarks/bench_psychsyn.py`.
 - Person–total correlation throughput and memory: `benchmarks/bench_person_total.py`.
+- Row-wise response reduction throughput and memory: `benchmarks/bench_row_reductions.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
 - Response-time mixture EM and end-to-end scoring: `benchmarks/bench_response_time.py`.

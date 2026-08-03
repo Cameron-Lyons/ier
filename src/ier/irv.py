@@ -10,6 +10,7 @@ persons with high IRV scores - reflecting highly random responses
 
 import numpy as np
 
+from ier._row_statistics import row_std
 from ier._validation import MatrixLike, validate_matrix_input
 
 
@@ -81,11 +82,8 @@ def irv(
     elif split and num_split <= 0:
         raise ValueError("num_split must be greater than 0")
 
-    std_func = np.nanstd if na_rm else np.std
-
     if not split:
-        result: np.ndarray = std_func(x_array, axis=1)
-        return result
+        return row_std(x_array, ignore_nan=na_rm)
 
     if split_points is not None:
         chunks = [
@@ -97,10 +95,9 @@ def irv(
         chunks = np.array_split(x_array, num_split, axis=1)
 
     if chunks:
-        irvs_splits = [std_func(chunk, axis=1) for chunk in chunks if chunk.size > 0]
+        irvs_splits = [row_std(chunk, ignore_nan=na_rm) for chunk in chunks if chunk.size > 0]
         if irvs_splits:
             split_result: np.ndarray = np.mean(irvs_splits, axis=0)
             return split_result
 
-    fallback: np.ndarray = std_func(x_array, axis=1)
-    return fallback
+    return row_std(x_array, ignore_nan=na_rm)
