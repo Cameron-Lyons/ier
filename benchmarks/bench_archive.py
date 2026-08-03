@@ -25,7 +25,7 @@ from ier import (
     save_response_time_archive,
     save_score_archive,
 )
-from ier.archive import _write_npz_archive
+from ier.archive import _stream_npz_archive
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -72,7 +72,7 @@ def _raw_response_time_save(
     flags: np.ndarray,
     threshold: float,
 ) -> None:
-    _write_npz_archive(
+    _stream_npz_archive(
         path,
         {
             "schema_version": np.asarray(1, dtype=np.int64),
@@ -98,7 +98,7 @@ def _raw_save(path: Path, scores: dict[str, np.ndarray]) -> None:
     }
     for name, values in scores.items():
         payload[f"score__{name}"] = values
-    _write_npz_archive(path, payload)
+    _stream_npz_archive(path, payload)
 
 
 def _measure_write_pair(

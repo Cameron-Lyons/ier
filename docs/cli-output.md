@@ -34,6 +34,10 @@ ier response-time timings.csv --format npz --output timing.npz
 
 NPZ output requires `--output` with a `.npz` suffix. It cannot target standard
 output or an additional `.gz` layer; the NPZ container is already a ZIP archive.
+Every writer completes the archive in a temporary directory beside the target
+before an atomic replacement. Handled write failures leave existing content
+intact and clean up partial output; successful replacement retains existing
+permission bits.
 Load every archive with pickling disabled:
 
 ```python
@@ -67,7 +71,8 @@ print(saved["errors"])
 
 `save_score_archive()` validates the destination, result type, registered index
 names, aligned vectors, optional IDs, and soft failures before opening the file.
-It streams compatible arrays without constructing a respondent-by-index matrix.
+It streams compatible arrays without constructing a respondent-by-index matrix;
+the shared atomic boundary protects the destination from later I/O failures.
 `load_score_archive()` always disables pickling and validates the complete
 schema. It accepts compact public archives, screen CLI archives, and composite
 CLI archives written with `--include-components`. Aggregate-only composite and

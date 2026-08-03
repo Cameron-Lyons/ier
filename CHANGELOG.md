@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.29] - 2026-08-03
+
+### Changed
+
+- Every public and command-line NPZ writer now stages a complete archive beside
+  its destination and replaces the target atomically. Write failures retain
+  existing content, clean up partial temporary output, and preserve an existing
+  file's permission bits on successful replacement. Final symbolic links remain
+  in place while their targets receive the completed archive.
+- On a 500,000-respondent, 15-index archive, validated atomic saving takes
+  16.6 ms versus 12.5 ms for direct in-place serialization, with the same
+  4.0 MiB peak traced allocation. The response-time equivalent takes 1.6 ms
+  versus 1.1 ms and 4.0 versus 3.9 MiB, without adding a dependency.
+
 ## [2.19.28] - 2026-08-03
 
 ### Added

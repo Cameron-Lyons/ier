@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from io import StringIO
 from pathlib import Path
+from stat import S_IMODE
 from unittest.mock import patch
 
 import numpy as np
@@ -302,3 +304,73 @@ class TestCliNpz(unittest.TestCase):
             _write_npz_archive(out, {"unsafe": np.asarray([object()], dtype=object)})
 
         self.assertFalse(out.exists())
+
+    @unittest.skipUnless(os.name == "posix", "POSIX permission bits are required")
+    def test_writer_atomically_replaces_existing_archive_and_preserves_mode(self) -> None:
+        out = self.root / "result.npz"
+        out.write_bytes(b"previous-content")
+        out.chmod(0o640)
+
+        _write_npz_archive(out, {"values": np.asarray([1.0, 2.0])})
+
+        self.assertEqual(S_IMODE(out.stat().st_mode), 0o640)
+        with np.load(out, allow_pickle=False) as archive:
+            np.testing.assert_array_equal(archive["values"], [1.0, 2.0])
+        self.assertEqual(list(self.root.iterdir()), [out])
+
+    @unittest.skipUnless(os.name == "posix", "symbolic links are required")
+    def test_writer_atomically_updates_symbolic_link_target(self) -> None:
+        target = self.root / "target.npz"
+        target.write_bytes(b"previous-content")
+        link = self.root / "result.npz"
+        link.symlink_to(target)
+
+        _write_npz_archive(link, {"values": np.asarray([1.0, 2.0])})
+
+        self.assertTrue(link.is_symlink())
+        with np.load(target, allow_pickle=False) as archive:
+            np.testing.assert_array_equal(archive["values"], [1.0, 2.0])
+        self.assertEqual(set(self.root.iterdir()), {link, target})
+
+    def test_writer_failure_preserves_destination_and_removes_partial_output(self) -> None:
+        out = self.root / "existing.npz"
+        out.write_bytes(b"previous-content")
+        original_save = np.save
+        save_calls = 0
+
+        def interrupt_second_member(*args: object, **kwargs: object) -> None:
+            nonlocal save_calls
+            save_calls += 1
+            if save_calls == 2:
+                raise OSError("simulated write failure")
+            original_save(*args, **kwargs)  # type: ignore[arg-type]
+
+        with (
+            patch("ier.archive.np.save", side_effect=interrupt_second_member),
+            self.assertRaisesRegex(OSError, "simulated write failure"),
+        ):
+            _write_npz_archive(
+                out,
+                {
+                    "first": np.asarray([1.0]),
+                    "second": np.asarray([2.0]),
+                },
+            )
+
+        self.assertEqual(out.read_bytes(), b"previous-content")
+        self.assertEqual(list(self.root.iterdir()), [out])
+
+    def test_writer_failure_leaves_no_new_destination_or_temporary_directory(self) -> None:
+        out = self.root / "new.npz"
+
+        with (
+            patch(
+                "ier.archive._stream_npz_archive",
+                side_effect=OSError("simulated write failure"),
+            ),
+            self.assertRaisesRegex(OSError, "simulated write failure"),
+        ):
+            _write_npz_archive(out, {"values": np.asarray([1.0])})
+
+        self.assertFalse(out.exists())
+        self.assertEqual(list(self.root.iterdir()), [])

@@ -252,7 +252,9 @@ increase output size; the default aggregate-only path and schemas remain lean.
 
 All scoring commands accept `--format npz --output FILE.npz` for fast, typed,
 pickle-free result archives. NPZ preserves boolean flags, non-finite scores, and
-structured metadata without adding a dependency. See
+structured metadata without adding a dependency. Writers stage a complete
+archive beside the destination and replace it atomically, so an interrupted
+write cannot truncate an existing result. See
 [CLI output formats](docs/cli-output.md) for the versioned schema and loading examples.
 
 `ier response-time` accepts a separate respondent-by-timing matrix and supports
