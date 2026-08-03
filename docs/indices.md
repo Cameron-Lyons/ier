@@ -26,7 +26,7 @@ defaults, and options that must be configured before an index can run.
 |------|-----------|-----------|----------------|-----------|--------------|
 | `irv` | Intra-individual response variability | low | yes | yes | — |
 | `longstring` | Max consecutive identical responses | high | yes | yes | — |
-| `longstring_pattern` | Repeating response patterns | high | yes | yes | `longstring_max_pattern_length` |
+| `longstring_pattern` | Repeating response patterns | high | yes | yes | `longstring_max_pattern_length`; bounded complete/missing batches |
 | `mahad` | Mahalanobis distance (multivariate outlier) | high | yes | yes | — |
 | `psychsyn` | Psychometric synonym consistency | low | yes | yes | `psychsyn_critval`, retry seed; bounded pairwise-complete missing-data correlations |
 | `psychant` | Psychometric antonym consistency | low | no | yes | `psychant_critval`, retry seed; bounded pairwise-complete missing-data correlations |

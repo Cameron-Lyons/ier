@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.65] - 2026-08-03
+
+### Changed
+
+- Complete repeating-pattern scoring now evaluates cache-sized respondent blocks
+  instead of allocating cohort-wide change and prefix matrices. The same exact
+  vectorized kernel remains shared with retained-length missing-response groups;
+  direct and registry outputs, wide-sequence count precision, input immutability,
+  and validation are preserved. The maintained benchmark documents the wide-pattern
+  path, and no dependency is added.
+
 ## [2.19.64] - 2026-08-03
 
 ### Changed

@@ -1523,6 +1523,30 @@ class TestLongstringPattern(unittest.TestCase):
                     )
                     np.testing.assert_array_equal(result, row_path_result)
 
+    def test_complete_patterns_use_bounded_batches(self) -> None:
+        """Complete rows preserve scalar semantics without a cohort-wide prefix matrix."""
+        from ier.longstring import _longest_repeating_patterns_block
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(257, 60)).astype(float)
+        data[0] = np.tile([1.0, 5.0], 30)
+        original = data.copy()
+        expected = np.array([_longest_repeating_pattern(row, 8) for row in data])
+
+        with (
+            patch("ier.longstring._PATTERN_BATCH_ELEMENTS", 300),
+            patch(
+                "ier.longstring._longest_repeating_patterns_block",
+                wraps=_longest_repeating_patterns_block,
+            ) as batches,
+        ):
+            result = longstring_pattern(data, max_pattern_length=8)
+
+        self.assertGreater(batches.call_count, 1)
+        self.assertTrue(all(call.args[0].size <= 300 for call in batches.call_args_list))
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(data, original)
+
     def test_missing_rows_use_bounded_compressed_batches(self) -> None:
         """Missing-response patterns retain scalar semantics in bounded groups."""
         from ier.longstring import _longest_repeating_patterns

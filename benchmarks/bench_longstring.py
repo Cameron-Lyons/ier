@@ -4,6 +4,7 @@ Usage:
     uv run python benchmarks/bench_longstring.py
     uv run python benchmarks/bench_longstring.py --respondents 200000 --items 100
     uv run python benchmarks/bench_longstring.py --missing-rate 0.1
+    uv run python benchmarks/bench_longstring.py --items 120 --max-pattern-length 12
 """
 
 from __future__ import annotations
