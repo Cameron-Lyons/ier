@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ier import IndexOptions
+from ier import IndexOptions, PsychsynModel, psychsyn_model_scores
 from ier.composite import (
     _combine_scores,
     composite,
@@ -62,6 +62,34 @@ class TestComposite(unittest.TestCase):
         )
 
         np.testing.assert_allclose(result, expected, rtol=0.0, atol=1e-15)
+
+    def test_fixed_psychometric_model_flows_through_parallel_composite(self) -> None:
+        data = np.asarray(
+            [
+                [1.0, 2.0, 3.0, 4.0],
+                [4.0, 1.0, 3.0, 2.0],
+                [2.0, 4.0, 1.0, 3.0],
+                [3.0, 2.0, 4.0, 1.0],
+            ]
+        )
+        model = PsychsynModel(
+            np.asarray([[1, 0], [2, 0], [2, 1]]),
+            n_items=4,
+        )
+        expected = psychsyn_model_scores(data, model)
+
+        with patch("ier._registry.psychsyn", side_effect=AssertionError("rediscovered pairs")):
+            details = composite_summary(
+                data,
+                indices=["psychsyn", "irv"],
+                options=IndexOptions(psychsyn_model=model),
+                standardize=False,
+                workers=2,
+            )
+
+        self.assertEqual(details["errors"], {})
+        self.assertEqual(details["indices_used"], ["psychsyn", "irv"])
+        np.testing.assert_array_equal(details["indices"]["psychsyn"], expected)
 
     def test_sum_method(self) -> None:
         """Test composite with sum method."""

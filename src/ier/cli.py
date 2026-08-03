@@ -12,6 +12,7 @@ import numpy as np
 from ier import (
     IndexOptions,
     IndexScoreMap,
+    PsychsynModel,
     ResponseTimeMetric,
     ResponseTimeMixtureModel,
     __version__,
@@ -149,16 +150,52 @@ def _load_optional_applicability_mask(path: Path | None) -> np.ndarray | None:
     return None if path is None else _load_boolean_matrix(path, "missing applicability mask")
 
 
+def _load_psychometric_model_option(
+    path: Path | None,
+    critval: float | None,
+    *,
+    expected_anto: bool,
+    option: str,
+    critval_option: str,
+) -> PsychsynModel | None:
+    """Load and mode-check one optional fixed pair model before matrix input."""
+    if path is None:
+        return None
+    if critval is not None:
+        raise ValueError(f"{option} cannot be combined with {critval_option}")
+    model = load_psychsyn_model(path)
+    if model.anto != expected_anto:
+        expected = "antonym" if expected_anto else "synonym"
+        raise ValueError(f"{option} requires a psychometric {expected} model")
+    return model
+
+
 def _options_from_args(args: argparse.Namespace) -> IndexOptions:
+    psychsyn_model = _load_psychometric_model_option(
+        args.psychsyn_model,
+        args.psychsyn_critval,
+        expected_anto=False,
+        option="--psychsyn-model",
+        critval_option="--psychsyn-critval",
+    )
+    psychant_model = _load_psychometric_model_option(
+        args.psychant_model,
+        args.psychant_critval,
+        expected_anto=True,
+        option="--psychant-model",
+        critval_option="--psychant-critval",
+    )
     return IndexOptions(
         na_rm=args.na_rm,
         irv_num_split=args.irv_num_split,
         irv_split_points=_parse_int_list(args.irv_split_points),
         scale_min=args.scale_min,
         scale_max=args.scale_max,
-        psychsyn_critval=args.psychsyn_critval,
+        psychsyn_critval=0.6 if args.psychsyn_critval is None else args.psychsyn_critval,
+        psychsyn_model=psychsyn_model,
         psychsyn_random_seed=args.psychsyn_random_seed,
-        psychant_critval=args.psychant_critval,
+        psychant_critval=-0.6 if args.psychant_critval is None else args.psychant_critval,
+        psychant_model=psychant_model,
         psychant_random_seed=args.psychant_random_seed,
         evenodd_factors=_parse_int_list(args.evenodd_factors),
         mad_positive_items=_parse_int_list(args.mad_positive_items),
@@ -392,14 +429,38 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         default=1,
         help="Score independent indices concurrently (default: 1)",
     )
-    parser.add_argument("--psychsyn-critval", type=float, default=0.6)
+    parser.add_argument(
+        "--psychsyn-critval",
+        type=float,
+        default=None,
+        help="Synonym discovery threshold when no model is supplied (default: 0.6)",
+    )
+    parser.add_argument(
+        "--psychsyn-model",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Use a saved synonym calibration instead of discovering pairs",
+    )
     parser.add_argument(
         "--psychsyn-random-seed",
         type=int,
         default=None,
         help="Seed missing-response psychometric synonym retries",
     )
-    parser.add_argument("--psychant-critval", type=float, default=-0.6)
+    parser.add_argument(
+        "--psychant-critval",
+        type=float,
+        default=None,
+        help="Antonym discovery threshold when no model is supplied (default: -0.6)",
+    )
+    parser.add_argument(
+        "--psychant-model",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Use a saved antonym calibration instead of discovering pairs",
+    )
     parser.add_argument(
         "--psychant-random-seed",
         type=int,

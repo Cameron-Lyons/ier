@@ -70,10 +70,12 @@ calibration on later matrices with the same item count and column order:
 
 ```python
 from ier import (
+    IndexOptions,
     fit_psychsyn_model,
     load_psychsyn_model,
     psychsyn_model_scores,
     save_psychsyn_model,
+    screen,
 )
 
 model = fit_psychsyn_model(reference_responses, critval=0.6)
@@ -83,6 +85,11 @@ later_scores, usable_pairs = psychsyn_model_scores(
     later_responses,
     model,
     diag=True,
+)
+calibrated_screen = screen(
+    later_responses,
+    indices=["psychsyn", "irv"],
+    options=IndexOptions(psychsyn_model=model),
 )
 ```
 
@@ -94,12 +101,20 @@ replaced. The same fit-and-score boundary is available from the command line:
 ```bash
 ier psychsyn-fit reference.csv psychsyn-model.npz --critval 0.6
 ier psychsyn-score later.csv psychsyn-model.npz --format json --output scores.json
+ier screen later.csv --indices psychsyn irv --psychsyn-model psychsyn-model.npz
+ier composite later.csv --indices psychsyn irv --psychsyn-model psychsyn-model.npz
 ```
 
 Add `--antonym` when fitting an antonym model; its negative default threshold
 is `-0.6`. Scoring infers the correct registered index and low-tail direction
 from the saved mode. Named item selection must use the same order during both
 commands because the model deliberately stores positions, not source headers.
+Shared workflows use `psychsyn_model` or `psychant_model` on `IndexOptions` and
+the corresponding CLI flags. A fixed model takes precedence over the matching
+programmatic discovery threshold. On the CLI, supplying both is rejected as a
+configuration conflict. Model type, synonym/antonym mode, and item count follow
+the same per-index soft-failure or `strict=True` policy as other scorer errors;
+immutable models can be shared safely by parallel workers.
 
 `mahad_qqplot()` generates dependency-free theoretical chi-square coordinates
 in bounded vector batches. Plotting remains optional; with `plot=False`, large
