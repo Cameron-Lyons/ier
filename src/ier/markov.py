@@ -19,6 +19,8 @@ from ier._flagging import threshold_flags
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, iter_rows, validate_matrix_input
 
+_MAX_DIRECT_STATES = 64
+
 
 def markov(
     x: MatrixLike,
@@ -54,16 +56,9 @@ def markov(
     if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
 
-    all_valid = x_array[~missing]
-    if len(all_valid) == 0:
-        return np.full(x_array.shape[0], np.nan)
-
-    categories = np.sort(np.unique(all_valid))
-    k = len(categories)
-
     n_rows = x_array.shape[0]
     if not has_missing:
-        encoded = np.searchsorted(categories, x_array)
+        encoded, k = _encode_complete_states(x_array)
         from_ids = encoded[:, :-1]
         to_ids = encoded[:, 1:]
         n_transitions = from_ids.shape[1]
@@ -72,6 +67,13 @@ def markov(
         row_ids = np.repeat(np.arange(n_rows), n_transitions)
         np.add.at(transitions, (row_ids, from_ids.ravel(), to_ids.ravel()), 1.0)
         return _transition_entropy_batch(transitions)
+
+    all_valid = x_array[~missing]
+    if len(all_valid) == 0:
+        return np.full(x_array.shape[0], np.nan)
+
+    categories = np.unique(all_valid)
+    k = len(categories)
 
     result = np.zeros(n_rows, dtype=float)
     for i, row in enumerate(iter_rows(x_array, na_rm=True)):
@@ -84,6 +86,25 @@ def markov(
         result[i] = _transition_entropy(trans)
 
     return result
+
+
+def _encode_complete_states(x: np.ndarray) -> tuple[np.ndarray, int]:
+    """Encode complete categorical matrices with a direct bounded-range path."""
+    minimum = float(np.min(x))
+    maximum = float(np.max(x))
+    span = maximum - minimum
+
+    if span < _MAX_DIRECT_STATES and np.all(x == np.floor(x)):
+        encoded = (x - minimum).astype(np.intp)
+        n_states = int(span) + 1
+        present = np.bincount(encoded.ravel(), minlength=n_states) > 0
+        if not np.all(present):
+            mapping = np.cumsum(present, dtype=np.intp) - 1
+            encoded = mapping[encoded]
+        return encoded, int(np.sum(present))
+
+    categories = np.unique(x)
+    return np.searchsorted(categories, x), len(categories)
 
 
 def markov_flag(

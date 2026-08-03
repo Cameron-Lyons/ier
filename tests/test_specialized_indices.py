@@ -702,6 +702,17 @@ class TestMarkov(unittest.TestCase):
         strict_scores = markov(data, na_rm=False)
         np.testing.assert_allclose(default_scores, strict_scores)
 
+    def test_categorical_fast_path_matches_missing_data_row_path(self) -> None:
+        """Test bounded integer encoding against the established row scorer."""
+        rng = np.random.default_rng(42)
+        data = rng.choice([-2.0, 0.0, 5.0], size=(200, 24))
+
+        scores = markov(data)
+        row_path_data = np.column_stack((data, np.full(data.shape[0], np.nan)))
+        row_path_scores = markov(row_path_data)
+
+        np.testing.assert_allclose(scores, row_path_scores, rtol=0, atol=1e-12)
+
     def test_rows_with_too_few_nonmissing_values_return_nan(self) -> None:
         """Test rows reduced below one transition return NaN."""
         data = [[np.nan, 1, np.nan], [1, 2, 3]]
