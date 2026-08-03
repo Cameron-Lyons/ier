@@ -54,7 +54,9 @@ random stream. It does not reset or advance NumPy's process-wide random state.
 
 The registry's `longstring` index uses `longstring_scores()` for numeric response
 matrices. The standalone `longstring()` helper analyzes text strings only and
-rejects numeric or multidimensional arrays.
+rejects numeric or multidimensional arrays. Numeric longest-run and repeating-
+pattern scoring remove missing responses in order, group rows by retained length,
+and reuse bounded complete-response kernels.
 
 `semantic_ant` reverse-scores the second item in each configured pair before
 computing consistency. Pass `scale_min` and `scale_max` through `IndexOptions`

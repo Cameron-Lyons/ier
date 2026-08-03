@@ -142,3 +142,29 @@ def test_wide_rows_still_make_progress() -> None:
     """A row wider than the budget is emitted as a one-row block."""
     with patch.object(row_statistics, "_ROW_BATCH_ELEMENTS", 4):
         assert list(row_statistics.row_slices(3, 10)) == [(0, 1), (1, 2), (2, 3)]
+
+
+def test_compressed_row_groups_preserve_order_and_budget() -> None:
+    """Missing responses are removed in row order within bounded equal-length groups."""
+    rng = np.random.default_rng(20260803)
+    data = rng.integers(1, 6, size=(37, 11)).astype(float)
+    data[rng.random(data.shape) < 0.3] = np.nan
+    data[0] = np.nan
+    data[1, 2:] = np.nan
+    original = data.copy()
+    expected_rows = np.flatnonzero(np.count_nonzero(~np.isnan(data), axis=1) >= 2)
+    observed_rows: list[int] = []
+
+    for rows, compressed in row_statistics.compressed_row_groups(
+        data,
+        min_columns=2,
+        max_elements=30,
+    ):
+        assert compressed.size <= 30
+        assert not np.isnan(compressed).any()
+        for row_index, packed in zip(rows, compressed, strict=True):
+            observed_rows.append(int(row_index))
+            np.testing.assert_array_equal(packed, data[row_index][~np.isnan(data[row_index])])
+
+    np.testing.assert_array_equal(np.sort(observed_rows), expected_rows)
+    np.testing.assert_array_equal(data, original)

@@ -19,6 +19,7 @@ For a comprehensive methods review, see
 - Allocation-bounded split-half reliability with stable raw-moment correlations
 - Exact low-allocation two-point correlations for common even-odd factor designs
 - Bounded grouped missing-response Markov entropy scoring
+- Batched missing-response longest-run and repeating-pattern scoring
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format

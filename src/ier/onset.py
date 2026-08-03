@@ -14,7 +14,7 @@ References:
 
 import numpy as np
 
-from ier._row_statistics import row_slices
+from ier._row_statistics import compressed_row_groups, row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
 _SHAO_ZHANG_CRITICAL_VALUE = 1.358
@@ -85,21 +85,11 @@ def _onset_missing(
     min_items: int,
 ) -> np.ndarray:
     """Compress and score missing-response rows in bounded equal-length groups."""
-    n_rows, n_items = x.shape
+    n_rows = x.shape[0]
     result = np.full(n_rows, np.nan)
 
-    for start, stop in row_slices(n_rows, n_items):
-        block = x[start:stop]
-        valid = ~np.isnan(block)
-        valid_counts = np.asarray(np.sum(valid, axis=1, dtype=np.intp))
-        eligible_counts = np.unique(valid_counts[valid_counts >= min_items])
-
-        for raw_count in eligible_counts:
-            valid_count = int(raw_count)
-            local_rows = np.flatnonzero(valid_counts == valid_count)
-            selected = block[local_rows]
-            compressed = selected[valid[local_rows]].reshape(len(local_rows), valid_count)
-            result[start + local_rows] = _onset_complete(compressed, window_size)
+    for rows, compressed in compressed_row_groups(x, min_columns=min_items):
+        result[rows] = _onset_complete(compressed, window_size)
 
     return result
 

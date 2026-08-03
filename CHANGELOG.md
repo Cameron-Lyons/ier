@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.42] - 2026-08-03
+
+### Performance
+
+- Missing-response numeric longest-run and repeating-pattern scoring now groups
+  respondents by retained response count and compresses batches before reusing
+  the complete-response kernels. On a 100,000-respondent, 80-item, five-category
+  benchmark with 10% missing responses, longest-run median time improved from
+  3.3791 to 0.0628 seconds, a 53.8x speedup, while peak traced allocation fell
+  from 7.6 to 5.6 MiB. Repeating-pattern time improved from 33.3136 to 0.5174
+  seconds, a 64.4x speedup, while peak allocation fell from 7.6 to 4.7 MiB.
+  Complete-response timing was unchanged. The shared compression iterator bounds
+  each source-row batch to 131,072 cells for these indices, preserves post-removal
+  response order and short-row semantics, and also replaces duplicate Markov and
+  onset grouping logic without adding a dependency.
+
 ## [2.19.41] - 2026-08-03
 
 ### Performance

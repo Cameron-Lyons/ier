@@ -14,6 +14,32 @@ def row_slices(n_rows: int, n_columns: int) -> Iterator[tuple[int, int]]:
         yield start, min(start + batch_rows, n_rows)
 
 
+def compressed_row_groups(
+    x: np.ndarray,
+    *,
+    min_columns: int,
+    max_elements: int | None = None,
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    """Yield row indices and NaN-free rows grouped by retained column count."""
+    element_budget = _ROW_BATCH_ELEMENTS if max_elements is None else max_elements
+    batch_rows = max(1, element_budget // max(1, x.shape[1]))
+    valid_counts = np.empty(len(x), dtype=np.intp)
+
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        block = x[start:stop]
+        valid_counts[start:stop] = x.shape[1] - np.count_nonzero(np.isnan(block), axis=1)
+
+    for count_value in np.unique(valid_counts[valid_counts >= min_columns]):
+        count = int(count_value)
+        row_indices = np.flatnonzero(valid_counts == count)
+        for start in range(0, len(row_indices), batch_rows):
+            rows = row_indices[start : start + batch_rows]
+            selected = x[rows]
+            compressed = selected[~np.isnan(selected)].reshape(len(rows), count)
+            yield rows, compressed
+
+
 def row_mean(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
     """Calculate row means without a complete missing-value workspace."""
     means = np.empty(len(x))
