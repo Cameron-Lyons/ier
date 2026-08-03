@@ -22,7 +22,12 @@ from ier._cli_composite import (
 )
 
 if TYPE_CHECKING:
-    from ier.types import IndexCatalog, ResponseTimeThresholdSource, ResultArchive, ScreenResult
+    from ier.types import (
+        IndexCatalog,
+        InspectableArchive,
+        ResponseTimeThresholdSource,
+        ScreenResult,
+    )
 
 
 _JSON_ARRAY_CHUNK_SIZE = 4096
@@ -197,14 +202,31 @@ def _write_index_catalog_csv(handle: TextIO, catalog: IndexCatalog) -> None:
         )
 
 
-def _archive_info_payload(archive: ResultArchive) -> dict[str, object]:
-    """Build one compact JSON-ready summary from a validated result archive."""
+def _archive_info_payload(archive: InspectableArchive) -> dict[str, object]:
+    """Build one compact JSON-ready summary from a validated archive."""
     payload: dict[str, object] = {
         "schema_version": archive["schema_version"],
         "result_type": archive["result_type"],
-        "n_respondents": archive["n_respondents"],
-        "has_respondent_ids": archive["respondent_ids"] is not None,
     }
+    if archive["result_type"] == "response_time_mixture_model":
+        payload.update(
+            {
+                "n_components": archive["n_components"],
+                "fast_component": archive["fast_component"],
+                "log_transform": archive["log_transform"],
+                "weights": _JsonArray(archive["weights"], "number"),
+                "means": _JsonArray(archive["means"], "number"),
+                "variances": _JsonArray(archive["variances"], "number"),
+            }
+        )
+        return payload
+
+    payload.update(
+        {
+            "n_respondents": archive["n_respondents"],
+            "has_respondent_ids": archive["respondent_ids"] is not None,
+        }
+    )
     if archive["result_type"] == "response_time":
         n_flagged = int(np.sum(archive["flags"]))
         payload.update(
@@ -229,14 +251,38 @@ def _archive_info_payload(archive: ResultArchive) -> dict[str, object]:
     return payload
 
 
-def _emit_archive_info_text(archive: ResultArchive) -> str:
-    """Render a compact human-readable summary of a validated result archive."""
+def _emit_archive_info_text(archive: InspectableArchive) -> str:
+    """Render a compact human-readable summary of a validated archive."""
     lines = [
         f"result type: {archive['result_type']}",
         f"schema version: {archive['schema_version']}",
-        f"respondents: {archive['n_respondents']}",
-        f"respondent identifiers: {'yes' if archive['respondent_ids'] is not None else 'no'}",
     ]
+    if archive["result_type"] == "response_time_mixture_model":
+        lines.extend(
+            (
+                f"components: {archive['n_components']}",
+                f"log transform: {'yes' if archive['log_transform'] else 'no'}",
+                f"fast component: {archive['fast_component']}",
+                "parameters:",
+            )
+        )
+        for component, (weight, mean, variance) in enumerate(
+            zip(
+                archive["weights"],
+                archive["means"],
+                archive["variances"],
+                strict=True,
+            )
+        ):
+            lines.append(f"  {component}: weight={weight:g} mean={mean:g} variance={variance:g}")
+        return "\n".join(lines)
+
+    lines.extend(
+        (
+            f"respondents: {archive['n_respondents']}",
+            f"respondent identifiers: {'yes' if archive['respondent_ids'] is not None else 'no'}",
+        )
+    )
     if archive["result_type"] == "response_time":
         source = archive["threshold_source"]
         if source == "percentile":
@@ -263,8 +309,8 @@ def _emit_archive_info_text(archive: ResultArchive) -> str:
     return "\n".join(lines)
 
 
-def _write_archive_info_json(handle: TextIO, archive: ResultArchive) -> None:
-    """Write strict JSON metadata for a validated result archive."""
+def _write_archive_info_json(handle: TextIO, archive: InspectableArchive) -> None:
+    """Write strict JSON metadata for a validated archive."""
     _write_json_value(handle, _archive_info_payload(archive))
 
 

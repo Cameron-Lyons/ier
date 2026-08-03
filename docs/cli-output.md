@@ -61,17 +61,20 @@ the generic Python loader or the matching command:
 from ier import load_archive
 
 saved = load_archive("results.npz")
-print(saved["result_type"], saved["n_respondents"])
+print(saved["result_type"])
 ```
 
 ```bash
 ier archive-info results.npz
 ier archive-info results.npz --format json --output archive-metadata.json
+ier archive-info timing-model.npz --format json
 ```
 
 The text and strict-JSON summaries omit respondent vectors. Score archives list
 stored indices and soft failures; response-time archives report the metric,
-tail direction, cutoff provenance, and aggregate flag rate.
+tail direction, cutoff provenance, and aggregate flag rate. Timing-model archives
+report component count, transform, fastest-component position, and validated
+weights, means, and variances.
 
 For validated score reuse, prefer the public save/load pair. The writer creates
 a compact score-only archive; full CLI archives retain the additional flags and
@@ -125,8 +128,9 @@ means, variances, and the log-transform choice. The writer validates a fresh
 snapshot before atomically replacing the destination; the loader disables
 pickling, rejects missing or extra members, checks strict scalar/vector dtypes,
 and reconstructs independent read-only parameter arrays. Model archives are not
-respondent results, so use the dedicated loader rather than `load_archive()` or
-`archive-info`.
+respondent results, so use the dedicated loader when scoring. The generic loader
+and `archive-info` expose the same validated parameters for discovery and
+inspection without constructing a respondent result.
 
 The CLI can write and apply this model schema directly:
 

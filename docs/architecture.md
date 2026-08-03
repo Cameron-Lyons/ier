@@ -76,8 +76,9 @@ The command-line path is split by responsibility:
   public validated save/load boundaries for reusable registered score vectors
   and response-time results, plus a dedicated mixture-calibration model schema.
   Its generic result loader reads the declared result type once and dispatches
-  to the same complete specialized validators; model archives use their dedicated
-  loader because they contain parameters rather than respondent results.
+  to the same complete specialized validators. Generic model inspection returns
+  a typed parameter mapping, while the dedicated model loader returns the
+  immutable calibration used for scoring.
 - `response-time-fit` writes that model schema after fitting a selected reference
   matrix. `response-time --mixture-model` validates the model before loading the
   scoring matrix and applies one posterior expectation step without refitting.

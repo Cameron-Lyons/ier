@@ -505,12 +505,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     archive_info_parser = sub.add_parser(
         "archive-info",
-        help="Inspect a validated result archive without choosing its type first.",
+        help="Inspect a validated result or model archive without choosing its type first.",
     )
     archive_info_parser.add_argument(
         "archive",
         type=Path,
-        help="Validated screen, composite, or response-time .npz archive",
+        help="Validated screen, composite, response-time, or timing-model .npz archive",
     )
     _add_metadata_output_options(archive_info_parser)
 

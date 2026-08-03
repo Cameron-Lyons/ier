@@ -70,10 +70,12 @@ from .types import IndexFlagMap as IndexFlagMap
 from .types import IndexMetadata as IndexMetadata
 from .types import IndexScoreMap as IndexScoreMap
 from .types import InfrequencyMissingPolicy as InfrequencyMissingPolicy
+from .types import InspectableArchive as InspectableArchive
 from .types import IntArray as IntArray
 from .types import ResponseTimeArchive as ResponseTimeArchive
 from .types import ResponseTimeFlagDirection as ResponseTimeFlagDirection
 from .types import ResponseTimeMetric as ResponseTimeMetric
+from .types import ResponseTimeMixtureModelArchive as ResponseTimeMixtureModelArchive
 from .types import ResponseTimeThresholdSource as ResponseTimeThresholdSource
 from .types import ResultArchive as ResultArchive
 from .types import ScoreArchive as ScoreArchive
@@ -121,6 +123,7 @@ __all__ = [
     "IndexFlagMap",
     "IndexMetadata",
     "IndexScoreMap",
+    "InspectableArchive",
     "IntArray",
     "irv",
     "longstring",
@@ -158,6 +161,7 @@ __all__ = [
     "ResponseTimeFlagDirection",
     "ResponseTimeArchive",
     "ResponseTimeMetric",
+    "ResponseTimeMixtureModelArchive",
     "ResponseTimeThresholdSource",
     "ResultArchive",
     "response_time_mixture",
