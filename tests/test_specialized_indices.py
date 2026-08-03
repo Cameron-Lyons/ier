@@ -225,6 +225,18 @@ class TestSemanticSyn(unittest.TestCase):
 class TestGuttman(unittest.TestCase):
     """Tests for Guttman error functions."""
 
+    @staticmethod
+    def _expanded_counts(data: np.ndarray, *, na_rm: bool = True) -> np.ndarray:
+        """Evaluate the direct item-pair definition for regression checks."""
+        item_difficulty = np.nanmean(data, axis=0) if na_rm else np.mean(data, axis=0)
+        ordered = data[:, np.argsort(item_difficulty)]
+        expected = np.zeros(data.shape[0])
+        for column in range(1, data.shape[1]):
+            expected += np.count_nonzero(
+                ordered[:, :column] < ordered[:, column, np.newaxis], axis=1
+            )
+        return expected
+
     def test_basic_functionality(self) -> None:
         """Test basic Guttman error calculation."""
         data = [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1], [3, 3, 3, 3, 3]]
@@ -253,15 +265,33 @@ class TestGuttman(unittest.TestCase):
         data = rng.choice([-2.0, 0.0, 5.0], size=(40, 12))
         data[rng.random(data.shape) < 0.1] = np.nan
 
-        item_difficulty = np.nanmean(data, axis=0)
-        ordered = data[:, np.argsort(item_difficulty)]
-        expected = np.zeros(data.shape[0])
-        for column in range(1, data.shape[1]):
-            expected += np.count_nonzero(
-                ordered[:, :column] < ordered[:, column, np.newaxis], axis=1
-            )
+        expected = self._expanded_counts(data)
 
         np.testing.assert_array_equal(guttman(data, normalize=False), expected)
+
+    def test_fractional_categories_are_scored_in_bounded_batches(self) -> None:
+        """Fractional scales preserve pair counts while limiting each workspace."""
+        from ier.guttman import _count_categorical_errors
+
+        rng = np.random.default_rng(20260803)
+        data = rng.choice([0.25, 1.5, 9.75], size=(503, 40))
+        data[rng.random(data.shape) < 0.1] = np.nan
+        original = data.copy()
+        expected = self._expanded_counts(data)
+
+        with (
+            patch("ier.guttman._GUTTMAN_BATCH_CELLS", 120),
+            patch(
+                "ier.guttman._count_categorical_errors",
+                wraps=_count_categorical_errors,
+            ) as counter,
+        ):
+            result = guttman(data, normalize=False)
+
+        self.assertGreater(counter.call_count, 2)
+        self.assertTrue(all(call.args[0].size <= 120 for call in counter.call_args_list))
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(data, original)
 
     def test_high_cardinality_raw_counts(self) -> None:
         """Test the bounded-memory fallback on continuous-style response data."""
@@ -269,6 +299,34 @@ class TestGuttman(unittest.TestCase):
         data = np.arange(n_items, dtype=float).reshape(1, -1)
         result = guttman(data, normalize=False)
         np.testing.assert_array_equal(result, [n_items * (n_items - 1) / 2])
+
+    def test_high_cardinality_fallback_is_batched(self) -> None:
+        """Continuous response data uses the same bounded row batches."""
+        from ier.guttman import _count_pairwise_errors
+
+        rng = np.random.default_rng(20260803)
+        data = rng.normal(size=(53, 70))
+        data[rng.random(data.shape) < 0.05] = np.nan
+        expected = self._expanded_counts(data)
+
+        with (
+            patch("ier.guttman._GUTTMAN_BATCH_CELLS", 140),
+            patch(
+                "ier.guttman._count_pairwise_errors",
+                wraps=_count_pairwise_errors,
+            ) as counter,
+        ):
+            result = guttman(data, normalize=False)
+
+        self.assertGreater(counter.call_count, 2)
+        self.assertTrue(all(call.args[0].size <= 140 for call in counter.call_args_list))
+        np.testing.assert_array_equal(result, expected)
+
+    def test_strict_missing_policy_matches_direct_definition(self) -> None:
+        """Strict scoring keeps the fixed denominator and direct pair semantics."""
+        data = np.array([[1.0, np.nan, 3.0, 2.0], [3.0, 2.0, np.nan, 1.0]])
+        expected = self._expanded_counts(data, na_rm=False) / 6.0
+        np.testing.assert_array_equal(guttman(data, na_rm=False), expected)
 
     def test_all_missing_data_returns_nan_without_warnings(self) -> None:
         """Test respondents with no comparable items return missing scores."""

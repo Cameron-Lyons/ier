@@ -154,6 +154,10 @@ reduced in bounded chunks.
 Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
 reducer. Pair selection, optional reverse scoring, and missing-aware means stay
 within the common element budget instead of materializing complete pair matrices.
+Guttman scoring likewise batches item means, difficulty-ordered selection,
+valid-response counts, and error accumulation by respondent. Small categorical
+scales use cumulative category counts within each batch, while high-cardinality
+data use the same row bound with direct item-pair comparisons.
 Person–total correlation calculates item-profile means and respondent
 correlations in bounded batches as well. The shared kernel accepts the index's
 undefined-correlation policy, so constant person or item profiles remain
@@ -181,6 +185,7 @@ Plotting remains optional and reports a centralized install hint from
 - Multi-factor even–odd throughput and memory: `benchmarks/bench_evenodd.py`.
 - Psychometric synonym missing-data throughput and memory: `benchmarks/bench_psychsyn.py`.
 - Predefined semantic/MAD pair throughput and memory: `benchmarks/bench_pair_differences.py`.
+- Guttman error-scoring throughput and memory: `benchmarks/bench_guttman.py`.
 - Person–total correlation throughput and memory: `benchmarks/bench_person_total.py`.
 - Row-wise response reduction throughput and memory: `benchmarks/bench_row_reductions.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.

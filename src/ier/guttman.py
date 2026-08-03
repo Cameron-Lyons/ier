@@ -5,13 +5,15 @@ Guttman errors count the number of response reversals relative to item
 difficulty ordering. High error counts suggest inconsistent or careless responding.
 """
 
+import warnings
+
 import numpy as np
 
+from ier._row_statistics import row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
 _MAX_CATEGORIES = 64
-_MAX_CATEGORY_CELLS = 10_000_000
-_PAIRWISE_CHUNK_CELLS = 1_000_000
+_GUTTMAN_BATCH_CELLS = 1_000_000
 
 
 def guttman(
@@ -49,27 +51,21 @@ def guttman(
     n_persons = x_array.shape[0]
     n_items = x_array.shape[1]
 
-    if na_rm:
-        item_counts = np.sum(~np.isnan(x_array), axis=0)
-        item_difficulty = np.divide(
-            np.nansum(x_array, axis=0),
-            item_counts,
-            out=np.full(n_items, np.nan),
-            where=item_counts != 0,
-        )
-    else:
-        item_difficulty = np.mean(x_array, axis=0)
-
+    item_difficulty = _item_difficulties(x_array, ignore_nan=na_rm)
     difficulty_order = np.argsort(item_difficulty)
-    x_sorted = x_array[:, difficulty_order]
+    categories = _small_categorical_values(x_array)
+    errors, valid_counts = _count_guttman_errors(
+        x_array,
+        difficulty_order,
+        categories,
+        count_valid=na_rm,
+    )
 
-    if na_rm:
-        valid_counts = np.sum(~np.isnan(x_sorted), axis=1).astype(float)
+    comparisons: np.ndarray
+    if valid_counts is not None:
         comparisons = valid_counts * (valid_counts - 1.0) / 2.0
     else:
         comparisons = np.full(n_persons, n_items * (n_items - 1) / 2.0, dtype=float)
-
-    errors = _count_guttman_errors(x_sorted)
 
     result: np.ndarray
     if normalize:
@@ -82,87 +78,120 @@ def guttman(
     return result
 
 
-def _count_guttman_errors(x_sorted: np.ndarray) -> np.ndarray:
-    """Count increasing response pairs without materializing every item pair."""
-    valid = ~np.isnan(x_sorted)
-    categorical = _encode_categorical_values(x_sorted, valid)
-    if categorical is not None:
-        encoded, n_categories = categorical
-        return _count_categorical_errors(encoded, n_categories)
-    return _count_pairwise_errors(x_sorted)
+def _item_difficulties(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
+    """Calculate item means without a complete missing-value mask."""
+    if not ignore_nan:
+        result: np.ndarray = np.mean(x, axis=0)
+        return result
+
+    sums = np.zeros(x.shape[1])
+    counts = np.zeros(x.shape[1], dtype=np.intp)
+    for start, stop in row_slices(len(x), x.shape[1]):
+        block = x[start:stop]
+        valid = ~np.isnan(block)
+        sums += np.sum(block, axis=0, dtype=float, where=valid)
+        counts += np.sum(valid, axis=0, dtype=np.intp)
+
+    means: np.ndarray = np.divide(
+        sums,
+        counts,
+        out=np.full(x.shape[1], np.nan),
+        where=counts > 0,
+    )
+    return means
 
 
-def _encode_categorical_values(
-    x_sorted: np.ndarray,
-    valid: np.ndarray,
-) -> tuple[np.ndarray, int] | None:
-    """Encode small categorical scales, preferring bounded integer ranges."""
-    values = x_sorted[valid]
-    encoded = np.full(x_sorted.shape, -1, dtype=np.int16)
-    if values.size == 0:
-        return encoded, 0
+def _small_categorical_values(x: np.ndarray) -> np.ndarray | None:
+    """Return up to 64 ordered categories using only bounded scan workspaces."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        minimum = float(np.nanmin(x))
+        maximum = float(np.nanmax(x))
+    if np.isnan(minimum) or np.isnan(maximum):
+        return np.array([], dtype=float)
 
-    minimum = float(np.min(values))
-    maximum = float(np.max(values))
     span = maximum - minimum
-    if span < _MAX_CATEGORIES and np.all(values == np.floor(values)):
-        raw_ids = (values - minimum).astype(np.intp)
-        present = np.bincount(raw_ids, minlength=int(span) + 1) > 0
-        n_categories = int(np.sum(present))
-        if x_sorted.shape[0] * n_categories > _MAX_CATEGORY_CELLS:
-            return None
-        mapping = np.cumsum(present, dtype=np.int16) - 1
-        encoded[valid] = mapping[raw_ids]
-        return encoded, n_categories
+    if span < _MAX_CATEGORIES:
+        for start, stop in row_slices(len(x), x.shape[1]):
+            block = x[start:stop]
+            values = block[~np.isnan(block)]
+            if np.any(values != np.floor(values)):
+                break
+        else:
+            return minimum + np.arange(int(span) + 1, dtype=float)
 
-    categories = np.unique(values)
-    if (
-        len(categories) > _MAX_CATEGORIES
-        or x_sorted.shape[0] * len(categories) > _MAX_CATEGORY_CELLS
-    ):
-        return None
-    encoded[valid] = np.searchsorted(categories, values)
-    return encoded, len(categories)
+    categories = np.array([], dtype=float)
+    for start, stop in row_slices(len(x), x.shape[1]):
+        block = x[start:stop]
+        values = block[~np.isnan(block)]
+        block_categories = np.unique(values)
+        if len(block_categories) > _MAX_CATEGORIES:
+            return None
+        categories = np.union1d(categories, block_categories)
+        if len(categories) > _MAX_CATEGORIES:
+            return None
+    return categories
+
+
+def _count_guttman_errors(
+    x: np.ndarray,
+    difficulty_order: np.ndarray,
+    categories: np.ndarray | None,
+    *,
+    count_valid: bool,
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Count increasing response pairs in bounded row batches."""
+    n_people, n_items = x.shape
+    batch_rows = max(1, _GUTTMAN_BATCH_CELLS // n_items)
+    errors = np.zeros(n_people, dtype=np.int64)
+    valid_counts = np.empty(n_people) if count_valid else None
+
+    for start in range(0, n_people, batch_rows):
+        stop = min(start + batch_rows, n_people)
+        block = x[start:stop, difficulty_order]
+        if valid_counts is not None:
+            valid_counts[start:stop] = np.count_nonzero(~np.isnan(block), axis=1)
+        if categories is None:
+            errors[start:stop] = _count_pairwise_errors(block)
+        else:
+            errors[start:stop] = _count_categorical_errors(block, categories)
+
+    return errors.astype(float), valid_counts
 
 
 def _count_categorical_errors(
-    encoded: np.ndarray,
-    n_categories: int,
+    x_sorted: np.ndarray,
+    categories: np.ndarray,
 ) -> np.ndarray:
-    """Count increasing pairs by grouping positions on a small response scale."""
-    errors = np.zeros(encoded.shape[0], dtype=np.int64)
-    lower_categories = np.zeros(encoded.shape, dtype=bool)
+    """Count increasing pairs by grouping positions on an ordered response scale."""
+    errors = np.zeros(x_sorted.shape[0], dtype=np.int64)
+    lower_categories = np.zeros(x_sorted.shape, dtype=bool)
 
-    for category in range(1, n_categories):
-        lower_categories |= encoded == category - 1
+    for category in range(1, len(categories)):
+        lower_categories |= x_sorted == categories[category - 1]
         prior_lower = np.cumsum(lower_categories, axis=1, dtype=np.int32)
         errors += np.einsum(
             "ij,ij->i",
             prior_lower,
-            encoded == category,
+            x_sorted == categories[category],
             dtype=np.int64,
         )
 
-    return errors.astype(float)
+    return errors
 
 
 def _count_pairwise_errors(x_sorted: np.ndarray) -> np.ndarray:
-    """Count pairs in bounded row chunks for high-cardinality response data."""
+    """Count pairs for one bounded high-cardinality response block."""
     n_people, n_items = x_sorted.shape
-    chunk_rows = max(1, _PAIRWISE_CHUNK_CELLS // n_items)
     errors = np.zeros(n_people, dtype=np.int64)
 
-    for start in range(0, n_people, chunk_rows):
-        stop = min(start + chunk_rows, n_people)
-        block = x_sorted[start:stop]
-        block_errors = np.zeros(stop - start, dtype=np.int64)
-        for column in range(1, n_items):
-            block_errors += np.count_nonzero(
-                block[:, :column] < block[:, column, np.newaxis], axis=1
-            )
-        errors[start:stop] = block_errors
+    for column in range(1, n_items):
+        errors += np.count_nonzero(
+            x_sorted[:, :column] < x_sorted[:, column, np.newaxis],
+            axis=1,
+        )
 
-    return errors.astype(float)
+    return errors
 
 
 def guttman_flag(
