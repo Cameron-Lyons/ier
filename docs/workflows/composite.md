@@ -152,11 +152,17 @@ instead of 39.7 ms and 12.9 MiB for five full runs, a 27.9x speedup without
 another dependency.
 
 Component scores exported with `ier composite --include-components --format npz`
-can be reloaded for a later session:
+or saved directly from `composite_summary()` can be reloaded for a later session:
 
 ```python
-from ier import composite_scores, load_score_archive
+from ier import composite_scores, load_score_archive, save_score_archive
 
+save_score_archive(
+    "raw-components.npz",
+    initial["indices"],
+    result_type="composite",
+    errors=initial["errors"],
+)
 saved = load_score_archive("composite.npz")
 reweighted = composite_scores(saved["scores"], weights={"irv": 2.0})
 ```

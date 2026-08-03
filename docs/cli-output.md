@@ -47,23 +47,32 @@ with np.load("screening.npz", allow_pickle=False) as result:
     irv_flags = result["flag__irv"]
 ```
 
-For validated score reuse, prefer the public loader:
+For validated score reuse, prefer the public save/load pair. The writer creates
+a compact score-only archive; full CLI archives retain the additional flags and
+decision metadata documented below.
 
 ```python
-from ier import load_score_archive, screen_scores
+from ier import load_score_archive, save_score_archive, screen_scores
 
+save_score_archive(
+    "raw-scores.npz",
+    {"irv": [0.1, 0.7], "longstring": [3.0, 8.0]},
+    respondent_ids=["case-1", "case-2"],
+)
 saved = load_score_archive("screening.npz")
 updated = screen_scores(saved["scores"], percentile=99)
 print(saved["respondent_ids"])
 print(saved["errors"])
 ```
 
-`load_score_archive()` always disables pickling and validates schema version,
-result type, declared score members, registered index names, vector shapes,
-respondent alignment, optional IDs, and soft-failure metadata. It accepts screen
-archives and composite archives written with `--include-components`. Aggregate-only
-composite and response-time archives do not contain reusable registered-index
-vectors and are rejected with a contextual error.
+`save_score_archive()` validates the destination, result type, registered index
+names, aligned vectors, optional IDs, and soft failures before opening the file.
+It streams compatible arrays without constructing a respondent-by-index matrix.
+`load_score_archive()` always disables pickling and validates the complete
+schema. It accepts compact public archives, screen CLI archives, and composite
+CLI archives written with `--include-components`. Aggregate-only composite and
+response-time archives do not contain reusable registered-index vectors and are
+rejected with a contextual error.
 
 ### Common schema
 

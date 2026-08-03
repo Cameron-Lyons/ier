@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import index_catalog, load_score_archive
-from ier._cli_npz import _write_npz_archive
+from ier import index_catalog, load_score_archive, save_score_archive
+from ier.archive import _write_npz_archive
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -50,51 +50,101 @@ def _raw_load(path: Path) -> dict[str, np.ndarray]:
         return {name: archive[f"score__{name}"] for name in names}
 
 
+def _raw_save(path: Path, scores: dict[str, np.ndarray]) -> None:
+    payload = {
+        "schema_version": np.asarray(1, dtype=np.int64),
+        "result_type": np.asarray("screen", dtype=np.str_),
+        "n_respondents": np.asarray(len(next(iter(scores.values()))), dtype=np.int64),
+        "index_names": np.asarray(list(scores), dtype=np.str_),
+        "error_names": np.asarray([], dtype=np.str_),
+        "error_messages": np.asarray([], dtype=np.str_),
+    }
+    for name, values in scores.items():
+        payload[f"score__{name}"] = values
+    _write_npz_archive(path, payload)
+
+
+def _measure_write_pair(
+    raw_operation: Callable[[], None],
+    validated_operation: Callable[[], None],
+    repeats: int,
+) -> tuple[float, float, float, float]:
+    timings: dict[str, list[float]] = {"raw": [], "validated": []}
+    peaks: dict[str, list[int]] = {"raw": [], "validated": []}
+    operations = {"raw": raw_operation, "validated": validated_operation}
+    for repeat in range(repeats):
+        order = ("raw", "validated") if repeat % 2 == 0 else ("validated", "raw")
+        for label in order:
+            gc.collect()
+            tracemalloc.start()
+            started = time.perf_counter()
+            operations[label]()
+            timings[label].append(time.perf_counter() - started)
+            peaks[label].append(tracemalloc.get_traced_memory()[1])
+            tracemalloc.stop()
+    return (
+        statistics.median(timings["raw"]),
+        statistics.median(peaks["raw"]) / 1024 / 1024,
+        statistics.median(timings["validated"]),
+        statistics.median(peaks["validated"]) / 1024 / 1024,
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--respondents", type=int, default=100_000)
     parser.add_argument("--indices", type=int, default=10)
     parser.add_argument("--repeats", type=int, default=7)
+    parser.add_argument("--write-repeats", type=int, default=3)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
     available_names = list(index_catalog())
-    if args.respondents < 1 or args.repeats < 1:
-        parser.error("respondents and repeats must be positive")
+    if args.respondents < 1 or args.repeats < 1 or args.write_repeats < 1:
+        parser.error("respondents, repeats, and write-repeats must be positive")
     if not 1 <= args.indices <= len(available_names):
         parser.error(f"indices must be between 1 and {len(available_names)}")
 
     names = available_names[: args.indices]
     rng = np.random.default_rng(args.seed)
-    payload = {
-        "schema_version": np.asarray(1, dtype=np.int64),
-        "result_type": np.asarray("screen", dtype=np.str_),
-        "n_respondents": np.asarray(args.respondents, dtype=np.int64),
-        "index_names": np.asarray(names, dtype=np.str_),
-        "error_names": np.asarray([], dtype=np.str_),
-        "error_messages": np.asarray([], dtype=np.str_),
-    }
-    for name in names:
-        payload[f"score__{name}"] = rng.normal(size=args.respondents)
+    scores = {name: rng.normal(size=args.respondents) for name in names}
 
     with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / "scores.npz"
-        _write_npz_archive(path, payload)
+        raw_path = Path(directory) / "raw-scores.npz"
+        validated_path = Path(directory) / "validated-scores.npz"
+        _raw_save(raw_path, scores)
+        save_score_archive(validated_path, scores)
 
-        raw_seconds, raw_peak, raw = _measure(lambda: _raw_load(path), args.repeats)
+        raw_seconds, raw_peak, raw = _measure(lambda: _raw_load(validated_path), args.repeats)
         validated_seconds, validated_peak, validated = _measure(
-            lambda: load_score_archive(path)["scores"],
+            lambda: load_score_archive(validated_path)["scores"],
             args.repeats,
+        )
+        raw_save_seconds, raw_save_peak, validated_save_seconds, validated_save_peak = (
+            _measure_write_pair(
+                lambda: _raw_save(raw_path, scores),
+                lambda: save_score_archive(validated_path, scores),
+                args.write_repeats,
+            )
         )
 
     for name in names:
         np.testing.assert_array_equal(validated[name], raw[name])
 
-    print(f"respondents={args.respondents} indices={args.indices} repeats={args.repeats}")
+    print(
+        f"respondents={args.respondents} indices={args.indices} "
+        f"load_repeats={args.repeats} write_repeats={args.write_repeats}"
+    )
     print(f"raw load: median={raw_seconds:.4f}s peak={raw_peak:.1f} MiB")
     print(
         f"validated load: median={validated_seconds:.4f}s peak={validated_peak:.1f} MiB "
         f"overhead={validated_seconds / raw_seconds:.2f}x"
+    )
+    print(f"raw save: median={raw_save_seconds:.4f}s peak={raw_save_peak:.1f} MiB")
+    print(
+        f"validated save: median={validated_save_seconds:.4f}s "
+        f"peak={validated_save_peak:.1f} MiB "
+        f"overhead={validated_save_seconds / raw_save_seconds:.2f}x"
     )
 
 

@@ -1,8 +1,11 @@
-"""Validated loaders for reusable score vectors in versioned NumPy archives."""
+"""Validated persistence for reusable score vectors in versioned NumPy archives."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
+from zipfile import ZIP_STORED, ZipFile
 
 import numpy as np
 
@@ -10,13 +13,85 @@ from ier._registry import composite_index_names, validate_index_names
 from ier._validation import validate_score_vectors
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Sequence
 
     from numpy.lib.npyio import NpzFile
+    from numpy.typing import ArrayLike
 
     from ier.types import ScoreArchive, ScoreArchiveResultType
 
 _SCORE_ARCHIVE_SCHEMA_VERSION = 1
+
+
+def _validate_result_type(value: object) -> ScoreArchiveResultType:
+    """Return a supported reusable-score archive result type."""
+    if not isinstance(value, str) or value not in {"screen", "composite"}:
+        raise ValueError("score archive result_type must be 'screen' or 'composite'")
+    return cast("ScoreArchiveResultType", value)
+
+
+def _validate_archive_index_names(
+    names: list[str],
+    result_type: ScoreArchiveResultType,
+    *,
+    allow_empty: bool = False,
+    label: str = "index",
+) -> None:
+    """Validate ordered score or error names against the relevant registry."""
+    if not names and not allow_empty:
+        raise ValueError("score archive does not contain reusable index scores")
+    if any(not isinstance(name, str) for name in names):
+        raise ValueError(f"score archive {label} names must be strings")
+    if any(not name.strip() for name in names):
+        raise ValueError(f"score archive {label} names must be nonblank")
+    if len(names) != len(set(names)):
+        raise ValueError(f"score archive {label} names must be unique")
+    validate_index_names(
+        names,
+        composite_index_names() if result_type == "composite" else None,
+    )
+
+
+def _validate_error_metadata(
+    names: list[str],
+    messages: list[str],
+    score_names: set[str],
+    result_type: ScoreArchiveResultType,
+) -> dict[str, str]:
+    """Validate aligned soft-failure metadata and preserve its order."""
+    if len(names) != len(messages):
+        raise ValueError("score archive error names and messages must have equal lengths")
+    _validate_archive_index_names(names, result_type, allow_empty=True, label="error")
+    if score_names.intersection(names):
+        raise ValueError("score archive indices cannot contain both scores and errors")
+    if any(not isinstance(message, str) for message in messages):
+        raise ValueError("score archive error messages must be strings")
+    if any(not message.strip() for message in messages):
+        raise ValueError("score archive error messages must be nonblank")
+    return dict(zip(names, messages, strict=True))
+
+
+def _validate_respondent_ids(values: list[str], n_respondents: int) -> list[str]:
+    """Validate aligned, unique, nonblank respondent identifiers."""
+    if len(values) != n_respondents:
+        raise ValueError("score archive respondent ID count must match n_respondents")
+    if any(not isinstance(value, str) for value in values):
+        raise ValueError("score archive respondent IDs must be strings")
+    if any(not value.strip() for value in values):
+        raise ValueError("score archive respondent IDs must be nonblank")
+    if len(values) != len(set(values)):
+        raise ValueError("score archive respondent IDs must be unique")
+    return values
+
+
+def _write_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
+    """Stream typed arrays into one uncompressed, pickle-free NPZ archive."""
+    if any(value.dtype.hasobject for value in payload.values()):
+        raise ValueError("score archive cannot contain object arrays")
+    with ZipFile(path, mode="w", compression=ZIP_STORED, allowZip64=True) as archive:
+        for name, value in payload.items():
+            with archive.open(f"{name}.npy", mode="w", force_zip64=True) as member:
+                np.save(member, value, allow_pickle=False)
 
 
 def _require_member(archive: NpzFile, name: str) -> np.ndarray:
@@ -53,7 +128,11 @@ def _string_vector(archive: NpzFile, name: str) -> list[str]:
     return cast("list[str]", value.tolist())
 
 
-def _load_errors(archive: NpzFile, score_names: set[str]) -> dict[str, str]:
+def _load_errors(
+    archive: NpzFile,
+    score_names: set[str],
+    result_type: ScoreArchiveResultType,
+) -> dict[str, str]:
     """Load aligned soft-failure metadata when present."""
     has_names = "error_names" in archive.files
     has_messages = "error_messages" in archive.files
@@ -64,14 +143,7 @@ def _load_errors(archive: NpzFile, score_names: set[str]) -> dict[str, str]:
 
     names = _string_vector(archive, "error_names")
     messages = _string_vector(archive, "error_messages")
-    if len(names) != len(messages):
-        raise ValueError("score archive error names and messages must have equal lengths")
-    if len(names) != len(set(names)):
-        raise ValueError("score archive error names must be unique")
-    if score_names.intersection(names):
-        raise ValueError("score archive indices cannot contain both scores and errors")
-    validate_index_names(names)
-    return dict(zip(names, messages, strict=True))
+    return _validate_error_metadata(names, messages, score_names, result_type)
 
 
 def _load_respondent_ids(archive: NpzFile, n_respondents: int) -> list[str] | None:
@@ -79,13 +151,7 @@ def _load_respondent_ids(archive: NpzFile, n_respondents: int) -> list[str] | No
     if "respondent_ids" not in archive.files:
         return None
     respondent_ids = _string_vector(archive, "respondent_ids")
-    if len(respondent_ids) != n_respondents:
-        raise ValueError("score archive respondent ID count must match n_respondents")
-    if any(not value for value in respondent_ids):
-        raise ValueError("score archive respondent IDs must be nonblank")
-    if len(respondent_ids) != len(set(respondent_ids)):
-        raise ValueError("score archive respondent IDs must be unique")
-    return respondent_ids
+    return _validate_respondent_ids(respondent_ids, n_respondents)
 
 
 def _load_score_members(
@@ -103,16 +169,7 @@ def _load_score_members(
         raise ValueError("screen archive is missing required member: index_names")
 
     names = _string_vector(archive, "index_names")
-    if not names:
-        raise ValueError("score archive does not contain reusable index scores")
-    if any(not name for name in names):
-        raise ValueError("score archive index names must be nonblank")
-    if len(names) != len(set(names)):
-        raise ValueError("score archive index names must be unique")
-    validate_index_names(
-        names,
-        composite_index_names() if result_type == "composite" else None,
-    )
+    _validate_archive_index_names(names, result_type)
 
     expected_members = {f"score__{name}" for name in names}
     actual_members = {name for name in archive.files if name.startswith("score__")}
@@ -142,17 +199,14 @@ def _read_score_archive(archive: NpzFile) -> ScoreArchive:
             f"expected {_SCORE_ARCHIVE_SCHEMA_VERSION}"
         )
 
-    raw_result_type = _string_scalar(archive, "result_type")
-    if raw_result_type not in {"screen", "composite"}:
-        raise ValueError("score archive result_type must be 'screen' or 'composite'")
-    result_type = cast("ScoreArchiveResultType", raw_result_type)
+    result_type = _validate_result_type(_string_scalar(archive, "result_type"))
 
     n_respondents = _integer_scalar(archive, "n_respondents")
     if n_respondents < 1:
         raise ValueError("score archive n_respondents must be positive")
 
     scores = _load_score_members(archive, result_type, n_respondents)
-    errors = _load_errors(archive, set(scores))
+    errors = _load_errors(archive, set(scores), result_type)
     respondent_ids = _load_respondent_ids(archive, n_respondents)
     return {
         "schema_version": schema_version,
@@ -164,15 +218,92 @@ def _read_score_archive(archive: NpzFile) -> ScoreArchive:
     }
 
 
+def save_score_archive(
+    path: str | Path,
+    scores: Mapping[str, ArrayLike],
+    *,
+    result_type: ScoreArchiveResultType = "screen",
+    respondent_ids: Sequence[str] | None = None,
+    errors: Mapping[str, str] | None = None,
+) -> None:
+    """
+    Save reusable registered-index scores as a versioned, pickle-free NPZ archive.
+
+    Score and metadata validation completes before the destination is opened.
+    Compatible float64 arrays are streamed without an intermediate score matrix,
+    and mapping insertion order is preserved. Composite archives accept only
+    indices supported by ``composite_scores()``.
+
+    Parameters:
+    - path: Explicit destination ending in ``.npz``.
+    - scores: Ordered mapping of registered index names to aligned score vectors.
+    - result_type: ``"screen"`` or ``"composite"``.
+    - respondent_ids: Optional aligned, unique, nonblank string identifiers.
+    - errors: Optional ordered mapping of failed index names to nonblank messages.
+
+    Example:
+        >>> from ier import load_score_archive, save_score_archive, screen_scores
+        >>> scores = {"irv": [0.1, 0.7], "longstring": [3.0, 8.0]}
+        >>> save_score_archive("scores.npz", scores, respondent_ids=["a", "b"])
+        >>> saved = load_score_archive("scores.npz")
+        >>> updated = screen_scores(saved["scores"], percentile=95)
+    """
+    destination = Path(path)
+    if destination.suffix.casefold() != ".npz":
+        raise ValueError("score archive output path must end in .npz")
+
+    validated_result_type = _validate_result_type(result_type)
+    if not isinstance(scores, Mapping):
+        raise TypeError("scores must be a mapping of registered index names to score arrays")
+    score_items = list(scores.items())
+    score_names = [name for name, _ in score_items]
+    _validate_archive_index_names(score_names, validated_result_type)
+    validated_scores, n_respondents = validate_score_vectors(dict(score_items))
+
+    if errors is None:
+        validated_errors: dict[str, str] = {}
+    else:
+        if not isinstance(errors, Mapping):
+            raise TypeError("errors must be a mapping of registered index names to messages")
+        error_items = list(errors.items())
+        validated_errors = _validate_error_metadata(
+            [name for name, _ in error_items],
+            [message for _, message in error_items],
+            set(score_names),
+            validated_result_type,
+        )
+
+    validated_ids: list[str] | None = None
+    if respondent_ids is not None:
+        if isinstance(respondent_ids, (str, bytes)):
+            raise TypeError("respondent_ids must be a sequence of strings")
+        validated_ids = _validate_respondent_ids(list(respondent_ids), n_respondents)
+
+    payload = {
+        "schema_version": np.asarray(_SCORE_ARCHIVE_SCHEMA_VERSION, dtype=np.int64),
+        "result_type": np.asarray(validated_result_type, dtype=np.str_),
+        "n_respondents": np.asarray(n_respondents, dtype=np.int64),
+        "index_names": np.asarray(score_names, dtype=np.str_),
+        "error_names": np.asarray(list(validated_errors), dtype=np.str_),
+        "error_messages": np.asarray(list(validated_errors.values()), dtype=np.str_),
+    }
+    for name, values in validated_scores.items():
+        payload[f"score__{name}"] = values
+    if validated_ids is not None:
+        payload["respondent_ids"] = np.asarray(validated_ids, dtype=np.str_)
+    _write_npz_archive(destination, payload)
+
+
 def load_score_archive(path: str | Path) -> ScoreArchive:
     """
-    Load reusable registered-index scores from a versioned CLI NPZ archive.
+    Load reusable registered-index scores from a versioned NPZ archive.
 
     The loader always disables pickling and validates schema version, result type,
     member names, registry membership, vector shape, respondent alignment,
     optional identifiers, and soft-failure metadata. Screen archives are reusable
-    directly. Composite archives must have been written with
-    ``--include-components`` so their raw public index scores are present.
+    directly. Full composite CLI archives must have been written with
+    ``--include-components`` so their raw public index scores are present;
+    compact archives from ``save_score_archive()`` are directly compatible.
 
     Parameters:
     - path: Path to a screen or detailed composite NPZ archive.

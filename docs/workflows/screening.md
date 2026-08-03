@@ -175,16 +175,19 @@ percentiles from retained scores takes 5.1 ms and 1.6 MiB peak temporary
 allocation instead of 175.7 ms and 21.5 MiB for five full runs, a 34.2x speedup
 without another dependency.
 
-Persist the same raw score mapping through CLI NPZ output and reload it later:
+Persist the same raw score mapping directly or through CLI NPZ output and reload
+it later:
 
 ```python
-from ier import load_score_archive, screen_scores
+from ier import load_score_archive, save_score_archive, screen_scores
 
+save_score_archive("screening-scores.npz", result["scores"], errors=result["errors"])
 saved = load_score_archive("screening.npz")
 revised = screen_scores(saved["scores"], percentile=99, min_flags=3)
 ```
 
-The loader also returns optional respondent IDs and recorded soft failures.
+The public writer can also store aligned respondent IDs. The loader returns
+those identifiers and any recorded soft failures.
 
 ## Missing responses
 

@@ -206,17 +206,20 @@ ier screen responses.npy --indices irv longstring --format npz --output screenin
 NPZ output requires a `.npz` file path and preserves typed flags, metadata, and
 non-finite values. See [CLI output formats](cli-output.md) for its schema.
 
-Reload registered-index vectors safely for later sensitivity work:
+Save a compact reusable-score archive directly from Python, or reload compatible
+CLI output for later sensitivity work:
 
 ```python
-from ier import load_score_archive, screen_scores
+from ier import load_score_archive, save_score_archive, screen_scores
 
+save_score_archive("raw-scores.npz", result["scores"], errors=result["errors"])
 saved = load_score_archive("screening.npz")
 revised = screen_scores(saved["scores"], percentile=99)
 ```
 
-Detailed composite NPZ output produced with `--include-components` works with
-the same loader and `composite_scores()`.
+`save_score_archive()` validates every vector and metadata field before opening
+the destination. Detailed composite NPZ output produced with
+`--include-components` works with the same loader and `composite_scores()`.
 
 ## Next steps
 
