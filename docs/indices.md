@@ -137,7 +137,8 @@ provide a Boolean `missing_applicable_mask` through `IndexOptions` or
 denominator; rows without applicable selected items return `NaN` and are not
 flagged. The CLI exposes fixed subsets through `--missing-item-indices` and
 respondent-specific 0/1 or Boolean mask files through
-`--missing-applicable-mask`.
+`--missing-applicable-mask`. Missing counts are reduced in bounded row batches;
+selecting required columns does not copy the full respondent matrix.
 
 `infrequency` preserves its historical missing-response behavior with
 `missing="pass"`: unanswered checks do not count as failures and remain in a
