@@ -310,6 +310,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=2,
         help="Minimum per-index flags for a consensus flag (default: 2)",
     )
+    screen_parser.add_argument(
+        "--min-valid-indices",
+        type=int,
+        default=None,
+        help="Minimum available index scores required for consensus eligibility",
+    )
     _add_shared_options(screen_parser)
 
     composite_parser = sub.add_parser(
@@ -558,6 +564,7 @@ def _run_command(args: argparse.Namespace) -> int:
             options=options,
             percentile=args.percentile,
             min_flags=args.min_flags,
+            min_valid_indices=args.min_valid_indices,
             thresholds=_parse_thresholds(args.threshold),
             strict=args.strict,
             workers=args.workers,

@@ -10,7 +10,7 @@ import pytest
 from ier import IndexOptions
 from ier.acquiescence import acquiescence, acquiescence_flag
 from ier.mahad import mahad
-from ier.screen import _count_flags, screen
+from ier.screen import _count_flags, _count_valid_scores, screen
 from ier.visualize import plot_distributions, plot_flag_counts, plot_flagged_heatmap
 
 
@@ -145,8 +145,11 @@ class TestScreen(unittest.TestCase):
         self.assertIn("flags", result)
         self.assertIn("thresholds", result)
         self.assertIn("flag_counts", result)
+        self.assertIn("valid_index_counts", result)
+        self.assertIn("consensus_eligible", result)
         self.assertIn("consensus_flags", result)
         self.assertIn("min_flags", result)
+        self.assertIn("min_valid_indices", result)
         self.assertIn("n_indices", result)
         self.assertIn("indices_used", result)
         self.assertIn("errors", result)
@@ -183,6 +186,22 @@ class TestScreen(unittest.TestCase):
         np.testing.assert_array_equal(counts, np.array([2, 2, 2, 0]))
         self.assertEqual(counts.dtype, np.dtype(np.int_))
 
+    def test_valid_score_counts_accumulate_without_stacking(self) -> None:
+        scores = {
+            "first": np.array([1.0, np.nan, 3.0, np.nan]),
+            "second": np.array([np.nan, 2.0, 3.0, np.nan]),
+            "third": np.array([1.0, 2.0, np.nan, np.nan]),
+        }
+
+        with patch(
+            "ier.screen.np.column_stack",
+            side_effect=AssertionError("score matrix was constructed"),
+        ):
+            counts = _count_valid_scores(scores, 4)
+
+        np.testing.assert_array_equal(counts, np.array([2, 2, 2, 0]))
+        self.assertEqual(counts.dtype, np.dtype(np.int_))
+
     def test_default_consensus_requires_two_index_flags(self) -> None:
         result = screen(self.data)
         np.testing.assert_array_equal(
@@ -190,6 +209,35 @@ class TestScreen(unittest.TestCase):
             result["flag_counts"] >= 2,
         )
         self.assertEqual(result["min_flags"], 2)
+        self.assertIsNone(result["min_valid_indices"])
+        np.testing.assert_array_equal(result["consensus_eligible"], True)
+
+    def test_minimum_valid_indices_suppresses_partial_consensus(self) -> None:
+        data = np.array(
+            [
+                [5.0, 1.0, 1.0, 1.0],
+                [np.nan, np.nan, 1.0, 2.0],
+                [np.nan, np.nan, 3.0, 3.0],
+            ]
+        )
+        result = screen(
+            data,
+            indices=["infrequency", "longstring"],
+            options=IndexOptions(
+                infrequency_item_indices=[0, 1],
+                infrequency_expected_responses=[5, 1],
+                infrequency_missing="omit",
+            ),
+            thresholds={"infrequency": 1.0, "longstring": 2.0},
+            min_flags=1,
+            min_valid_indices=2,
+        )
+
+        np.testing.assert_array_equal(result["valid_index_counts"], [2, 1, 1])
+        np.testing.assert_array_equal(result["consensus_eligible"], [True, False, False])
+        np.testing.assert_array_equal(result["flag_counts"], [1, 0, 1])
+        np.testing.assert_array_equal(result["consensus_flags"], [True, False, False])
+        self.assertEqual(result["min_valid_indices"], 2)
 
     def test_custom_consensus_threshold(self) -> None:
         result = screen(self.data, indices=["irv", "longstring"], min_flags=1)
@@ -265,6 +313,18 @@ class TestScreen(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "min_flags"):
                 screen(self.data, min_flags=value)
 
+    def test_invalid_minimum_valid_indices_raises(self) -> None:
+        for value in [0, -1, 1.5, True, 3]:
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(ValueError, "min_valid_indices"),
+            ):
+                screen(
+                    self.data,
+                    indices=["irv", "longstring"],
+                    min_valid_indices=value,  # type: ignore[arg-type]
+                )
+
     def test_parallel_screen_matches_sequential_results_and_order(self) -> None:
         indices = ["irv", "longstring", "markov", "guttman", "individual_reliability"]
         options = IndexOptions(reliability_n_splits=10, reliability_random_seed=123)
@@ -278,6 +338,12 @@ class TestScreen(unittest.TestCase):
             np.testing.assert_array_equal(parallel["scores"][name], sequential["scores"][name])
             np.testing.assert_array_equal(parallel["flags"][name], sequential["flags"][name])
         np.testing.assert_array_equal(parallel["flag_counts"], sequential["flag_counts"])
+        np.testing.assert_array_equal(
+            parallel["valid_index_counts"], sequential["valid_index_counts"]
+        )
+        np.testing.assert_array_equal(
+            parallel["consensus_eligible"], sequential["consensus_eligible"]
+        )
         np.testing.assert_array_equal(parallel["consensus_flags"], sequential["consensus_flags"])
 
     def test_invalid_worker_count_raises(self) -> None:

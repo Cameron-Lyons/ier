@@ -104,6 +104,14 @@ def _write_screen_npz(
                 dtype=np.float64,
             ),
             "flag_counts": np.asarray(result["flag_counts"], dtype=np.int64),
+            "valid_index_counts": np.asarray(
+                result["valid_index_counts"],
+                dtype=np.int64,
+            ),
+            "consensus_eligible": np.asarray(
+                result["consensus_eligible"],
+                dtype=np.bool_,
+            ),
             "consensus_flags": np.asarray(result["consensus_flags"], dtype=np.bool_),
             "summary_columns": np.asarray(summary_columns, dtype=np.str_),
             "summary_statistics": summary_statistics,
@@ -113,6 +121,11 @@ def _write_screen_npz(
             ),
         }
     )
+    if result["min_valid_indices"] is not None:
+        payload["min_valid_indices"] = np.asarray(
+            result["min_valid_indices"],
+            dtype=np.int64,
+        )
     _add_errors(payload, result["errors"])
     for name in names:
         payload[f"score__{name}"] = np.asarray(result["scores"][name], dtype=np.float64)

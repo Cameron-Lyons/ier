@@ -105,7 +105,10 @@ class TestCliNpz(unittest.TestCase):
         self.assertEqual(screen_result["summary_statistics"].shape, (2, 4))
         self.assertEqual(screen_result["score__irv"].shape, (3,))
         self.assertEqual(screen_result["flag__irv"].dtype, np.bool_)
+        self.assertEqual(screen_result["valid_index_counts"].tolist(), [2, 2, 2])
+        self.assertEqual(screen_result["consensus_eligible"].tolist(), [True, True, True])
         self.assertEqual(screen_result["consensus_flags"].dtype, np.bool_)
+        self.assertNotIn("min_valid_indices", screen_result)
 
         composite_result = read_all(composite_out)
         self.assertEqual(composite_result["result_type"].item(), "composite")
@@ -181,6 +184,8 @@ class TestCliNpz(unittest.TestCase):
                 str(constant),
                 "--indices",
                 "psychsyn",
+                "--min-valid-indices",
+                "1",
                 "--format",
                 "npz",
                 "--output",
@@ -192,6 +197,10 @@ class TestCliNpz(unittest.TestCase):
         with np.load(out, allow_pickle=False) as archive:
             self.assertTrue(np.isnan(archive["score__psychsyn"]).all())
             self.assertTrue(np.isnan(archive["summary_statistics"]).all())
+            self.assertEqual(archive["min_valid_indices"].item(), 1)
+            self.assertEqual(archive["valid_index_counts"].tolist(), [0, 0, 0])
+            self.assertEqual(archive["consensus_eligible"].tolist(), [False, False, False])
+            self.assertEqual(archive["consensus_flags"].tolist(), [False, False, False])
 
     def test_screen_output_preserves_presence_thresholds_and_soft_failures(self) -> None:
         matrix = self.root / "responses.csv"

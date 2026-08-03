@@ -90,6 +90,7 @@ Or from the CLI:
 
 ```bash
 ier screen responses.csv --scale-min 1 --scale-max 5 --min-flags 2
+ier screen responses.csv --indices irv longstring missing_rate --min-valid-indices 2
 ```
 
 For files with a respondent identifier column, preserve it in every output format

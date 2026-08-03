@@ -11,6 +11,7 @@ from ier import IndexOptions, screen
 result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print(result["indices_used"])
 print(result["flag_counts"])
+print(result["valid_index_counts"])
 print(result["consensus_flags"])
 print(result["errors"])
 ```
@@ -23,8 +24,11 @@ print(result["errors"])
 | `flags` | Per-index boolean flags |
 | `thresholds` | Actual per-index cutoffs (`None` for presence flagging) |
 | `flag_counts` | Total flags per respondent |
+| `valid_index_counts` | Available index scores per respondent |
+| `consensus_eligible` | Whether each respondent meets the optional completeness rule |
 | `consensus_flags` | Respondents meeting the configured multi-index agreement threshold |
 | `min_flags` | Number of per-index flags required for consensus (default: 2) |
+| `min_valid_indices` | Required available scores for consensus, or `None` |
 | `indices_used` | Successfully computed indices |
 | `errors` | Soft failures (missing config, invalid data for an index) |
 | `summary` | Mean/std/min/max/`n_flagged` per index |
@@ -66,6 +70,36 @@ result = screen(
 
 Missing required config is recorded in `result["errors"]` instead of aborting
 the whole screening run. `composite()` uses the same soft-fail policy.
+
+## Consensus completeness
+
+An unavailable component score is not a flag. When incomplete item data or a
+soft-failed index could leave a consensus decision supported by too few signals,
+set a minimum availability requirement:
+
+```python
+result = screen(
+    data,
+    indices=["irv", "longstring", "infrequency"],
+    options=options,
+    min_flags=2,
+    min_valid_indices=3,
+)
+
+reviewable = result["consensus_eligible"]
+```
+
+Rows below the minimum remain unflagged even if their available signals meet
+`min_flags`. The result always reports `valid_index_counts` and
+`consensus_eligible`; with the default `min_valid_indices=None`, every row is
+eligible and prior consensus behavior is preserved. Both counts accumulate one
+index vector at a time rather than constructing a respondent-by-index matrix.
+
+```bash
+ier screen data.csv --indices irv longstring infrequency \
+  --infrequency-item-indices 3 --infrequency-expected-responses 5 \
+  --min-flags 2 --min-valid-indices 3 --format json
+```
 
 ### Attention-check missing responses
 
@@ -197,6 +231,7 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 ```bash
 ier screen data.csv --scale-min 1 --scale-max 5 --indices irv longstring
 ier screen data.csv --min-flags 3
+ier screen data.csv --min-flags 2 --min-valid-indices 3
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --format json --output screen.json

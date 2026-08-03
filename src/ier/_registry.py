@@ -439,6 +439,26 @@ def validate_worker_count(workers: int) -> int:
     return workers
 
 
+def validate_min_valid_indices(
+    min_valid_indices: int | None,
+    n_selected_indices: int,
+) -> int | None:
+    """Validate an optional respondent-level index completeness requirement."""
+    if min_valid_indices is None:
+        return None
+    if (
+        isinstance(min_valid_indices, bool)
+        or not isinstance(min_valid_indices, int)
+        or min_valid_indices < 1
+    ):
+        raise ValueError("min_valid_indices must be a positive integer or None")
+    if min_valid_indices > n_selected_indices:
+        raise ValueError(
+            f"min_valid_indices cannot exceed the number of selected indices ({n_selected_indices})"
+        )
+    return min_valid_indices
+
+
 def _score_registered_index(
     name: str,
     x: np.ndarray,

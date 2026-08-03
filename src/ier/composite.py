@@ -27,6 +27,7 @@ from ier._registry import (
     resolve_index_options,
     score_registered_indices,
     validate_index_names,
+    validate_min_valid_indices,
     validate_worker_count,
 )
 from ier._statistics import logistic_transform
@@ -87,26 +88,6 @@ def _resolve_composite_weights(
             raise ValueError(f"weight for {name} must be a positive finite number")
         resolved[name] = weight
     return resolved
-
-
-def _validate_min_valid_indices(
-    min_valid_indices: int | None,
-    n_selected_indices: int,
-) -> int | None:
-    """Validate an optional respondent-level composite completeness requirement."""
-    if min_valid_indices is None:
-        return None
-    if (
-        isinstance(min_valid_indices, bool)
-        or not isinstance(min_valid_indices, int)
-        or min_valid_indices < 1
-    ):
-        raise ValueError("min_valid_indices must be a positive integer or None")
-    if min_valid_indices > n_selected_indices:
-        raise ValueError(
-            f"min_valid_indices cannot exceed the number of selected indices ({n_selected_indices})"
-        )
-    return min_valid_indices
 
 
 def _standardize_index_scores(scores: np.ndarray) -> np.ndarray:
@@ -276,7 +257,7 @@ def composite(
     selected_indices = _resolve_composite_indices(indices, method, resolved)
     combine_method = _validate_composite_request(selected_indices, method)
     resolved_weights = _resolve_composite_weights(weights, selected_indices)
-    min_valid_indices = _validate_min_valid_indices(min_valid_indices, len(selected_indices))
+    min_valid_indices = validate_min_valid_indices(min_valid_indices, len(selected_indices))
 
     index_scores, diagnostics = score_registered_indices(
         x_array,
@@ -386,7 +367,7 @@ def composite_summary(
     selected_indices = _resolve_composite_indices(indices, method, resolved)
     combine_method = _validate_composite_request(selected_indices, method)
     resolved_weights = _resolve_composite_weights(weights, selected_indices)
-    min_valid_indices = _validate_min_valid_indices(min_valid_indices, len(selected_indices))
+    min_valid_indices = validate_min_valid_indices(min_valid_indices, len(selected_indices))
 
     individual_scores, diagnostics = score_registered_indices(
         x_array,
