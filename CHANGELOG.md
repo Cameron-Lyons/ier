@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.35] - 2026-08-03
+
+### Performance
+
+- Psychometric synonym, antonym, and critical-value item discovery now centers
+  columns and evaluates the strict lower correlation triangle in bounded blocks
+  instead of materializing a complete item-by-item matrix. A 200-by-3,000
+  independent-item benchmark with no selected pairs reduced peak allocation
+  from 180.2 MiB to 25.1 MiB while preserving pair order, thresholds, missing
+  and constant-column behavior, and the public correlation-matrix helper.
+
 ## [2.19.34] - 2026-08-03
 
 ### Changed

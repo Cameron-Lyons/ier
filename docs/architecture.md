@@ -203,7 +203,10 @@ contraction reductions, so peak allocation does not grow with the factor count.
 Psychometric synonym and antonym scoring reuse the same row-correlation kernel
 in bounded respondent batches. Missing responses therefore do not trigger a
 complete respondent-by-pair contribution matrix, and seeded resampling is also
-reduced in bounded chunks.
+reduced in bounded chunks. Item-pair discovery separately centers columns in
+bounded blocks and evaluates only strict-lower-triangle correlation tiles;
+high-item workloads no longer retain a complete item-by-item correlation
+matrix. The critical-value catalog shares the same discovery kernel.
 Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
 reducer. Pair selection, optional reverse scoring, and missing-aware means stay
 within the common element budget instead of materializing complete pair matrices.

@@ -13,6 +13,7 @@ For a comprehensive methods review, see
 - Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
 - Validated, pickle-free score and response-time archive persistence
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
+- Bounded item-correlation discovery for high-dimensional psychometric synonym analyses
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format

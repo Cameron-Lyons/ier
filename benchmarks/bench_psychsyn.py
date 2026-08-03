@@ -1,11 +1,14 @@
-"""Benchmark psychometric synonym scoring with concentrated missing responses.
+"""Benchmark psychometric synonym scoring and high-item pair discovery.
 
 Missing responses are confined to one item so correlation discovery still
-selects a dense set of pairs among the remaining items.
+selects a dense set of pairs among the remaining items. Independent data with a
+high cutoff isolates the bounded no-pair discovery path.
 
 Usage:
     uv run python benchmarks/bench_psychsyn.py
     uv run python benchmarks/bench_psychsyn.py --respondents 16000 --items 50
+    uv run python benchmarks/bench_psychsyn.py --respondents 200 --items 3000 \
+        --critval 0.99 --missing-rate 0 --independent
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ def main() -> None:
     parser.add_argument("--items", type=int, default=40)
     parser.add_argument("--critval", type=float, default=0.6)
     parser.add_argument("--missing-rate", type=float, default=0.05)
+    parser.add_argument("--independent", action="store_true")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
@@ -43,8 +47,11 @@ def main() -> None:
         parser.error("critval must be between 0 and 1")
 
     rng = np.random.default_rng(args.seed)
-    latent = rng.normal(size=(args.respondents, 1))
-    data = latent + rng.normal(scale=0.1, size=(args.respondents, args.items))
+    if args.independent:
+        data = rng.normal(size=(args.respondents, args.items))
+    else:
+        latent = rng.normal(size=(args.respondents, 1))
+        data = latent + rng.normal(scale=0.1, size=(args.respondents, args.items))
     missing_count = round(args.respondents * args.missing_rate)
     if missing_count:
         missing_rows = rng.choice(args.respondents, size=missing_count, replace=False)
@@ -67,12 +74,13 @@ def main() -> None:
         tracemalloc.stop()
 
     assert result is not None and diagnostic is not None
-    if not np.isfinite(result).all():
+    if not (np.isfinite(result).all() or np.isnan(result).all()):
         raise RuntimeError("benchmark produced non-finite psychometric synonym scores")
 
     print(
         f"shape={data.shape} selected_pairs={int(diagnostic.max(initial=0))} "
-        f"missing_rate={args.missing_rate} repeats={args.repeats} warmup={args.warmup}"
+        f"missing_rate={args.missing_rate} independent={args.independent} "
+        f"repeats={args.repeats} warmup={args.warmup}"
     )
     print(
         f"psychsyn: median={statistics.median(timings):.4f}s "
