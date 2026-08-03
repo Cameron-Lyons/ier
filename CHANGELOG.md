@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.19] - 2026-08-03
+
+### Changed
+
+- The integration dependency range now excludes yanked Polars 1.43.0 and the
+  development lock resolves Polars 1.43.2 instead. The NumPy-only base install
+  and optional plotting requirements are unchanged.
+
 ## [2.19.18] - 2026-08-03
 
 ### Added
