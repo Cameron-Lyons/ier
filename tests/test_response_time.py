@@ -15,6 +15,7 @@ from ier.response_time import (
     ResponseTimeMixtureModel,
     _em_gaussian_mixture,
     _mixture_expectation,
+    _mixture_fit_step,
     _score_gaussian_mixture_data,
     fit_response_time_mixture,
     response_time,
@@ -462,6 +463,72 @@ class TestResponseTimeMixture(unittest.TestCase):
         self.assertTrue(np.isfinite(log_likelihood))
         np.testing.assert_array_equal(responsibilities, [[1.0, 0.0], [0.0, 1.0]])
         np.testing.assert_array_equal(np.sum(responsibilities, axis=1), [1.0, 1.0])
+
+    def test_fit_step_matches_full_responsibilities_with_underflow(self) -> None:
+        data = np.array([-2.0, -0.5, 0.0, 1.5, 3.0, 1_000_000.0])
+        initial_weights = np.array([0.2, 0.3, 0.5])
+        initial_means = np.array([-1.0, 0.5, 2.0])
+        initial_variances = np.array([0.5, 0.75, 1.25])
+        full_responsibilities = np.empty((len(data), len(initial_weights)))
+        expected_likelihood = _mixture_expectation(
+            data,
+            initial_weights,
+            initial_means,
+            initial_variances,
+            full_responsibilities,
+            np.empty(len(data)),
+        )
+        expected_weights = initial_weights.copy()
+        expected_means = initial_means.copy()
+        expected_variances = initial_variances.copy()
+        for component in range(len(expected_weights)):
+            component_mass = full_responsibilities[:, component].sum()
+            expected_weights[component] = component_mass / len(data)
+            expected_means[component] = (
+                full_responsibilities[:, component] @ data
+            ) / component_mass
+            centered = data - expected_means[component]
+            expected_variances[component] = max(
+                (full_responsibilities[:, component] @ (centered * centered)) / component_mass,
+                1e-10,
+            )
+
+        actual_weights = initial_weights.copy()
+        actual_means = initial_means.copy()
+        actual_variances = initial_variances.copy()
+        actual_likelihood = _mixture_fit_step(
+            data,
+            actual_weights,
+            actual_means,
+            actual_variances,
+            np.empty(len(data)),
+            np.empty(len(data)),
+            np.empty(len(data)),
+        )
+
+        self.assertAlmostEqual(actual_likelihood, expected_likelihood)
+        np.testing.assert_allclose(actual_weights, expected_weights, rtol=2e-15)
+        np.testing.assert_allclose(actual_means, expected_means, rtol=2e-15)
+        np.testing.assert_allclose(actual_variances, expected_variances, rtol=2e-15)
+
+    def test_mixture_fit_uses_no_matrix_workspace(self) -> None:
+        rng = np.random.default_rng(8)
+        data = np.concatenate([rng.normal(component, 0.2, 20) for component in range(9)])
+        allocated_shapes: list[tuple[int, ...]] = []
+        real_empty = np.empty
+
+        def tracked_empty(
+            shape: int | tuple[int, ...], *args: object, **kwargs: object
+        ) -> np.ndarray:
+            if isinstance(shape, tuple):
+                allocated_shapes.append(shape)
+            return real_empty(shape, *args, **kwargs)
+
+        with patch("ier.response_time.np.empty", side_effect=tracked_empty):
+            scores = _em_gaussian_mixture(data, 9, np.random.default_rng(5))
+
+        self.assertTrue(np.isfinite(scores).all())
+        self.assertFalse(any(len(shape) > 1 for shape in allocated_shapes))
 
     def test_insufficient_data_raises(self) -> None:
         """Test that insufficient data raises ValueError."""

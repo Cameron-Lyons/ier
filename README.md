@@ -25,7 +25,7 @@ For a comprehensive methods review, see
 - Batched complete and missing-response longest-run and repeating-pattern scoring
 - Batched dependency-free chi-square quantiles for large Mahalanobis Q-Q plots
 - Grouped missing-aware medians for response-time summaries and mixtures
-- Reusable response-time mixture calibration with component-bounded posterior scoring
+- Reusable response-time mixture calibration with component-bounded fitting and scoring
 - Adaptive bounded Guttman counters for narrow and wide response scales
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
