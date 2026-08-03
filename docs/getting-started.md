@@ -234,6 +234,23 @@ revised = screen_scores(saved["scores"], percentile=99)
 the staged archive and atomically replaces the destination only after every
 member is complete. Detailed composite NPZ output produced with
 `--include-components` works with the same loader and `composite_scores()`.
+
+Reapply screening rules from the command line without loading the original
+response matrix or rerunning its indices:
+
+```bash
+ier screen-reflag screening.npz --percentile 99 --min-flags 3 \
+  --format json --output stricter.json
+ier screen-reflag screening.npz --indices irv longstring \
+  --threshold longstring=8 --index-percentile irv=90 \
+  --format npz --output revised.npz
+```
+
+The optional `--indices` list selects and orders stored vectors; omitting it
+uses all of them. The command validates the archive, preserves respondent IDs
+and stored soft failures, and supports text, JSON, CSV, and NPZ. An NPZ output
+may safely replace the input archive through atomic replacement.
+
 Response-time results have matching `save_response_time_archive()` and
 `load_response_time_archive()` boundaries; retained `scores` feed directly into
 `response_time_score_flags()` and can be written back with revised flags. Current

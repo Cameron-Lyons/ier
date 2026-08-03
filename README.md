@@ -12,6 +12,7 @@ For a comprehensive methods review, see
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
 - Validated, pickle-free score and response-time archive persistence
+- Archive-backed screening and timing sensitivity commands without rescoring
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format
@@ -118,6 +119,8 @@ ier screen data.csv --indices infrequency \
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --format npz --output screening.npz
+ier screen-reflag screening.npz --percentile 99 --format json --output stricter.json
+ier screen-reflag screening.npz --indices irv longstring --threshold longstring=8
 ier composite data.csv --indices irv longstring
 ier composite data.csv --indices irv longstring --no-standardize
 ier composite data.csv --indices irv longstring --percentile 95 --format csv
@@ -199,6 +202,20 @@ raw registered-index vectors directly from Python, then
 IDs, and soft failures. Full CLI screen output and detailed composite archives
 written with `--include-components` are compatible as well; schema, registry,
 alignment, and pickle-free safety checks run before reuse.
+
+CLI users can apply the same decision layer to those validated archives without
+the original response matrix:
+
+```bash
+ier screen-reflag screening.npz --percentile 99 --min-flags 3 --format json
+ier screen-reflag screening.npz --indices irv longstring \
+  --threshold longstring=8 --index-percentile irv=90 --output revised.npz --format npz
+```
+
+Omitting `--indices` reuses every stored vector; an explicit list selects and
+orders the vectors used for consensus. Respondent identifiers and archived soft
+failures are carried forward. An NPZ output may replace the source archive
+because the validated input is loaded before atomic output begins.
 
 Response-time results have matching `save_response_time_archive()` and
 `load_response_time_archive()` boundaries. The writer preserves prepared scores,

@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.32] - 2026-08-03
+
+### Added
+
+- `ier screen-reflag ARCHIVE` reapplies fixed or percentile per-index cutoffs,
+  completeness rules, and consensus decisions to validated retained screening
+  scores without reading the original response matrix or rerunning any index.
+  Optional ordered index selection and text, JSON, CSV, or NPZ output preserve
+  archived respondent identifiers and soft-failure diagnostics; NPZ can
+  atomically replace its source archive in place.
+
+### Changed
+
+- Original and archive-backed screening now share one output-dispatch path, so
+  threshold provenance, respondent alignment, and format behavior remain
+  identical while archive selection retains each stored vector without copying.
+- On a 10,000-by-80 benchmark, five separate archive-backed screening scenarios
+  take 7.6 ms and 5.9 MiB peak traced allocation versus 174.8 ms and 21.5 MiB for
+  five full rescoring runs, a 22.9x speedup without another dependency.
+
 ## [2.19.31] - 2026-08-03
 
 ### Added

@@ -19,6 +19,7 @@ from ier import (
     composite_probability,
     composite_summary,
     save_response_time_archive,
+    save_score_archive,
 )
 from ier._cli_input import _load_input, _load_matrix
 from ier._cli_output import _emit_composite_json, _emit_composite_text, _write_composite_csv
@@ -67,6 +68,162 @@ class TestCli(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 0)
+
+    def test_screen_reflag_reuses_selected_scores_across_text_json_and_csv(self) -> None:
+        archive = self.root / "retained-scores.npz"
+        save_score_archive(
+            archive,
+            {
+                "irv": [0.9, 0.5, 0.1],
+                "longstring": [2.0, 4.0, 8.0],
+            },
+            respondent_ids=["case-a", "case-b", "case-c"],
+            errors={"mad": "missing item configuration"},
+        )
+        json_out = self.root / "rescreened.json"
+        csv_out = self.root / "rescreened.csv"
+        stdout = StringIO()
+        stderr = StringIO()
+        decision_options = [
+            "--indices",
+            "longstring",
+            "irv",
+            "--threshold",
+            "longstring=4",
+            "--index-percentile",
+            "irv=50",
+            "--min-flags",
+            "1",
+            "--min-valid-indices",
+            "2",
+        ]
+
+        with (
+            patch("ier.cli._load_input", side_effect=AssertionError("rescored")),
+            patch("sys.stderr", stderr),
+        ):
+            json_code = main(
+                [
+                    "screen-reflag",
+                    str(archive),
+                    *decision_options,
+                    "--format",
+                    "json",
+                    "--output",
+                    str(json_out),
+                ]
+            )
+            csv_code = main(
+                [
+                    "screen-reflag",
+                    str(archive),
+                    *decision_options,
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(csv_out),
+                ]
+            )
+            with patch("sys.stdout", stdout):
+                text_code = main(
+                    [
+                        "screen-reflag",
+                        str(archive),
+                        *decision_options,
+                        "--top",
+                        "2",
+                    ]
+                )
+
+        self.assertEqual(json_code, 0)
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["indices_used"], ["longstring", "irv"])
+        self.assertEqual(payload["respondent_ids"], ["case-a", "case-b", "case-c"])
+        self.assertEqual(payload["errors"], {"mad": "missing item configuration"})
+        self.assertEqual(payload["thresholds"], {"longstring": 4.0, "irv": 0.5})
+        self.assertEqual(
+            payload["threshold_sources"],
+            {"longstring": "fixed", "irv": "percentile"},
+        )
+        self.assertEqual(payload["percentiles"], {"longstring": None, "irv": 50.0})
+        self.assertEqual(payload["flag_counts"], [0, 1, 2])
+        self.assertEqual(payload["valid_index_counts"], [2, 2, 2])
+        self.assertEqual(payload["consensus_flags"], [False, True, True])
+
+        self.assertEqual(csv_code, 0)
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        self.assertEqual([row["respondent"] for row in rows], ["case-a", "case-b", "case-c"])
+        self.assertEqual([row["consensus_flag"] for row in rows], ["0", "1", "1"])
+        self.assertEqual(
+            list(rows[0])[-4:],
+            [
+                "longstring_score",
+                "longstring_flag",
+                "irv_score",
+                "irv_flag",
+            ],
+        )
+
+        self.assertEqual(text_code, 0)
+        self.assertIn("indices: longstring, irv", stdout.getvalue())
+        self.assertIn("longstring=4 (fixed)", stdout.getvalue())
+        self.assertIn("irv=0.5 (tail percentile=50)", stdout.getvalue())
+        self.assertIn("warning: index 'mad' was skipped", stderr.getvalue())
+
+    def test_screen_reflag_accepts_composite_score_archive(self) -> None:
+        archive = self.root / "components.npz"
+        save_score_archive(
+            archive,
+            {"irv": [0.9, 0.5, 0.1], "longstring": [2.0, 4.0, 8.0]},
+            result_type="composite",
+        )
+        out = self.root / "rescreened-components.json"
+
+        code = main(
+            [
+                "screen-reflag",
+                str(archive),
+                "--threshold",
+                "irv=0.5",
+                "--threshold",
+                "longstring=4",
+                "--min-flags",
+                "1",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["indices_used"], ["irv", "longstring"])
+        self.assertEqual(payload["consensus_flags"], [False, True, True])
+
+    def test_screen_reflag_reports_invalid_selection_without_traceback(self) -> None:
+        archive = self.root / "retained-scores.npz"
+        save_score_archive(archive, {"irv": [0.1, 0.5, 0.9]})
+
+        for indices, message in [
+            (["longstring"], "does not contain selected index: longstring"),
+            (["irv", "irv"], "must not contain duplicates"),
+        ]:
+            with self.subTest(indices=indices):
+                stderr = StringIO()
+                with patch("sys.stderr", stderr):
+                    code = main(
+                        [
+                            "screen-reflag",
+                            str(archive),
+                            "--indices",
+                            *indices,
+                        ]
+                    )
+
+                self.assertEqual(code, 1)
+                self.assertIn(message, stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_parallel_workers_across_screen_and_composite_commands(self) -> None:
         screen_out = self.root / "parallel-screen.json"

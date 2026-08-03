@@ -11,18 +11,22 @@ import numpy as np
 
 from ier import (
     IndexOptions,
+    IndexScoreMap,
     ResponseTimeFlagDirection,
     ResponseTimeMetric,
     ResponseTimeThresholdSource,
+    ScreenResult,
     __version__,
     composite,
     composite_summary,
     index_catalog,
     load_response_time_archive,
+    load_score_archive,
     response_time,
     response_time_consistency,
     response_time_mixture,
     screen,
+    screen_scores,
 )
 from ier._cli_input import _load_input
 from ier._cli_npz import (
@@ -214,6 +218,47 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_screen_decision_options(
+    parser: argparse.ArgumentParser,
+    *,
+    indices_help: str,
+) -> None:
+    """Add reusable screening cutoff and consensus controls."""
+    parser.add_argument(
+        "--indices",
+        nargs="+",
+        default=None,
+        help=indices_help,
+    )
+    parser.add_argument("--percentile", type=float, default=95.0)
+    parser.add_argument(
+        "--threshold",
+        action="append",
+        default=None,
+        metavar="INDEX=VALUE",
+        help="Fixed per-index cutoff; repeat for multiple indices",
+    )
+    parser.add_argument(
+        "--index-percentile",
+        action="append",
+        default=None,
+        metavar="INDEX=VALUE",
+        help="Per-index tail percentile; repeat for multiple indices",
+    )
+    parser.add_argument(
+        "--min-flags",
+        type=int,
+        default=2,
+        help="Minimum per-index flags for a consensus flag (default: 2)",
+    )
+    parser.add_argument(
+        "--min-valid-indices",
+        type=int,
+        default=None,
+        help="Minimum available index scores required for consensus eligibility",
+    )
+
+
 def _add_shared_options(parser: argparse.ArgumentParser) -> None:
     _add_matrix_input_options(parser)
     parser.add_argument("--scale-min", type=float, default=None)
@@ -298,38 +343,9 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="CSV/TSV/whitespace or .npy item scores; use '-' for standard input",
     )
-    screen_parser.add_argument(
-        "--indices",
-        nargs="+",
-        default=None,
-        help="Index names to compute (default: package screen defaults)",
-    )
-    screen_parser.add_argument("--percentile", type=float, default=95.0)
-    screen_parser.add_argument(
-        "--threshold",
-        action="append",
-        default=None,
-        metavar="INDEX=VALUE",
-        help="Fixed per-index cutoff; repeat for multiple indices",
-    )
-    screen_parser.add_argument(
-        "--index-percentile",
-        action="append",
-        default=None,
-        metavar="INDEX=VALUE",
-        help="Per-index tail percentile; repeat for multiple indices",
-    )
-    screen_parser.add_argument(
-        "--min-flags",
-        type=int,
-        default=2,
-        help="Minimum per-index flags for a consensus flag (default: 2)",
-    )
-    screen_parser.add_argument(
-        "--min-valid-indices",
-        type=int,
-        default=None,
-        help="Minimum available index scores required for consensus eligibility",
+    _add_screen_decision_options(
+        screen_parser,
+        indices_help="Index names to compute (default: package screen defaults)",
     )
     _add_shared_options(screen_parser)
 
@@ -466,6 +482,21 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_output_options(response_time_reflag_parser)
 
+    screen_reflag_parser = sub.add_parser(
+        "screen-reflag",
+        help="Reapply screening decisions to stored index scores without rescoring.",
+    )
+    screen_reflag_parser.add_argument(
+        "archive",
+        type=Path,
+        help="Validated score .npz archive to reuse",
+    )
+    _add_screen_decision_options(
+        screen_reflag_parser,
+        indices_help="Stored index names to reuse, in order (default: all)",
+    )
+    _add_output_options(screen_reflag_parser)
+
     indices_parser = sub.add_parser(
         "indices", help="List registered indices and orchestration metadata."
     )
@@ -506,6 +537,45 @@ def _score_response_times(
             "high",
         )
     return response_time(matrix, metric=metric), "low"
+
+
+def _select_archive_scores(
+    scores: IndexScoreMap,
+    indices: list[str] | None,
+) -> IndexScoreMap:
+    """Select ordered stored score vectors without copying their arrays."""
+    if indices is None:
+        return scores
+    if len(indices) != len(set(indices)):
+        raise ValueError("--indices must not contain duplicates")
+    for name in indices:
+        if name not in scores:
+            raise ValueError(f"score archive does not contain selected index: {name}")
+    return {name: scores[name] for name in indices}
+
+
+def _write_screen_result(
+    args: argparse.Namespace,
+    result: ScreenResult,
+    respondent_ids: list[str] | None,
+) -> int:
+    """Write one screening result through the selected CLI format."""
+    if args.format == "json":
+        _write_json_output(
+            args.output,
+            lambda handle: _write_screen_json(handle, result, respondent_ids),
+        )
+    elif args.format == "csv":
+        with _output_stream(args.output) as handle:
+            _write_screen_csv(handle, result, respondent_ids)
+    elif args.format == "npz":
+        _write_screen_npz(args.output, result, respondent_ids)
+    else:
+        _write_output(
+            _emit_screen_text(result, args.top, respondent_ids),
+            args.output,
+        )
+    return 0
 
 
 def _flag_response_time_scores(
@@ -613,24 +683,39 @@ def _run_command(args: argparse.Namespace) -> int:
         _require_npz_output_path(args.output)
 
     if args.command == "response-time-reflag":
-        saved = load_response_time_archive(args.archive)
+        timing_archive = load_response_time_archive(args.archive)
         flags, cutoff, threshold_source, percentile = _flag_response_time_scores(
-            saved["scores"],
-            saved["flag_direction"],
+            timing_archive["scores"],
+            timing_archive["flag_direction"],
             args.threshold,
             args.percentile,
         )
         return _write_response_time_result(
             args,
-            saved["scores"],
+            timing_archive["scores"],
             flags,
-            saved["metric"],
-            saved["flag_direction"],
+            timing_archive["metric"],
+            timing_archive["flag_direction"],
             cutoff,
-            saved["respondent_ids"],
+            timing_archive["respondent_ids"],
             threshold_source,
             percentile,
         )
+
+    if args.command == "screen-reflag":
+        score_archive = load_score_archive(args.archive)
+        selected_scores = _select_archive_scores(score_archive["scores"], args.indices)
+        result = screen_scores(
+            selected_scores,
+            percentile=args.percentile,
+            min_flags=args.min_flags,
+            min_valid_indices=args.min_valid_indices,
+            thresholds=_parse_thresholds(args.threshold),
+            percentiles=_parse_percentiles(args.index_percentile),
+        )
+        result["errors"] = score_archive["errors"].copy()
+        _report_soft_errors(result["errors"])
+        return _write_screen_result(args, result, score_archive["respondent_ids"])
 
     matrix, respondent_ids = _load_input(
         args.data,
@@ -679,23 +764,7 @@ def _run_command(args: argparse.Namespace) -> int:
             workers=args.workers,
         )
         _report_soft_errors(result["errors"])
-        if args.format == "json":
-            _write_json_output(
-                args.output,
-                lambda handle: _write_screen_json(handle, result, respondent_ids),
-            )
-            return 0
-        elif args.format == "csv":
-            with _output_stream(args.output) as handle:
-                _write_screen_csv(handle, result, respondent_ids)
-            return 0
-        elif args.format == "npz":
-            _write_screen_npz(args.output, result, respondent_ids)
-            return 0
-        else:
-            text = _emit_screen_text(result, args.top, respondent_ids)
-        _write_output(text, args.output)
-        return 0
+        return _write_screen_result(args, result, respondent_ids)
 
     weights = _parse_weights(args.weight)
     component_scores: dict[str, np.ndarray] | None = None

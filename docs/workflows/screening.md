@@ -172,7 +172,7 @@ run separately if its soft failures are part of the audit record.
 
 On the bundled 10,000-respondent, 80-item benchmark, evaluating five tail
 percentiles from retained scores takes 5.1 ms and 1.6 MiB peak temporary
-allocation instead of 175.7 ms and 21.5 MiB for five full runs, a 34.2x speedup
+allocation instead of 174.8 ms and 21.5 MiB for five full runs, a 34.5x speedup
 without another dependency.
 
 Persist the same raw score mapping directly or through CLI NPZ output and reload
@@ -188,6 +188,22 @@ revised = screen_scores(saved["scores"], percentile=99, min_flags=3)
 
 The public writer can also store aligned respondent IDs. The loader returns
 those identifiers and any recorded soft failures.
+
+The CLI applies the same screening decision layer to a validated archive:
+
+```bash
+ier screen-reflag screening.npz --percentile 99 --min-flags 3 --format json
+ier screen-reflag screening.npz --indices irv longstring \
+  --threshold longstring=8 --index-percentile irv=90 \
+  --format npz --output revised.npz
+```
+
+Omit `--indices` to use every stored vector, or provide unique registered names
+to select and order the screening signals. Respondent identifiers and archived
+soft failures are preserved. The output can replace the source NPZ atomically.
+Five scenarios that each reload the archive take 7.6 ms and 5.9 MiB peak traced
+allocation on the same benchmark, versus 174.8 ms and 21.5 MiB for rescoring,
+a 22.9x speedup.
 
 ## Missing responses
 

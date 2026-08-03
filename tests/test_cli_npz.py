@@ -12,7 +12,12 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ier import load_response_time_archive, save_response_time_archive
+from ier import (
+    load_response_time_archive,
+    load_score_archive,
+    save_response_time_archive,
+    save_score_archive,
+)
 from ier._cli_npz import _write_npz_archive
 from ier.cli import main
 
@@ -320,6 +325,23 @@ class TestCliNpz(unittest.TestCase):
         self.assertIn("ending in .npz", stderr.getvalue())
         self.assertNotIn("No such file", stderr.getvalue())
 
+        missing_scores = self.root / "missing-scores.npz"
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "screen-reflag",
+                    str(missing_scores),
+                    "--format",
+                    "npz",
+                    "--output",
+                    str(self.root / "rescreened.bin"),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("ending in .npz", stderr.getvalue())
+        self.assertNotIn("No such file", stderr.getvalue())
+
     def test_response_time_reflag_atomically_replaces_source_archive(self) -> None:
         archive = self.root / "timing.npz"
         scores = np.asarray([0.5, 1.0, 1.0, 3.0])
@@ -352,6 +374,48 @@ class TestCliNpz(unittest.TestCase):
         self.assertEqual(loaded["respondent_ids"], ["fast", "tie-a", "tie-b", "slow"])
         np.testing.assert_array_equal(loaded["scores"], scores)
         np.testing.assert_array_equal(loaded["flags"], [True, False, False, False])
+
+    def test_screen_reflag_atomically_replaces_source_archive(self) -> None:
+        archive = self.root / "scores.npz"
+        scores = {
+            "irv": np.asarray([0.9, 0.5, 0.1]),
+            "longstring": np.asarray([2.0, 4.0, 8.0]),
+        }
+        save_score_archive(
+            archive,
+            scores,
+            respondent_ids=["case-a", "case-b", "case-c"],
+            errors={"mad": "missing item configuration"},
+        )
+
+        code = main(
+            [
+                "screen-reflag",
+                str(archive),
+                "--threshold",
+                "irv=0.5",
+                "--threshold",
+                "longstring=4",
+                "--min-flags",
+                "1",
+                "--format",
+                "npz",
+                "--output",
+                str(archive),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        loaded = load_score_archive(archive)
+        self.assertEqual(loaded["result_type"], "screen")
+        self.assertEqual(loaded["respondent_ids"], ["case-a", "case-b", "case-c"])
+        self.assertEqual(loaded["errors"], {"mad": "missing item configuration"})
+        for name, values in scores.items():
+            np.testing.assert_array_equal(loaded["scores"][name], values)
+        with np.load(archive, allow_pickle=False) as raw:
+            self.assertEqual(raw["threshold_sources"].tolist(), ["fixed", "fixed"])
+            self.assertEqual(raw["flag_counts"].tolist(), [0, 2, 2])
+            self.assertEqual(raw["consensus_flags"].tolist(), [False, True, True])
 
     def test_writer_rejects_object_arrays(self) -> None:
         out = self.root / "unsafe.npz"
