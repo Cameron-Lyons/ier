@@ -16,7 +16,7 @@ For a comprehensive methods review, see
 - CLI preservation of named respondent identifier columns
 - CLI: `ier screen data.csv` / `ier composite data.csv` (text / JSON / CSV)
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
-- Soft per-index errors during screening and composite scoring
+- Configurable soft or strict per-index failures during screening and composite scoring
 - Full type annotations (`py.typed`)
 
 ## Installation
@@ -66,6 +66,7 @@ print("Composite:", scores)
 ier screen data.csv --scale-min 1 --scale-max 5
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
+ier screen data.csv --indices irv mad --strict
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier composite data.csv --indices irv longstring
 ier composite data.csv --format csv --output scores.csv

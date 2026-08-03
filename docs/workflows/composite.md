@@ -55,6 +55,11 @@ constructs and can dilute pattern/consistency signals.
 Direction is handled automatically: low-is-bad indices are sign-flipped before
 combination so that higher composite always means more IER signal.
 
+By default, one invalid configured index is returned in diagnostics while other
+indices continue. Pass `strict=True` to `composite()`, `composite_flag()`,
+`composite_summary()`, or `composite_probability()` when every selected index
+must succeed.
+
 ## CLI
 
 Blank fields in comma-, tab-, or semicolon-delimited input are loaded as missing
@@ -62,6 +67,7 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 
 ```bash
 ier composite data.csv --indices irv longstring --method mean
+ier composite data.csv --indices irv mad --strict
 ier composite data.csv --format json --output composite.json
 ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
 ```

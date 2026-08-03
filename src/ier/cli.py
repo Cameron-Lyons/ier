@@ -231,6 +231,11 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         default=True,
         help="Drop incomplete rows / pairwise NaNs where supported (default: true)",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail if any requested index cannot be computed",
+    )
     parser.add_argument("--psychsyn-critval", type=float, default=0.6)
     parser.add_argument("--psychant-critval", type=float, default=-0.6)
     parser.add_argument(
@@ -618,6 +623,7 @@ def _run_command(args: argparse.Namespace) -> int:
             percentile=args.percentile,
             min_flags=args.min_flags,
             thresholds=_parse_thresholds(args.threshold),
+            strict=args.strict,
         )
         if args.format == "json":
             text = _emit_screen_json(result, respondent_ids)
@@ -628,7 +634,13 @@ def _run_command(args: argparse.Namespace) -> int:
         _write_output(text, args.output)
         return 0
 
-    scores_result = composite(matrix, indices=args.indices, method=args.method, options=options)
+    scores_result = composite(
+        matrix,
+        indices=args.indices,
+        method=args.method,
+        options=options,
+        strict=args.strict,
+    )
     if not isinstance(scores_result, np.ndarray):
         print("error: unexpected composite return type", file=sys.stderr)
         return 1

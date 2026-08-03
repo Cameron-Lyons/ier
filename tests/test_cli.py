@@ -73,6 +73,24 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(code, 0)
 
+    def test_strict_screen_returns_structured_index_error(self) -> None:
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "screen",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "mad",
+                    "--strict",
+                ]
+            )
+
+        self.assertEqual(code, 1)
+        self.assertIn("error: index 'mad' failed: mad_positive_items", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_composite_command(self) -> None:
         code = main(
             [
