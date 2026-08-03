@@ -236,6 +236,7 @@ Benchmarks:
 uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_evenodd.py
 uv run python benchmarks/bench_psychsyn.py
+uv run python benchmarks/bench_pair_differences.py
 uv run python benchmarks/bench_person_total.py
 uv run python benchmarks/bench_row_reductions.py
 uv run python benchmarks/bench_lz.py

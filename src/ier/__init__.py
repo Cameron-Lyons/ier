@@ -44,7 +44,9 @@ from .response_time import response_time_flag as response_time_flag
 from .response_time import response_time_mixture as response_time_mixture
 from .screen import screen as screen
 from .semantic import semantic_ant as semantic_ant
+from .semantic import semantic_ant_flag as semantic_ant_flag
 from .semantic import semantic_syn as semantic_syn
+from .semantic import semantic_syn_flag as semantic_syn_flag
 from .types import BoolArray as BoolArray
 from .types import CompositeMethod as CompositeMethod
 from .types import CompositeSummary as CompositeSummary
@@ -130,6 +132,8 @@ __all__ = [
     "ScreenIndexSummary",
     "ScreenResult",
     "semantic_ant",
+    "semantic_ant_flag",
     "semantic_syn",
+    "semantic_syn_flag",
     "u3_poly",
 ]
