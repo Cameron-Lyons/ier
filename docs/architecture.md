@@ -175,6 +175,11 @@ shared piecewise NumPy kernel evaluates positive and negative values separately,
 avoiding overflow while preserving finite-tail precision and exact infinite
 endpoints. The lz theta and likelihood paths reuse the same kernel for both
 complete batches and missing-data rows.
+Complete-data LZ fallback calibration estimates every point-biserial item
+discrimination through one contraction with the shared centered total-score
+vector. It therefore avoids per-item correlation setup and missing-aware
+reduction work; inputs containing missing values retain the established
+itemwise fallback semantics.
 The CLI computes this transform from the final aggregate vector only when
 `--include-probability` is requested. JSON and CSV then serialize it
 forward-only, while NPZ stores one additional typed vector; index scoring is not

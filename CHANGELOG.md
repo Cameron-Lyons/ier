@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.37] - 2026-08-03
+
+### Performance
+
+- Complete-data 2PL discrimination fallback estimation now contracts every
+  item against the shared centered total-score vector at once, avoiding
+  missing-aware reductions and per-item correlation setup. On a 5,000-by-1,000
+  binary benchmark, the isolated kernel improved from 0.1744 to 0.0033 seconds
+  and from 43.0 MiB to 4.8 MiB peak allocation. End-to-end LZ scoring on a
+  2,000-by-500 benchmark improved from 0.1590 to 0.0822 seconds. Missing-data,
+  constant-item, and constant-total-score semantics retain their established
+  fallback behavior.
+
 ## [2.19.36] - 2026-08-03
 
 ### Added

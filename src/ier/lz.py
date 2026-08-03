@@ -176,8 +176,12 @@ def _estimate_discrimination(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
     """Estimate item discrimination using point-biserial correlation."""
     n_items = x.shape[1]
     a = np.ones(n_items)
+    has_missing = bool(np.isnan(x).any())
 
-    total_score = np.nansum(x, axis=1) if na_rm else np.sum(x, axis=1)
+    total_score = np.nansum(x, axis=1) if na_rm and has_missing else np.sum(x, axis=1)
+
+    if not has_missing:
+        return _estimate_discrimination_complete(x, total_score)
 
     if np.std(total_score) == 0:
         return a
@@ -209,6 +213,37 @@ def _estimate_discrimination(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
         a[j] = np.clip(a[j], 0.2, 3.0)
 
     return a
+
+
+def _estimate_discrimination_complete(
+    x: np.ndarray,
+    total_score: np.ndarray,
+) -> np.ndarray:
+    """Estimate all complete-data item correlations with one contraction."""
+    n_items = x.shape[1]
+    discrimination = np.ones(n_items)
+    centered_scores = total_score - np.mean(total_score)
+    score_sum_squares = float(np.dot(centered_scores, centered_scores))
+    if score_sum_squares <= 0.0:
+        return discrimination
+
+    item_sums = np.sum(x, axis=0, dtype=float)
+    item_sum_squares = np.einsum("ij,ij->j", x, x, dtype=float)
+    item_sum_squares -= item_sums * item_sums / len(x)
+    np.maximum(item_sum_squares, 0.0, out=item_sum_squares)
+    denominators = item_sum_squares * score_sum_squares
+    np.sqrt(denominators, out=denominators)
+    correlations: np.ndarray = np.divide(
+        centered_scores @ x,
+        denominators,
+        out=np.zeros(n_items),
+        where=denominators > 0.0,
+    )
+    valid = (denominators > 0.0) & np.isfinite(correlations)
+    np.clip(correlations, -0.99, 0.99, out=correlations)
+    discrimination[valid] = correlations[valid] * 1.7 / np.sqrt(1.0 - correlations[valid] ** 2)
+    np.clip(discrimination, 0.2, 3.0, out=discrimination)
+    return discrimination
 
 
 def _estimate_theta(x: np.ndarray, a: np.ndarray, b: np.ndarray, na_rm: bool = True) -> np.ndarray:
