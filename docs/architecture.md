@@ -179,7 +179,9 @@ Complete-data LZ fallback calibration estimates every point-biserial item
 discrimination through one contraction with the shared centered total-score
 vector. Missing-response fallback calibration instead uses bounded column
 blocks, while masked ability and likelihood calculations run across bounded
-respondent batches. Both missing-removal and strict policies retain their
+respondent batches. Complete and masked theta solvers compact their workspaces
+as respondents converge, so later safeguarded Newton iterations evaluate only
+the rows still solving. Both missing-removal and strict policies retain their
 established unavailable-value, constant-response, and extreme-parameter
 semantics without scalar per-item or per-respondent dispatch.
 The CLI computes this transform from the final aggregate vector only when

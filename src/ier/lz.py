@@ -337,46 +337,58 @@ def _ml_theta_masked_batch(
     estimates = np.clip(np.log(proportion / (1.0 - proportion)), -4.0, 4.0)
     lower = np.full(len(active_responses), -4.0)
     upper = np.full(len(active_responses), 4.0)
-    active = np.ones(len(active_responses), dtype=bool)
+    active_indices = np.arange(len(active_responses), dtype=np.intp)
     a_squared = a**2
 
     for _ in range(64):
-        linear_predictor = a * (estimates[:, None] - b)
+        current_estimates = estimates[active_indices]
+        current_responses = active_responses[active_indices]
+        current_valid = active_valid[active_indices]
+        linear_predictor = a * (current_estimates[:, None] - b)
         probabilities = logistic_transform(linear_predictor)
 
         score = np.sum(
-            a * (active_responses - probabilities),
+            a * (current_responses - probabilities),
             axis=1,
-            where=active_valid,
+            where=current_valid,
         )
-        score_converged = active & (np.abs(score) <= 1e-12)
-        active[score_converged] = False
-        if not np.any(active):
+        unconverged = np.abs(score) > 1e-12
+        if not np.any(unconverged):
             break
 
-        positive = active & (score > 0.0)
-        negative = active & ~positive
-        lower[positive] = estimates[positive]
-        upper[negative] = estimates[negative]
+        active_indices = active_indices[unconverged]
+        current_estimates = current_estimates[unconverged]
+        current_valid = current_valid[unconverged]
+        probabilities = probabilities[unconverged]
+        score = score[unconverged]
+
+        positive = score > 0.0
+        negative = ~positive
+        lower[active_indices[positive]] = current_estimates[positive]
+        upper[active_indices[negative]] = current_estimates[negative]
 
         information = np.sum(
             a_squared * probabilities * (1.0 - probabilities),
             axis=1,
-            where=active_valid,
+            where=current_valid,
         )
-        candidates = estimates + np.divide(
+        candidates = current_estimates + np.divide(
             score,
             information,
-            out=np.full(len(active_responses), np.nan),
+            out=np.full(len(active_indices), np.nan),
             where=information > 0.0,
         )
-        invalid = ~np.isfinite(candidates) | (candidates <= lower) | (candidates >= upper)
-        candidates[invalid] = (lower[invalid] + upper[invalid]) / 2.0
+        active_lower = lower[active_indices]
+        active_upper = upper[active_indices]
+        invalid = (
+            ~np.isfinite(candidates) | (candidates <= active_lower) | (candidates >= active_upper)
+        )
+        candidates[invalid] = (active_lower[invalid] + active_upper[invalid]) / 2.0
 
-        step_converged = active & (np.abs(candidates - estimates) <= 1e-12)
-        estimates[active] = candidates[active]
-        active[step_converged] = False
-        if not np.any(active):
+        step_converged = np.abs(candidates - current_estimates) <= 1e-12
+        estimates[active_indices] = candidates
+        active_indices = active_indices[~step_converged]
+        if len(active_indices) == 0:
             break
 
     theta[interior] = estimates
@@ -410,38 +422,48 @@ def _ml_theta_batch(responses: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.n
     estimates = np.clip(np.log(proportion / (1.0 - proportion)), -4.0, 4.0)
     lower = np.full(len(active_responses), -4.0)
     upper = np.full(len(active_responses), 4.0)
-    active = np.ones(len(active_responses), dtype=bool)
+    active_indices = np.arange(len(active_responses), dtype=np.intp)
     a_squared = a**2
 
     for _ in range(64):
-        linear_predictor = a * (estimates[:, None] - b)
+        current_estimates = estimates[active_indices]
+        current_responses = active_responses[active_indices]
+        linear_predictor = a * (current_estimates[:, None] - b)
         probabilities = logistic_transform(linear_predictor)
 
-        score = np.sum(a * (active_responses - probabilities), axis=1)
-        score_converged = active & (np.abs(score) <= 1e-12)
-        active[score_converged] = False
-        if not np.any(active):
+        score = np.sum(a * (current_responses - probabilities), axis=1)
+        unconverged = np.abs(score) > 1e-12
+        if not np.any(unconverged):
             break
 
-        positive = active & (score > 0.0)
-        negative = active & ~positive
-        lower[positive] = estimates[positive]
-        upper[negative] = estimates[negative]
+        active_indices = active_indices[unconverged]
+        current_estimates = current_estimates[unconverged]
+        probabilities = probabilities[unconverged]
+        score = score[unconverged]
+
+        positive = score > 0.0
+        negative = ~positive
+        lower[active_indices[positive]] = current_estimates[positive]
+        upper[active_indices[negative]] = current_estimates[negative]
 
         information = np.sum(a_squared * probabilities * (1.0 - probabilities), axis=1)
-        candidates = estimates + np.divide(
+        candidates = current_estimates + np.divide(
             score,
             information,
-            out=np.full(len(active_responses), np.nan),
+            out=np.full(len(active_indices), np.nan),
             where=information > 0.0,
         )
-        invalid = ~np.isfinite(candidates) | (candidates <= lower) | (candidates >= upper)
-        candidates[invalid] = (lower[invalid] + upper[invalid]) / 2.0
+        active_lower = lower[active_indices]
+        active_upper = upper[active_indices]
+        invalid = (
+            ~np.isfinite(candidates) | (candidates <= active_lower) | (candidates >= active_upper)
+        )
+        candidates[invalid] = (active_lower[invalid] + active_upper[invalid]) / 2.0
 
-        step_converged = active & (np.abs(candidates - estimates) <= 1e-12)
-        estimates[active] = candidates[active]
-        active[step_converged] = False
-        if not np.any(active):
+        step_converged = np.abs(candidates - current_estimates) <= 1e-12
+        estimates[active_indices] = candidates
+        active_indices = active_indices[~step_converged]
+        if len(active_indices) == 0:
             break
 
     theta[interior] = estimates

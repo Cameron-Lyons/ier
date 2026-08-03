@@ -15,7 +15,7 @@ For a comprehensive methods review, see
 - Auto-detecting archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
-- Contracted complete and bounded masked missing-response LZ estimation
+- Contracted, active-row-compacted LZ estimation for complete and missing responses
 - Allocation-bounded split-half reliability with stable raw-moment correlations
 - Exact low-allocation two-point correlations for common even-odd factor designs
 - Batched dense, sparse, and grouped missing-response Markov entropy scoring

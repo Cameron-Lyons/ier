@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.48] - 2026-08-03
+
+### Performance
+
+- Complete and missing-response LZ ability estimation now removes converged
+  respondents from subsequent safeguarded Newton iterations instead of
+  repeatedly evaluating their item-probability rows. On an interleaved
+  20,000-respondent, 80-item benchmark, complete scoring improved from 0.2111
+  to 0.1922 seconds (8.9%), while scoring with 10% missing responses improved
+  from 0.5806 to 0.2154 seconds (62.9%). Peak traced allocation remained 27.5
+  MiB. Scalar parity, boundary behavior, missing-data policies, and iteration
+  safeguards remain unchanged, workspaces stay bounded, and no dependency is
+  added.
+
 ## [2.19.47] - 2026-08-03
 
 ### Added

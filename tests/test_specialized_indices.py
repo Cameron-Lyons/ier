@@ -1065,6 +1065,42 @@ class TestLz(unittest.TestCase):
                     equal_nan=True,
                 )
 
+    def test_theta_batches_compact_converged_rows(self) -> None:
+        """Complete and masked solvers stop evaluating rows once converged."""
+        from ier.lz import (
+            _ml_theta_batch,
+            _ml_theta_masked_batch,
+            logistic_transform,
+        )
+
+        rng = np.random.default_rng(20260804)
+        complete = rng.integers(0, 2, size=(257, 37)).astype(float)
+        missing = complete.copy()
+        missing[rng.random(missing.shape) < 0.08] = np.nan
+        valid = ~np.isnan(missing)
+        discrimination = rng.uniform(0.2, 3.0, complete.shape[1])
+        difficulty = rng.uniform(-3.0, 3.0, complete.shape[1])
+
+        cases = (
+            (_ml_theta_batch, (complete, discrimination, difficulty)),
+            (
+                _ml_theta_masked_batch,
+                (missing, valid, discrimination, difficulty),
+            ),
+        )
+        for solver, arguments in cases:
+            with self.subTest(solver=solver.__name__):
+                with patch(
+                    "ier.lz.logistic_transform",
+                    wraps=logistic_transform,
+                ) as transform:
+                    solver(*arguments)
+
+                row_counts = [call.args[0].shape[0] for call in transform.call_args_list]
+                self.assertGreater(len(row_counts), 1)
+                self.assertEqual(row_counts, sorted(row_counts, reverse=True))
+                self.assertLess(row_counts[-1], row_counts[0])
+
     def test_strict_missing_policy_keeps_scores_unavailable(self) -> None:
         """Strict handling preserves unavailable public scores after batching."""
         data = np.asarray(
