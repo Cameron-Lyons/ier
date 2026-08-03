@@ -145,6 +145,36 @@ retain selection order. Additional workers can improve throughput when NumPy
 kernels release the interpreter lock, but their temporary workspaces may overlap
 and raise peak memory. Benchmark representative matrix sizes and worker counts.
 
+## Reusing computed scores
+
+Threshold and consensus sensitivity checks do not need to recalculate expensive
+indices. Pass the score mapping from one screening run to `screen_scores()`:
+
+```python
+from ier import screen, screen_scores
+
+initial = screen(data, indices=["irv", "longstring", "mahad"])
+
+lenient = screen_scores(initial["scores"], percentile=90, min_flags=1)
+strict = screen_scores(
+    initial["scores"],
+    percentiles={"irv": 99, "longstring": 99, "mahad": 99},
+    min_flags=2,
+)
+```
+
+The reusable path accepts registered index names, preserves their mapping order,
+and returns the same structured result contract as `screen()`. All vectors must
+be one-dimensional, non-empty, equally sized, and contain only finite values or
+`NaN`. Compatible `float64` arrays are retained by reference and never mutated.
+Because no scorer runs, the returned `errors` mapping is empty; retain the first
+run separately if its soft failures are part of the audit record.
+
+On the bundled 10,000-respondent, 80-item benchmark, evaluating five tail
+percentiles from retained scores takes 5.1 ms and 1.6 MiB peak temporary
+allocation instead of 175.7 ms and 21.5 MiB for five full runs, a 34.2x speedup
+without another dependency.
+
 ## Missing responses
 
 Missing-response rate is available as an opt-in registry index:

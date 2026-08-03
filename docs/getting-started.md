@@ -168,6 +168,21 @@ Final screening flag counts and composite reductions use respondent-sized
 workspaces rather than another respondent-by-index matrix, keeping post-scoring
 memory bounded as the number of selected indices grows.
 
+Reuse the returned score vectors when comparing alternative decision rules:
+
+```python
+from ier import screen_scores
+
+strict = screen_scores(
+    result["scores"],
+    percentile=99,
+    min_flags=3,
+    min_valid_indices=3,
+)
+```
+
+This returns a fresh screening result without recalculating any index.
+
 For fast, lossless NumPy workflows, write a versioned, pickle-free archive:
 
 ```bash

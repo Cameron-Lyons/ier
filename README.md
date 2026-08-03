@@ -164,6 +164,12 @@ Each screening index summary reports valid and unavailable score counts plus the
 flagged count and valid-score flag rate. This makes coverage differences visible
 without recomputing them from the retained arrays.
 
+Use `screen_scores(result["scores"], ...)` to compare new fixed cutoffs,
+tail percentiles, consensus thresholds, or completeness rules without running
+the indices again. The reusable path validates registered, equally sized score
+vectors and returns the same screening result structure while retaining compatible
+NumPy arrays by reference.
+
 Set `screen(..., min_valid_indices=N)` or CLI `--min-valid-indices N` to require
 at least `N` available index scores before a respondent is eligible for a
 consensus decision. Results always include per-respondent `valid_index_counts`

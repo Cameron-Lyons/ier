@@ -7,6 +7,7 @@
         - __version__
         - index_catalog
         - screen
+        - screen_scores
         - composite
         - composite_flag
         - composite_probability

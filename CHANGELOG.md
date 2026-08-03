@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.22] - 2026-08-03
+
+### Added
+
+- `screen_scores()` applies registered-index flagging, coverage, consensus, and
+  summaries to retained score vectors, enabling fixed-cutoff, percentile, and
+  consensus sensitivity analysis without recalculating indices. Compatible
+  `float64` arrays are retained by reference and never mutated.
+- The screening benchmark now compares repeated full calculations with the new
+  reusable-score path and verifies identical thresholds and consensus decisions.
+
+### Changed
+
+- Raw-data and precomputed-score screening share one result builder, keeping
+  direction, tie, presence, completeness, and summary behavior aligned. On a
+  10,000-respondent, 80-item benchmark, five percentile scenarios fall from
+  175.7 to 5.1 ms and 21.5 to 1.6 MiB peak temporary allocation, a 34.2x
+  speedup without adding a dependency.
+
 ## [2.19.21] - 2026-08-03
 
 ### Added
