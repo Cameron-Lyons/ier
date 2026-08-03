@@ -59,7 +59,10 @@ _validation / _flagging    ← shared input checks and threshold helpers
 
 The command-line path is split by responsibility:
 
-- `cli.py` defines arguments, converts index options, and coordinates commands.
+- `cli.py` defines arguments, converts index options, coordinates commands, and
+  performs destination checks that must precede potentially expensive input.
+- `_cli_results.py` derives optional cutoffs and probabilities, then routes
+  catalog, screen, composite, and response-time results to the selected format.
 - `_cli_input.py` owns forward-only delimited input, gzip handling, named-column
   selection, and memory-mapped NumPy input.
 - `_cli_composite.py` validates shared respondent alignment and flag metadata
