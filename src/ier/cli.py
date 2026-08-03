@@ -321,6 +321,19 @@ def _build_parser() -> argparse.ArgumentParser:
         default=True,
         help="Standardize each directed component before combining (default: true)",
     )
+    composite_flagging = composite_parser.add_mutually_exclusive_group()
+    composite_flagging.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Flag scores at or above a fixed cutoff",
+    )
+    composite_flagging.add_argument(
+        "--percentile",
+        type=float,
+        default=None,
+        help="Flag scores strictly above a sample percentile",
+    )
     composite_parser.add_argument(
         "--weight",
         action="append",
@@ -585,6 +598,20 @@ def _run_command(args: argparse.Namespace) -> int:
         scores, errors = scores_result
     _report_soft_errors(errors)
 
+    composite_flags: np.ndarray | None = None
+    flag_threshold: float | None = None
+    flag_percentile: float | None = args.percentile
+    if args.threshold is not None or flag_percentile is not None:
+        comparison_percentile = 95.0 if flag_percentile is None else flag_percentile
+        flag_threshold = resolve_threshold(scores, args.threshold, comparison_percentile)
+        composite_flags = threshold_flags(
+            scores,
+            threshold=flag_threshold,
+            percentile=comparison_percentile,
+            direction="high",
+            inclusive=args.threshold is not None,
+        )
+
     if args.format == "json":
         _write_json_output(
             args.output,
@@ -599,6 +626,9 @@ def _run_command(args: argparse.Namespace) -> int:
                 component_scores,
                 valid_index_counts,
                 standardized=args.standardize,
+                flags=composite_flags,
+                flag_threshold=flag_threshold,
+                flag_percentile=flag_percentile,
             ),
         )
         return 0
@@ -610,6 +640,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 respondent_ids,
                 component_scores,
                 valid_index_counts,
+                composite_flags,
             )
         return 0
     elif args.format == "npz":
@@ -624,6 +655,9 @@ def _run_command(args: argparse.Namespace) -> int:
             component_scores,
             valid_index_counts,
             standardized=args.standardize,
+            flags=composite_flags,
+            flag_threshold=flag_threshold,
+            flag_percentile=flag_percentile,
         )
         return 0
     else:
@@ -638,6 +672,9 @@ def _run_command(args: argparse.Namespace) -> int:
             component_scores,
             valid_index_counts,
             standardized=args.standardize,
+            flags=composite_flags,
+            flag_threshold=flag_threshold,
+            flag_percentile=flag_percentile,
         )
     _write_output(text, args.output)
     return 0

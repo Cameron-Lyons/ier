@@ -29,6 +29,11 @@ Their boundary rule matches `screen()`: fixed cutoffs are inclusive (at or
 beyond the cutoff), while sample-percentile cutoffs use strict tail comparisons
 so ties at the estimated percentile are not flagged.
 
+The composite command exposes the same rule through mutually exclusive
+`--threshold` and `--percentile` options. Flagging is opt-in: without either
+option, composite output contains scores only. The resolved cutoff and its
+fixed or percentile source are retained in self-describing output formats.
+
 ## Literature-informed starting points
 
 These are illustrative defaults from common practice, not package guarantees:

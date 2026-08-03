@@ -45,6 +45,8 @@ The command-line path is split by responsibility:
 - `cli.py` defines arguments, converts index options, and coordinates commands.
 - `_cli_input.py` owns forward-only delimited input, gzip handling, named-column
   selection, and memory-mapped NumPy input.
+- `_cli_composite.py` validates shared respondent alignment and flag metadata
+  contracts for every composite serializer.
 - `_cli_output.py` renders text plus bounded strict JSON and CSV results.
 - `_cli_npz.py` writes versioned, typed, pickle-free NumPy result archives.
 
@@ -64,6 +66,12 @@ Composite standardization is resolved before either aggregate-only or detailed
 scoring begins. The same boolean is passed to the public scoring API and written
 to text, JSON, and NPZ metadata, avoiding a second calculation or inference from
 the resulting values. CSV intentionally remains a respondent-only table.
+
+Optional composite flagging runs after aggregate scoring and reuses that score
+vector. Cutoff resolution and boolean comparison use the same shared helpers as
+the public flagging APIs. JSON writes the flag vector in bounded chunks, CSV
+streams it row by row, and NPZ stores it as a boolean member; no component is
+rescored and the score-only path allocates no flag vector.
 
 Keeping parsing, matrix construction, serialization, and orchestration separate
 makes format-specific changes independently testable without adding runtime

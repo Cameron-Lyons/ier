@@ -4,6 +4,7 @@ Usage:
     uv run python benchmarks/bench_cli_output.py
     uv run python benchmarks/bench_cli_output.py --format json --respondents 250000
     uv run python benchmarks/bench_cli_output.py --workflow composite --format all
+    uv run python benchmarks/bench_cli_output.py --workflow composite --flagged
 """
 
 from __future__ import annotations
@@ -84,11 +85,14 @@ def _write_screen_result(
 def _make_composite_result(
     n_respondents: int,
     n_indices: int,
-) -> tuple[np.ndarray, dict[str, np.ndarray], np.ndarray]:
+    *,
+    flagged: bool,
+) -> tuple[np.ndarray, dict[str, np.ndarray], np.ndarray, np.ndarray | None]:
     values = np.linspace(0.0, 1.0, n_respondents)
     component_scores = {f"score_{index}": values + index / n_indices for index in range(n_indices)}
     valid_index_counts = np.full(n_respondents, n_indices, dtype=np.int_)
-    return values, component_scores, valid_index_counts
+    flags = values >= 0.95 if flagged else None
+    return values, component_scores, valid_index_counts, flags
 
 
 def _write_composite_result(
@@ -97,6 +101,7 @@ def _write_composite_result(
     scores: np.ndarray,
     component_scores: dict[str, np.ndarray],
     valid_index_counts: np.ndarray,
+    flags: np.ndarray | None,
 ) -> None:
     if output_format == "csv":
         with _output_stream(destination) as handle:
@@ -105,6 +110,7 @@ def _write_composite_result(
                 scores,
                 component_scores=component_scores,
                 valid_index_counts=valid_index_counts,
+                flags=flags,
             )
         return
     if output_format == "json":
@@ -115,6 +121,8 @@ def _write_composite_result(
                 "mean",
                 component_scores=component_scores,
                 valid_index_counts=valid_index_counts,
+                flags=flags,
+                flag_threshold=0.95 if flags is not None else None,
             )
         return
     _write_composite_npz(
@@ -123,6 +131,8 @@ def _write_composite_result(
         "mean",
         component_scores=component_scores,
         valid_index_counts=valid_index_counts,
+        flags=flags,
+        flag_threshold=0.95 if flags is not None else None,
     )
 
 
@@ -159,6 +169,11 @@ def main() -> None:
         default="screen",
     )
     parser.add_argument(
+        "--flagged",
+        action="store_true",
+        help="Include fixed-threshold composite flags",
+    )
+    parser.add_argument(
         "--format",
         choices=["csv", "json", "npz", "all", "both"],
         default="all",
@@ -167,12 +182,14 @@ def main() -> None:
 
     if args.respondents < 1 or args.indices < 1 or args.repeats < 1:
         parser.error("respondents, indices, and repeats must be positive")
+    if args.flagged and args.workflow != "composite":
+        parser.error("--flagged requires --workflow composite")
 
     screen_result = (
         _make_screen_result(args.respondents, args.indices) if args.workflow == "screen" else None
     )
     composite_result = (
-        _make_composite_result(args.respondents, args.indices)
+        _make_composite_result(args.respondents, args.indices, flagged=args.flagged)
         if args.workflow == "composite"
         else None
     )
@@ -183,7 +200,10 @@ def main() -> None:
     else:
         formats = [args.format]
 
-    print(f"workflow={args.workflow} respondents={args.respondents} indices={args.indices}")
+    print(
+        f"workflow={args.workflow} respondents={args.respondents} "
+        f"indices={args.indices} flagged={args.flagged}"
+    )
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         for output_format in formats:

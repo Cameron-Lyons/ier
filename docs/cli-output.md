@@ -83,6 +83,12 @@ completeness requirement. JSON composite output uses equivalent `method`,
 records the effective standardization setting. Aligned `error_names` and
 `error_messages` vectors preserve soft failures; JSON uses the `errors` object.
 
+When `--threshold` or `--percentile` is supplied, NPZ and JSON add `threshold`,
+`threshold_source`, and respondent-aligned boolean `flags`. Percentile output
+also records the requested `percentile`. CSV adds `composite_flag`, while text
+reports the cutoff, source, flagged count, and row-level flag. These fields are
+absent when flagging is not requested.
+
 With `--include-components`, composite NPZ adds `index_names`,
 `valid_index_counts`, and one `score__NAME` float vector per successful index.
 JSON adds `indices_used`, `valid_index_counts`, and a `component_scores` object;

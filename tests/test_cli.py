@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ier import composite, composite_summary
+from ier import composite, composite_flag, composite_summary
 from ier._cli_input import _load_input, _load_matrix
 from ier._cli_output import _emit_composite_json, _emit_composite_text, _write_composite_csv
 from ier.cli import (
@@ -247,6 +247,135 @@ class TestCli(unittest.TestCase):
                 0,
             )
         self.assertIn("standardized: false", stdout.getvalue())
+
+    def test_composite_fixed_threshold_flags_across_formats(self) -> None:
+        matrix, _ = _load_input(self.csv_path, None, None)
+        expected_scores, expected_flags = composite_flag(
+            matrix,
+            indices=["irv", "longstring"],
+            threshold=0.0,
+        )
+
+        json_out = self.root / "flagged-composite.json"
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--threshold",
+                    "0",
+                    "--include-components",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(json_out),
+                ]
+            ),
+            0,
+        )
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        np.testing.assert_allclose(payload["scores"], expected_scores)
+        self.assertEqual(payload["flags"], expected_flags.tolist())
+        self.assertEqual(payload["threshold"], 0.0)
+        self.assertEqual(payload["threshold_source"], "fixed")
+        self.assertNotIn("percentile", payload)
+
+        csv_out = self.root / "flagged-composite.csv"
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--threshold",
+                    "0",
+                    "--include-components",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(csv_out),
+                ]
+            ),
+            0,
+        )
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        self.assertEqual(
+            list(rows[0]),
+            [
+                "respondent",
+                "composite_score",
+                "composite_flag",
+                "valid_index_count",
+                "irv_score",
+                "longstring_score",
+            ],
+        )
+        self.assertEqual(
+            [row["composite_flag"] for row in rows],
+            [str(int(value)) for value in expected_flags],
+        )
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            self.assertEqual(
+                main(
+                    [
+                        "composite",
+                        str(self.csv_path),
+                        "--indices",
+                        "irv",
+                        "longstring",
+                        "--threshold",
+                        "0",
+                        "--top",
+                        "3",
+                    ]
+                ),
+                0,
+            )
+        text = stdout.getvalue()
+        self.assertIn("threshold: 0 (fixed)", text)
+        self.assertIn(f"flagged: {int(np.sum(expected_flags))}", text)
+        self.assertIn("index, score, flag", text)
+
+    def test_composite_percentile_flags_record_strict_tail_rule(self) -> None:
+        matrix, _ = _load_input(self.csv_path, None, None)
+        expected_scores, expected_flags = composite_flag(
+            matrix,
+            indices=["irv", "longstring"],
+            percentile=50.0,
+        )
+        out = self.root / "percentile-composite.json"
+
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--percentile",
+                    "50",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(out),
+                ]
+            ),
+            0,
+        )
+
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["threshold_source"], "percentile")
+        self.assertEqual(payload["percentile"], 50.0)
+        self.assertAlmostEqual(payload["threshold"], float(np.percentile(expected_scores, 50.0)))
+        self.assertEqual(payload["flags"], expected_flags.tolist())
 
     def test_composite_soft_errors_are_visible_in_text_json_and_csv(self) -> None:
         json_out = self.root / "partial-composite.json"
@@ -1310,6 +1439,38 @@ class TestCli(unittest.TestCase):
                 component_scores={"irv": np.array([1.0])},
                 valid_index_counts=np.array([1, 1]),
             )
+        with self.assertRaisesRegex(ValueError, "flags and threshold"):
+            _emit_composite_json(scores, "mean", flags=np.array([True, False]))
+        with self.assertRaisesRegex(ValueError, "percentile requires"):
+            _emit_composite_json(scores, "mean", flag_percentile=95.0)
+        with self.assertRaisesRegex(ValueError, "flag length"):
+            _emit_composite_json(
+                scores,
+                "mean",
+                flags=np.array([True]),
+                flag_threshold=1.0,
+            )
+        with self.assertRaisesRegex(ValueError, "threshold must be finite"):
+            _emit_composite_json(
+                scores,
+                "mean",
+                flags=np.array([True, False]),
+                flag_threshold=np.nan,
+            )
+        with self.assertRaisesRegex(ValueError, "percentile must be between"):
+            _emit_composite_json(
+                scores,
+                "mean",
+                flags=np.array([True, False]),
+                flag_threshold=1.0,
+                flag_percentile=101.0,
+            )
+        with self.assertRaisesRegex(ValueError, "flag length"):
+            _write_composite_csv(
+                StringIO(),
+                scores,
+                flags=np.array([True]),
+            )
 
     def test_composite_csv_uses_empty_cells_for_all_non_finite_values(self) -> None:
         output = StringIO()
@@ -1565,6 +1726,34 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("error:", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_invalid_composite_flagging_values_return_structured_errors(self) -> None:
+        for option, value, message in [
+            ("--percentile", "101", "percentile"),
+            ("--threshold", "nan", "threshold"),
+        ]:
+            stderr = StringIO()
+            with self.subTest(option=option), patch("sys.stderr", stderr):
+                code = main(["composite", str(self.csv_path), option, value])
+            self.assertEqual(code, 1)
+            self.assertIn(message, stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_composite_fixed_and_percentile_cutoffs_are_mutually_exclusive(self) -> None:
+        stderr = StringIO()
+        with patch("sys.stderr", stderr), self.assertRaises(SystemExit) as raised:
+            main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--threshold",
+                    "0",
+                    "--percentile",
+                    "95",
+                ]
+            )
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("not allowed with argument", stderr.getvalue())
 
     def test_explicit_delimiter(self) -> None:
         tsv = self.root / "data.tsv"
