@@ -56,6 +56,12 @@ _validation / _flagging    ← shared input checks and threshold helpers
   replace a reusable source without retaining the raw input matrix or adding a
   runtime dependency; composite replacement explicitly requires component
   retention.
+- **Reusable consensus archives.** Ordered cross-domain flags and optional
+  availability scores use indexed NPZ members, then store the bounded reduction
+  result beside them with count vectors narrowed to the smallest safe unsigned
+  dtype. Loading recomputes every count and decision before
+  accepting the archive, so persistence cannot bypass the public consensus
+  contract or turn user-provided signal names into container paths.
 - **Archive merging.** Independently computed score archives can be joined in
   input order before those decision layers run. Fully identified archives align
   vectors to the first archive's respondent order; mixed identity state,
@@ -81,9 +87,9 @@ The command-line path is split by responsibility:
 - `_cli_npz.py` assembles complete command result payloads and delegates the
   low-level typed, pickle-free NumPy writer.
 - `archive.py` owns atomic same-directory staging, the shared stream writer, and
-  public validated save/load boundaries for reusable registered score vectors
-  and response-time results, plus dedicated response-time mixture and
-  psychometric-pair model schemas.
+  public validated save/load boundaries for reusable registered score vectors,
+  response-time results, and cross-domain consensus, plus dedicated
+  response-time mixture and psychometric-pair model schemas.
   It also validates multi-archive identity and index contracts before returning
   one merged score mapping for screen or composite reuse.
   Its generic result loader reads the declared result type once and dispatches
@@ -361,5 +367,7 @@ Plotting remains optional and reports a centralized install hint from
 - Validated and atomic score and response-time archive loading, saving, and
   cutoff-provenance verification:
   `benchmarks/bench_archive.py`.
+- Validated flag-consensus archive save/load latency, traced peak allocation,
+  and artifact size: `benchmarks/bench_consensus_archive.py`.
 - Shared fixed and percentile flagging throughput and memory: `benchmarks/bench_flagging.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.

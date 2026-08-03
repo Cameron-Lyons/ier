@@ -11,7 +11,7 @@ For a comprehensive methods review, see
 - Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()`, `composite_scores()`, `response_time_score_flags()`, and `flag_consensus()` layers
-- Validated, pickle-free score, timing-result, and timing-model archive persistence
+- Validated, pickle-free score, timing-result, flag-consensus, and model persistence
 - Auto-detecting result/model archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Safe score-archive merging with respondent-ID alignment and atomic in-place output
@@ -403,15 +403,24 @@ contract enforced by the loader. Existing writer calls without provenance retain
 the legacy schema; pass `threshold_source` and, for derived cutoffs, `percentile`
 to produce the richer schema used by current CLI output.
 
+Cross-domain decisions can be persisted with
+`save_flag_consensus_archive()` and restored with
+`load_flag_consensus_archive()`. The archive retains ordered Boolean signals,
+the optional score subset used for availability, decision settings, aggregate
+counts, eligibility, final flags, and respondent identifiers. Reloading
+recomputes every aggregate from the stored signals and rejects any inconsistency;
+the retained mappings can be passed back to `flag_consensus()` with different
+thresholds without loading either source matrix.
+
 When the archive type is not known in advance, `load_archive()` reads the
-declared result type and applies the complete score, response-time, or timing-model
-validator in one pass. Model results expose read-only calibration parameters in
+declared result type and applies the complete score, response-time, consensus, or
+model validator in one pass. Model results expose read-only calibration parameters in
 a typed mapping; use `load_response_time_mixture_model()` when a scoring object is
 needed. `ier archive-info results.npz` exposes the same auto-detection as a compact
 text summary; add `--format json` for structured metadata. The command reports
-dimensions and identifier presence plus stored index/failure metadata, timing
-cutoff provenance and flag rates, or mixture components without printing
-respondent vectors.
+dimensions and identifier presence plus stored index/failure metadata, consensus
+coverage and flag rates, timing cutoff provenance, or model parameters without
+printing respondent vectors.
 
 Composite scores are standardized per index by default. Pass
 `ier composite --no-standardize` to combine directed scores in their original

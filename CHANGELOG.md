@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.74] - 2026-08-03
+
+### Added
+
+- `save_flag_consensus_archive()` and `load_flag_consensus_archive()` persist
+  ordered cross-domain flags, optional availability scores, aggregate counts,
+  eligibility, decisions, and respondent IDs in an atomic, pickle-free schema.
+  Signal names map to numeric members rather than container paths. Loading
+  rejects missing, extra, object-typed, misaligned, or inconsistent fields and
+  recomputes every aggregate through `flag_consensus()` before returning reusable
+  mappings. Generic `load_archive()` and `ier archive-info` auto-detect the new
+  result type. On the maintained 500,000-respondent, 10-signal benchmark, the
+  44.8 MiB archive saves in 17.4 ms with 13.5 MiB traced peak and validates on
+  load in 18.2 ms with 59.8 MiB traced peak. No dependency is added.
+
 ## [2.19.73] - 2026-08-03
 
 ### Added

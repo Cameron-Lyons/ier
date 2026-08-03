@@ -237,7 +237,22 @@ def _archive_info_payload(archive: InspectableArchive) -> dict[str, object]:
             "has_respondent_ids": archive["respondent_ids"] is not None,
         }
     )
-    if archive["result_type"] == "response_time":
+    if archive["result_type"] == "flag_consensus":
+        n_flagged = int(np.sum(archive["consensus_flags"]))
+        n_eligible = int(np.sum(archive["consensus_eligible"]))
+        payload.update(
+            {
+                "n_signals": archive["n_signals"],
+                "signals": archive["signal_names"],
+                "availability_scores": list(archive["scores"]),
+                "min_flags": archive["min_flags"],
+                "min_valid_signals": archive["min_valid_signals"],
+                "n_eligible": n_eligible,
+                "n_consensus_flagged": n_flagged,
+                "consensus_rate": n_flagged / archive["n_respondents"],
+            }
+        )
+    elif archive["result_type"] == "response_time":
         n_flagged = int(np.sum(archive["flags"]))
         payload.update(
             {
@@ -303,7 +318,22 @@ def _emit_archive_info_text(archive: InspectableArchive) -> str:
             f"respondent identifiers: {'yes' if archive['respondent_ids'] is not None else 'no'}",
         )
     )
-    if archive["result_type"] == "response_time":
+    if archive["result_type"] == "flag_consensus":
+        n_flagged = int(np.sum(archive["consensus_flags"]))
+        n_eligible = int(np.sum(archive["consensus_eligible"]))
+        min_valid = archive["min_valid_signals"]
+        coverage_rule = "all rows" if min_valid is None else f"min_valid_signals={min_valid}"
+        lines.extend(
+            (
+                f"signals ({archive['n_signals']}): {', '.join(archive['signal_names'])}",
+                "availability scores: " + (", ".join(archive["scores"]) or "none"),
+                f"consensus eligible: {n_eligible}/{archive['n_respondents']} ({coverage_rule})",
+                f"consensus flagged: {n_flagged}/{archive['n_respondents']} "
+                f"({n_flagged / archive['n_respondents']:.1%}, "
+                f"min_flags={archive['min_flags']})",
+            )
+        )
+    elif archive["result_type"] == "response_time":
         source = archive["threshold_source"]
         if source == "percentile":
             percentile = archive["percentile"]
