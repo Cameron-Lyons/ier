@@ -25,6 +25,12 @@ from ier import (
     response_time_mixture,
     screen,
 )
+from ier._cli_npz import (
+    _require_npz_output_path,
+    _write_composite_npz,
+    _write_response_time_npz,
+    _write_screen_npz,
+)
 from ier._flagging import resolve_threshold, threshold_flags
 
 if TYPE_CHECKING:
@@ -375,7 +381,7 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
     """Add output controls shared by scoring commands."""
     parser.add_argument(
         "--format",
-        choices=["text", "json", "csv"],
+        choices=["text", "json", "csv", "npz"],
         default="text",
         help="Output format (default: text summary)",
     )
@@ -383,7 +389,7 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
         "--output",
         type=Path,
         default=None,
-        help="Write output to a path, optionally .gz; use '-' for stdout",
+        help="Write to a path, optionally .gz; use '-' for stdout; NPZ requires a .npz path",
     )
     parser.add_argument(
         "--top",
@@ -913,6 +919,9 @@ def _run_command(args: argparse.Namespace) -> int:
         _write_output(text, args.output)
         return 0
 
+    if args.format == "npz":
+        _require_npz_output_path(args.output)
+
     matrix, respondent_ids = _load_input(
         args.data,
         args.delimiter,
@@ -952,6 +961,17 @@ def _run_command(args: argparse.Namespace) -> int:
             with _output_stream(args.output) as handle:
                 _write_response_time_csv(handle, scores, flags, respondent_ids)
             return 0
+        elif args.format == "npz":
+            _write_response_time_npz(
+                args.output,
+                scores,
+                flags,
+                args.metric,
+                direction,
+                cutoff,
+                respondent_ids,
+            )
+            return 0
         else:
             text = _emit_response_time_text(
                 scores,
@@ -982,6 +1002,9 @@ def _run_command(args: argparse.Namespace) -> int:
             with _output_stream(args.output) as handle:
                 _write_screen_csv(handle, result, respondent_ids)
             return 0
+        elif args.format == "npz":
+            _write_screen_npz(args.output, result, respondent_ids)
+            return 0
         else:
             text = _emit_screen_text(result, args.top, respondent_ids)
         _write_output(text, args.output)
@@ -1004,6 +1027,9 @@ def _run_command(args: argparse.Namespace) -> int:
     elif args.format == "csv":
         with _output_stream(args.output) as handle:
             _write_composite_csv(handle, scores, respondent_ids)
+        return 0
+    elif args.format == "npz":
+        _write_composite_npz(args.output, scores, args.method, respondent_ids)
         return 0
     else:
         text = _emit_composite_text(scores, args.method, args.top, respondent_ids)

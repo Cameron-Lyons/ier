@@ -136,6 +136,7 @@ ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier response-time timings.csv --metric median --threshold 1.0
 ier screen data.csv.gz --format json --output screening.json.gz
 ier screen data.npy --indices irv longstring --format json
+ier screen data.npy --indices irv longstring --format npz --output screening.npz
 cat data.csv | ier screen - --indices irv longstring --format json
 ier --version
 ```
@@ -159,3 +160,5 @@ three destinations.
 JSON output is standards-compliant: unavailable or non-finite scores and summary
 statistics are encoded as `null`. CSV output represents non-finite scores as empty
 cells so numeric columns remain compatible with spreadsheet and statistics tools.
+NPZ output preserves those values and typed flags exactly; its versioned layout is
+documented in [CLI output formats](../cli-output.md).

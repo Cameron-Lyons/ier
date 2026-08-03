@@ -71,6 +71,7 @@ ier composite data.csv --indices irv mad --strict
 ier composite data.csv --format json --output composite.json
 ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
 ier composite data.npy --indices irv longstring --format json
+ier composite data.npy --indices irv longstring --format npz --output composite.npz
 ```
 
 Uncompressed `.npy` matrices are memory-mapped read-only. They must be non-empty,
@@ -83,3 +84,5 @@ without retaining the complete export in memory.
 JSON output is standards-compliant: unavailable or non-finite scores are encoded
 as `null`. CSV output represents those scores as empty cells so numeric columns
 remain compatible with spreadsheet and statistics tools.
+NPZ output preserves the numeric score vector, combination method, and optional
+respondent IDs using the [versioned archive schema](../cli-output.md).
