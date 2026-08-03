@@ -16,6 +16,7 @@ For a comprehensive methods review, see
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded item-correlation discovery for high-dimensional psychometric synonym analyses
 - Contracted complete and bounded masked missing-response LZ estimation
+- Allocation-bounded split-half reliability with stable raw-moment correlations
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format

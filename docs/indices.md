@@ -37,7 +37,7 @@ defaults, and options that must be configured before an index can run.
 | `midpoint` | Midpoint responding | high | yes | no | `scale_min` / `scale_max`, `midpoint_tolerance` |
 | `acquiescence` | Agreeing / yea-saying | high | yes | no | scale bounds; optional item lists |
 | `guttman` | Guttman errors | high | yes | yes | `guttman_normalize` |
-| `individual_reliability` | Split-half individual reliability | low | no | yes | `reliability_n_splits`, seed |
+| `individual_reliability` | Split-half individual reliability | low | no | yes | `reliability_n_splits`, seed; bounded stable raw moments |
 | `onset` | Carelessness onset item index | present | no | no | `onset_window_size`, `onset_min_items` |
 | `evenodd` | Even-odd consistency | low | no | yes | `evenodd_factors` |
 | `mad` | Mean absolute paired difference | high | no | yes | MAD item lists / optional scale bounds |

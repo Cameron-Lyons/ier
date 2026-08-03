@@ -10,6 +10,8 @@ import numpy as np
 from ier._row_statistics import row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
+_CORRELATION_CANCELLATION_TOLERANCE = 64.0 * np.finfo(float).eps
+
 
 def individual_reliability(
     x: MatrixLike,
@@ -92,32 +94,95 @@ def _paired_split_correlations(
     half2: np.ndarray,
     has_missing: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return valid row correlations for one paired random split."""
+    """Return row correlations from raw moments with stable edge handling."""
+    valid: np.ndarray | None = None
     enough_values: np.ndarray | None = None
     if has_missing:
         valid = ~np.isnan(half1) & ~np.isnan(half2)
-        valid_counts = valid.sum(axis=1)
+        valid_counts = np.asarray(np.sum(valid, axis=1, dtype=np.intp), dtype=np.intp)
+        nonempty = valid_counts > 0
+        inverse_counts: float | np.ndarray = np.divide(
+            1.0,
+            valid_counts,
+            out=np.zeros(len(half1)),
+            where=nonempty,
+        )
+        missing = ~valid
+        np.copyto(half1, 0.0, where=missing)
+        np.copyto(half2, 0.0, where=missing)
+        enough_values = valid_counts >= 2
+    else:
+        inverse_counts = 1.0 / half1.shape[1]
+
+    sums1 = np.sum(half1, axis=1, dtype=float)
+    sums2 = np.sum(half2, axis=1, dtype=float)
+    covariance = np.einsum("ij,ij->i", half1, half2, dtype=float)
+    covariance -= sums1 * sums2 * inverse_counts
+
+    raw_squares1 = np.einsum("ij,ij->i", half1, half1, dtype=float)
+    raw_squares2 = np.einsum("ij,ij->i", half2, half2, dtype=float)
+    sum_squares1 = raw_squares1 - sums1 * sums1 * inverse_counts
+    sum_squares2 = raw_squares2 - sums2 * sums2 * inverse_counts
+    cancellation_prone = (sum_squares1 <= _CORRELATION_CANCELLATION_TOLERANCE * raw_squares1) | (
+        sum_squares2 <= _CORRELATION_CANCELLATION_TOLERANCE * raw_squares2
+    )
+    if enough_values is not None:
+        cancellation_prone &= enough_values
+
+    np.maximum(sum_squares1, 0.0, out=sum_squares1)
+    np.maximum(sum_squares2, 0.0, out=sum_squares2)
+    denominator = sum_squares1 * sum_squares2
+    np.sqrt(denominator, out=denominator)
+    usable = denominator > 0.0
+    if enough_values is not None:
+        usable &= enough_values
+
+    correlations = np.divide(
+        covariance,
+        denominator,
+        out=np.zeros(len(half1)),
+        where=usable,
+    )
+
+    if np.any(cancellation_prone):
+        stable_correlations, stable_usable = _stable_paired_split_correlations(
+            half1[cancellation_prone],
+            half2[cancellation_prone],
+            None if valid is None else valid[cancellation_prone],
+        )
+        correlations[cancellation_prone] = stable_correlations
+        usable[cancellation_prone] = stable_usable
+
+    return correlations, usable
+
+
+def _stable_paired_split_correlations(
+    half1: np.ndarray,
+    half2: np.ndarray,
+    valid: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Center numerically cancellation-prone row pairs before correlation."""
+    enough_values: np.ndarray | None = None
+    if valid is not None:
+        valid_counts = np.asarray(np.sum(valid, axis=1, dtype=np.intp), dtype=np.intp)
         nonempty = valid_counts > 0
         mean1 = np.divide(
             np.sum(half1, axis=1, where=valid),
             valid_counts,
             out=np.zeros(len(half1)),
             where=nonempty,
-        )[:, None]
+        )
         mean2 = np.divide(
             np.sum(half2, axis=1, where=valid),
             valid_counts,
             out=np.zeros(len(half2)),
             where=nonempty,
-        )[:, None]
-        centered1 = np.where(valid, half1 - mean1, 0.0)
-        centered2 = np.where(valid, half2 - mean2, 0.0)
+        )
+        centered1 = np.zeros(half1.shape, dtype=float)
+        centered2 = np.zeros(half2.shape, dtype=float)
+        np.subtract(half1, mean1[:, None], out=centered1, where=valid)
+        np.subtract(half2, mean2[:, None], out=centered2, where=valid)
         enough_values = valid_counts >= 2
-    elif np.issubdtype(half1.dtype, np.floating):
-        half1 -= np.mean(half1, axis=1, keepdims=True)
-        half2 -= np.mean(half2, axis=1, keepdims=True)
-        centered1 = half1
-        centered2 = half2
     else:
         centered1 = half1 - np.mean(half1, axis=1, keepdims=True)
         centered2 = half2 - np.mean(half2, axis=1, keepdims=True)

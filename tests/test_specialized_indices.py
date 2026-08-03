@@ -396,7 +396,7 @@ class TestIndividualReliability(unittest.TestCase):
                 -0.11400136903312826,
             ],
             rtol=0,
-            atol=1e-15,
+            atol=2e-15,
             equal_nan=True,
         )
         np.testing.assert_allclose(
@@ -408,9 +408,54 @@ class TestIndividualReliability(unittest.TestCase):
                 0.16666666666666655,
             ],
             rtol=0,
-            atol=1e-15,
+            atol=2e-15,
             equal_nan=True,
         )
+
+    def test_raw_moment_path_avoids_stable_centering_for_ordinary_rows(self) -> None:
+        """Ordinary survey-scale rows stay on the allocation-light path."""
+        rng = np.random.default_rng(61)
+        data = rng.normal(loc=3.0, scale=0.8, size=(53, 12))
+        data[rng.random(data.shape) < 0.05] = np.nan
+
+        with patch(
+            "ier.reliability._stable_paired_split_correlations",
+            side_effect=AssertionError("stable centering fallback was called"),
+        ):
+            result = individual_reliability(data, n_splits=9, random_seed=17)
+
+        self.assertTrue(np.isfinite(result).all())
+
+    def test_large_offset_rows_use_stable_centering_reference(self) -> None:
+        """Cancellation-prone raw moments retain the centered definition."""
+        from ier.reliability import _stable_paired_split_correlations
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(53, 12)).astype(float) + 1e12
+        data[rng.random(data.shape) < 0.05] = np.nan
+
+        def centered_reference(
+            half1: np.ndarray,
+            half2: np.ndarray,
+            has_missing: bool,
+        ) -> tuple[np.ndarray, np.ndarray]:
+            valid = ~np.isnan(half1) & ~np.isnan(half2) if has_missing else None
+            return _stable_paired_split_correlations(half1, half2, valid)
+
+        with patch(
+            "ier.reliability._paired_split_correlations",
+            side_effect=centered_reference,
+        ):
+            expected = individual_reliability(data, n_splits=9, random_seed=17)
+
+        with patch(
+            "ier.reliability._stable_paired_split_correlations",
+            wraps=_stable_paired_split_correlations,
+        ) as stable_fallback:
+            actual = individual_reliability(data, n_splits=9, random_seed=17)
+
+        self.assertGreater(stable_fallback.call_count, 0)
+        np.testing.assert_array_equal(actual, expected)
 
     def test_seeded_scoring_does_not_modify_global_random_state(self) -> None:
         """A local seed must not change unrelated NumPy random draws."""
