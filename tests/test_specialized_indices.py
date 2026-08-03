@@ -1719,6 +1719,31 @@ class TestMarkov(unittest.TestCase):
         np.testing.assert_array_equal(scores, [0.0, 0.0])
         np.testing.assert_array_equal(row_path_scores, scores)
 
+    def test_high_cardinality_sparse_fallback_batches_rows(self) -> None:
+        """Sorted sparse transition counts honor the bounded cell budget."""
+        from ier.markov import _transition_entropy_sparse_batch
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 1001, size=(257, 40)).astype(float)
+        original = data.copy()
+        expected = np.array([_transition_entropy_row(row) for row in data])
+
+        with (
+            patch("ier.markov._SPARSE_TRANSITION_BATCH_CELLS", 240),
+            patch(
+                "ier.markov._transition_entropy_sparse_batch",
+                wraps=_transition_entropy_sparse_batch,
+            ) as sparse_batches,
+        ):
+            result = markov(data)
+
+        self.assertGreater(sparse_batches.call_count, 2)
+        self.assertTrue(
+            all(call.args[0][:, :-1].size <= 240 for call in sparse_batches.call_args_list)
+        )
+        np.testing.assert_allclose(result, expected, rtol=0.0, atol=1e-12)
+        np.testing.assert_array_equal(data, original)
+
     def test_high_cardinality_sparse_entropy_matches_hand_calculation(self) -> None:
         """Observed-pair counts retain branching entropy above the dense-state limit."""
         row = np.concatenate((np.array([0.0, 1.0, 0.0, 2.0]), np.arange(3.0, 70.0)))

@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.45] - 2026-08-03
+
+### Performance
+
+- High-cardinality Markov entropy now sorts origin states and transition pairs
+  across bounded 16,384-transition-cell row batches, then derives observed run
+  counts without either a dense state-square matrix or respondent-wise Python
+  dispatch. On a 20,000-respondent, 80-item benchmark, the 65-state complete
+  workload improved from 1.4884 to 0.0838 seconds, a 17.76x speedup, with peak
+  traced allocation unchanged at 3.1 MiB. A 1,000-state workload with 10%
+  missing observations improved from 1.5167 to 0.1007 seconds, a 15.06x
+  speedup, with peak allocation unchanged at 3.4 MiB. Results agree within
+  4.44e-16, infinite and fractional categories remain supported, missing
+  response order is preserved, and no dependency is added.
+
 ## [2.19.44] - 2026-08-03
 
 ### Performance
