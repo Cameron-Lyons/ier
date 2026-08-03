@@ -73,6 +73,29 @@ result = screen(
 Missing required config is recorded in `result["errors"]` instead of aborting
 the whole screening run. `composite()` uses the same soft-fail policy.
 
+## Calibrated LZ parameters
+
+The direct `lz()` function supports externally calibrated IRT parameters, and
+the shared configuration surface can forward the same values through
+screening and composite workflows:
+
+```python
+options = IndexOptions(
+    lz_difficulty=item_difficulty,
+    lz_discrimination=item_discrimination,
+    lz_theta=respondent_theta,
+    lz_model="2pl",
+)
+result = screen(data, indices=["lz"], options=options, min_flags=1)
+```
+
+Difficulty and discrimination arrays must match the item count; theta must
+match the respondent count. For `lz_model="1pl"`, discrimination is fixed at
+one and `lz_discrimination` is ignored. Any omitted array retains the existing
+fallback estimate. Independently calibrated parameters are preferable when the
+usual LZ distributional interpretation matters; estimates derived from the
+same response matrix are convenient fallbacks, not equivalent validation.
+
 ## Consensus completeness
 
 An unavailable component score is not a flag. When incomplete item data or a

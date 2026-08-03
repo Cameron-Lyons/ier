@@ -69,6 +69,12 @@ The `infrequency` component also accepts `infrequency_missing`. Policies `omit`
 and `propagate` can produce unavailable scores; combine them with
 `min_valid_indices` when attention-check availability is required for a composite.
 
+The `lz` component accepts `lz_difficulty`, `lz_discrimination`, `lz_theta`,
+and `lz_model` through `IndexOptions`, matching the direct `lz()` API. Supplying
+independently calibrated values avoids fallback estimation from the response
+matrix and preserves the same low-score direction correction during
+combination.
+
 Screening-only response-style indices (`u3_poly`, `midpoint`, `acquiescence`,
 `onset`) are excluded from composite combination because they measure different
 constructs and can dilute pattern/consistency signals.

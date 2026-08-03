@@ -183,7 +183,10 @@ respondent batches. Complete and masked theta solvers compact their workspaces
 as respondents converge, so later safeguarded Newton iterations evaluate only
 the rows still solving. Both missing-removal and strict policies retain their
 established unavailable-value, constant-response, and extreme-parameter
-semantics without scalar per-item or per-respondent dispatch.
+semantics without scalar per-item or per-respondent dispatch. Shared index
+configuration forwards optional calibrated difficulty, discrimination, and
+ability arrays to this same kernel. Omitted arrays retain fallback estimation,
+while supplied arrays avoid recomputing their corresponding calibration stage.
 The CLI computes this transform from the final aggregate vector only when
 `--include-probability` is requested. JSON and CSV then serialize it
 forward-only, while NPZ stores one additional typed vector; index scoring is not

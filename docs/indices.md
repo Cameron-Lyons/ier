@@ -41,7 +41,7 @@ defaults, and options that must be configured before an index can run.
 | `onset` | Carelessness onset item index | present | no | no | `onset_window_size`, `onset_min_items` |
 | `evenodd` | Even-odd consistency | low | no | yes | `evenodd_factors`; exact two-pair shortcut |
 | `mad` | Mean absolute paired difference | high | no | yes | MAD item lists / optional scale bounds |
-| `lz` | lz person-fit | low | no | yes | optional IRT params via direct API; bounded, active-row-compacted complete/missing calibration; overflow-safe logistic kernel |
+| `lz` | lz person-fit | low | no | yes | optional IRT params via direct API or `IndexOptions`; bounded, active-row-compacted complete/missing calibration; overflow-safe logistic kernel |
 | `semantic_syn` | Predefined synonym consistency | low | no | yes | `semantic_item_pairs` |
 | `semantic_ant` | Predefined antonym consistency | low | no | yes | `semantic_item_pairs`, optional scale bounds |
 | `infrequency` | Failed attention / bogus items | high | no | yes | item indices, expected responses, missing policy |
@@ -51,6 +51,10 @@ profile under the default low-direction percentile rule.
 
 `individual_reliability(..., random_seed=...)` uses an isolated reproducible
 random stream. It does not reset or advance NumPy's process-wide random state.
+
+`IndexOptions` exposes calibrated LZ parameters as `lz_difficulty`,
+`lz_discrimination`, and `lz_theta`, with `lz_model` selecting `"1pl"` or
+`"2pl"`. Any omitted array retains the direct function's fallback estimate.
 
 `psychsyn(..., diag=True)` and `psychant(..., diag=True)` return each score with
 the number of selected item pairs actually available for that respondent.

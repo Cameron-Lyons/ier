@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.49] - 2026-08-03
+
+### Added
+
+- `IndexOptions` now accepts externally calibrated LZ difficulty,
+  discrimination, and respondent ability arrays together with the 1PL/2PL
+  model choice. `screen()`, `composite()`, and the other shared registry
+  workflows therefore reproduce direct `lz()` scoring without forcing
+  fallback estimation from the matrix being evaluated. Each omitted array
+  retains its established fallback, invalid lengths follow the existing soft
+  or strict orchestration policy, and no dependency is added. On 20,000
+  respondents by 80 items, the configured external-parameter workflow scored
+  complete responses in 0.0373 seconds versus 0.1906 seconds with all fallback
+  estimates, and responses with 10% missingness in 0.0346 seconds versus 0.2147
+  seconds. These timings reflect intentionally skipped calibration work rather
+  than a change to the LZ statistic.
+
 ## [2.19.48] - 2026-08-03
 
 ### Performance
