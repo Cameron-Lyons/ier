@@ -25,6 +25,9 @@ structure, and base rate of IER.
 
 Percentile-based public flagging helpers reject non-finite thresholds and
 percentiles outside `[0, 100]` instead of silently returning misleading flags.
+Their boundary rule matches `screen()`: fixed cutoffs are inclusive (at or
+beyond the cutoff), while sample-percentile cutoffs use strict tail comparisons
+so ties at the estimated percentile are not flagged.
 
 ## Literature-informed starting points
 

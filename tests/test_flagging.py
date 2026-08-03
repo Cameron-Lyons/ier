@@ -2,6 +2,7 @@
 
 import unittest
 from typing import Any, cast
+from unittest.mock import patch
 
 import numpy as np
 
@@ -52,6 +53,67 @@ class TestFlaggingValidation(unittest.TestCase):
             ),
             [False, False],
         )
+
+    def test_fixed_cutoffs_include_equality_and_percentile_cutoffs_exclude_ties(self) -> None:
+        scores = np.array([1.0, 2.0, 3.0, np.nan])
+        np.testing.assert_array_equal(
+            threshold_flags(scores, threshold=2.0, percentile=50.0, direction="high"),
+            [False, True, True, False],
+        )
+        np.testing.assert_array_equal(
+            threshold_flags(scores, threshold=2.0, percentile=50.0, direction="low"),
+            [True, True, False, False],
+        )
+        np.testing.assert_array_equal(
+            threshold_flags(scores, threshold=None, percentile=50.0, direction="high"),
+            [False, False, True, False],
+        )
+        np.testing.assert_array_equal(
+            threshold_flags(scores, threshold=None, percentile=50.0, direction="low"),
+            [True, False, False, False],
+        )
+
+    def test_public_flaggers_follow_shared_cutoff_boundaries(self) -> None:
+        scores = np.array([1.0, 2.0, 3.0, np.nan])
+        high_calls = [
+            ("ier.acquiescence.acquiescence", lambda: acquiescence_flag([[1.0]], threshold=2.0)),
+            ("ier.composite.composite", lambda: composite_flag([[1.0]], threshold=2.0)),
+            ("ier.mad.mad", lambda: mad_flag([[1.0]], threshold=2.0)),
+        ]
+        low_calls = [
+            ("ier.markov.markov", lambda: markov_flag([[1.0]], threshold=2.0)),
+            (
+                "ier.response_time.response_time",
+                lambda: (scores, response_time_flag([[1.0]], threshold=2.0)),
+            ),
+        ]
+
+        for target, call in high_calls:
+            with self.subTest(target=target), patch(target, return_value=scores):
+                _, flags = call()
+                np.testing.assert_array_equal(flags, [False, True, True, False])
+        for target, call in low_calls:
+            with self.subTest(target=target), patch(target, return_value=scores):
+                _, flags = call()
+                np.testing.assert_array_equal(flags, [True, True, False, False])
+
+    def test_public_percentile_flaggers_exclude_cutoff_ties(self) -> None:
+        scores = np.full(4, 2.0)
+        calls = [
+            ("ier.acquiescence.acquiescence", lambda: acquiescence_flag([[1.0]])),
+            ("ier.composite.composite", lambda: composite_flag([[1.0]])),
+            ("ier.mad.mad", lambda: mad_flag([[1.0]])),
+            ("ier.markov.markov", lambda: markov_flag([[1.0]], percentile=50.0)),
+            (
+                "ier.response_time.response_time",
+                lambda: (scores, response_time_flag([[1.0]], cutoff_percentile=50.0)),
+            ),
+        ]
+
+        for target, call in calls:
+            with self.subTest(target=target), patch(target, return_value=scores):
+                _, flags = call()
+                self.assertFalse(np.any(flags))
 
     def test_public_percentile_flaggers_share_validation(self) -> None:
         data = np.array([[1.0, 2.0, 3.0, 4.0], [2.0, 3.0, 4.0, 5.0], [3.0, 3.0, 3.0, 3.0]])

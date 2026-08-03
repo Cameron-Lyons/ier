@@ -71,7 +71,7 @@ def response_time_flag(
 
     Parameters:
     - times: A matrix of response times.
-    - threshold: Absolute threshold for flagging (in same units as times).
+    - threshold: Absolute threshold at or below which to flag (in the same units as times).
                  If None, uses cutoff_percentile to determine threshold.
     - method: Method for computing per-person response time ("mean" or "median").
     - cutoff_percentile: Percentile below which to flag (default 5th percentile).

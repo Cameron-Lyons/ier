@@ -144,7 +144,7 @@ def mad_flag(
     - negative_items: List of column indices for negatively-worded items.
     - item_pairs: Alternative list of (positive, negative) index tuples.
     - scale_max: Maximum value of the response scale.
-    - threshold: Absolute MAD threshold above which to flag. If None, uses percentile.
+    - threshold: Absolute MAD threshold at or above which to flag. If None, uses percentile.
     - percentile: Percentile cutoff for flagging (default 95th percentile).
     - na_rm: Boolean indicating whether to ignore missing values.
 

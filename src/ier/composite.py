@@ -189,6 +189,8 @@ def composite_flag(
 
     Configure with ``options=IndexOptions(...)``. Missing index config soft-fails
     by default; set ``strict=True`` to require every selected index to succeed.
+    Explicit thresholds include scores equal to the cutoff; percentile cutoffs
+    flag only scores strictly above the sample percentile.
 
     Returns:
     - Tuple of (composite_scores, flags) where flags is True for suspected

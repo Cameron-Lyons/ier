@@ -118,7 +118,7 @@ def markov_flag(
 
     Parameters:
     - x: A matrix of data where rows are individuals and columns are item responses.
-    - threshold: Absolute entropy threshold below which to flag. If None, uses percentile.
+    - threshold: Absolute entropy threshold at or below which to flag. If None, uses percentile.
     - percentile: Percentile below which to flag (default 5th percentile).
     - na_rm: If True, removes NaN values before analysis.
 
@@ -131,9 +131,7 @@ def markov_flag(
     """
     scores = markov(x, na_rm=na_rm)
 
-    flags = threshold_flags(
-        scores, threshold=threshold, percentile=percentile, direction="low", inclusive=True
-    )
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="low")
 
     return scores, flags
 
