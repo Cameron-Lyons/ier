@@ -5,6 +5,7 @@
       members:
         - IndexOptions
         - ResponseTimeArchive
+        - ResponseTimeMixtureModel
         - ResultArchive
         - ResponseTimeFlagDirection
         - ResponseTimeMetric
@@ -54,7 +55,9 @@
         - response_time
         - response_time_consistency
         - response_time_flag
+        - fit_response_time_mixture
         - response_time_mixture
+        - response_time_mixture_scores
         - response_time_score_flags
         - plot_distributions
         - plot_flag_counts

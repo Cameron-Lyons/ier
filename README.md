@@ -25,6 +25,7 @@ For a comprehensive methods review, see
 - Batched missing-response longest-run and repeating-pattern scoring
 - Batched dependency-free chi-square quantiles for large Mahalanobis Q-Q plots
 - Grouped missing-aware medians for response-time summaries and mixtures
+- Reusable response-time mixture calibration for fixed-reference and batched scoring
 - Adaptive bounded Guttman counters for narrow and wide response scales
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
@@ -370,7 +371,21 @@ cutoffs without recalculating row summaries or refitting a mixture. NPZ output
 loads through `load_response_time_archive()`, which validates its schema and
 returns the stored scores and provenance ready for the same sensitivity workflow.
 Use `save_response_time_archive()` to create the identical interoperable schema
-from Python. CLI users can reapply a cutoff without rescoring the original matrix:
+from Python.
+
+Fit a response-time mixture once on a reference cohort and reuse its immutable
+calibration on later cohorts without repeating EM:
+
+```python
+from ier import fit_response_time_mixture, response_time_mixture_scores
+
+model = fit_response_time_mixture(reference_times, n_components=3, random_seed=42)
+later_probabilities = response_time_mixture_scores(later_times, model)
+```
+
+Scoring retains the model's log-transform choice and fastest-component meaning;
+missing, infinite, or non-positive respondent medians remain unavailable. CLI
+users can reapply a cutoff without rescoring the original matrix:
 
 ```bash
 ier response-time-reflag timing.npz --percentile 1 --format npz --output strict.npz

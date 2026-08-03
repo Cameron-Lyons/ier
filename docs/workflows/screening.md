@@ -406,9 +406,11 @@ respondents. Call them directly or use the dedicated CLI command:
 
 ```python
 from ier import (
+    fit_response_time_mixture,
     load_response_time_archive,
     response_time,
     response_time_flag,
+    response_time_mixture_scores,
     response_time_score_flags,
     save_response_time_archive,
 )
@@ -416,6 +418,13 @@ from ier import (
 median_rt = response_time(times, metric="median")
 flags = response_time_flag(times, cutoff_percentile=5)
 stricter_flags = response_time_score_flags(median_rt, cutoff_percentile=1)
+
+mixture_model = fit_response_time_mixture(
+    reference_times,
+    n_components=3,
+    random_seed=42,
+)
+later_probabilities = response_time_mixture_scores(later_times, mixture_model)
 
 saved = load_response_time_archive("timing.npz")
 revised_flags = response_time_score_flags(
@@ -460,7 +469,11 @@ direction, scores, and identifiers and can atomically replace its input when NPZ
 output targets the same path.
 Mixture fitting excludes respondents whose median time is missing, infinite, or
 non-positive. Its posterior normalization remains stable when ordinary Gaussian
-density calculations underflow for an extreme valid observation.
+density calculations underflow for an extreme valid observation. A fitted
+`ResponseTimeMixtureModel` owns read-only parameter vectors and preserves the
+transform used during calibration. `response_time_mixture_scores()` applies it
+to later cohorts without refitting, including batches smaller than the component
+count, and returns an independently owned one-dimensional posterior vector.
 
 ## CLI
 

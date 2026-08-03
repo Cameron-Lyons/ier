@@ -1,17 +1,26 @@
 """Unit tests for response-time IER helpers."""
 
+from __future__ import annotations
+
 import unittest
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import numpy as np
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 from ier.response_time import (
+    ResponseTimeMixtureModel,
     _em_gaussian_mixture,
     _mixture_expectation,
+    fit_response_time_mixture,
     response_time,
     response_time_consistency,
     response_time_flag,
     response_time_mixture,
+    response_time_mixture_scores,
     response_time_score_flags,
 )
 
@@ -163,6 +172,16 @@ class TestResponseTime(unittest.TestCase):
 class TestResponseTimeMixture(unittest.TestCase):
     """Tests for response time mixture model."""
 
+    @staticmethod
+    def _separated_times(seed: int = 42) -> np.ndarray:
+        rng = np.random.default_rng(seed)
+        return np.vstack(
+            [
+                rng.lognormal(mean=-0.7, sigma=0.2, size=(20, 7)),
+                rng.lognormal(mean=1.2, sigma=0.35, size=(40, 7)),
+            ]
+        )
+
     def test_basic_functionality(self) -> None:
         """Test basic mixture model computation."""
         rng = np.random.default_rng(42)
@@ -216,6 +235,126 @@ class TestResponseTimeMixture(unittest.TestCase):
         r1 = response_time_mixture(times, random_seed=123)
         r2 = response_time_mixture(times, random_seed=123)
         np.testing.assert_array_almost_equal(r1, r2)
+
+    def test_reusable_model_matches_direct_training_scores(self) -> None:
+        times = self._separated_times()
+
+        model = fit_response_time_mixture(times, n_components=3, random_seed=17)
+        reused = response_time_mixture_scores(times, model)
+        direct = response_time_mixture(times, n_components=3, random_seed=17)
+
+        np.testing.assert_array_equal(reused, direct)
+        self.assertEqual(model.n_components, 3)
+        self.assertEqual(model.fast_component, int(np.argmin(model.means)))
+        self.assertTrue(model.log_transform)
+        self.assertFalse(model.weights.flags.writeable)
+        self.assertFalse(model.means.flags.writeable)
+        self.assertFalse(model.variances.flags.writeable)
+        self.assertIsNone(reused.base)
+
+    def test_reusable_model_scores_small_later_cohort_without_refitting(self) -> None:
+        model = fit_response_time_mixture(
+            self._separated_times(),
+            n_components=3,
+            random_seed=29,
+        )
+        later = np.array([[0.4, 0.5, 0.6], [np.nan, np.nan, np.nan]])
+
+        with patch(
+            "ier.response_time._fit_gaussian_mixture_model",
+            side_effect=AssertionError("unexpected refit"),
+        ):
+            scores = response_time_mixture_scores(later, model)
+
+        prepared = np.log(np.array([0.5]))
+        responsibilities = np.empty((1, model.n_components))
+        _mixture_expectation(
+            prepared,
+            model.weights,
+            model.means,
+            model.variances,
+            responsibilities,
+            np.empty(1),
+        )
+        self.assertEqual(scores[0], responsibilities[0, model.fast_component])
+        self.assertTrue(np.isnan(scores[1]))
+
+    def test_mixture_model_validates_and_owns_parameters(self) -> None:
+        weights = np.array([0.25, 0.75])
+        model = ResponseTimeMixtureModel(
+            weights=weights,
+            means=np.array([-1.0, 1.0]),
+            variances=np.array([0.5, 1.5]),
+        )
+        weights[0] = 0.5
+        np.testing.assert_array_equal(model.weights, [0.25, 0.75])
+
+        invalid_models: list[tuple[Callable[[], ResponseTimeMixtureModel], str]] = [
+            (
+                lambda: ResponseTimeMixtureModel(np.array([1.0]), np.array([0.0]), np.array([1.0])),
+                "at least two",
+            ),
+            (
+                lambda: ResponseTimeMixtureModel(
+                    np.array([0.5, 0.5]), np.array([0.0]), np.array([1.0, 1.0])
+                ),
+                "same length",
+            ),
+            (
+                lambda: ResponseTimeMixtureModel(
+                    np.array([0.0, 1.0]), np.array([-1.0, 1.0]), np.array([1.0, 1.0])
+                ),
+                "positive",
+            ),
+            (
+                lambda: ResponseTimeMixtureModel(
+                    np.array([0.4, 0.5]), np.array([-1.0, 1.0]), np.array([1.0, 1.0])
+                ),
+                "sum to one",
+            ),
+            (
+                lambda: ResponseTimeMixtureModel(
+                    np.array([0.5, 0.5]), np.array([-1.0, 1.0]), np.array([1.0, 0.0])
+                ),
+                "positive",
+            ),
+            (
+                lambda: ResponseTimeMixtureModel(
+                    np.array([0.5, 0.5]), np.array([0.0, np.inf]), np.array([1.0, 1.0])
+                ),
+                "finite",
+            ),
+            (
+                lambda: ResponseTimeMixtureModel(
+                    np.array([0.5, 0.5]),
+                    np.array([-1.0, 1.0]),
+                    np.array([1.0, 1.0]),
+                    log_transform=1,  # type: ignore[arg-type]
+                ),
+                "boolean",
+            ),
+        ]
+        for factory, message in invalid_models:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                factory()
+
+    def test_reusable_mixture_argument_validation(self) -> None:
+        times = self._separated_times()
+        for components in [True, 2.5]:
+            with (
+                self.subTest(components=components),
+                self.assertRaisesRegex(ValueError, "must be an integer"),
+            ):
+                fit_response_time_mixture(
+                    times,
+                    n_components=components,  # type: ignore[arg-type]
+                )
+        with self.assertRaisesRegex(ValueError, "must be at least 2"):
+            fit_response_time_mixture(times, n_components=1)
+        with self.assertRaisesRegex(ValueError, "log_transform must be a boolean"):
+            fit_response_time_mixture(times, log_transform=1)  # type: ignore[arg-type]
+        with self.assertRaisesRegex(TypeError, "model must be"):
+            response_time_mixture_scores(times, object())  # type: ignore[arg-type]
 
     def test_em_uses_pre_normalization_log_likelihood(self) -> None:
         """Test EM does not converge just because normalized responsibilities sum to one."""
