@@ -28,8 +28,8 @@ defaults, and options that must be configured before an index can run.
 | `longstring` | Max consecutive identical responses | high | yes | yes | — |
 | `longstring_pattern` | Repeating response patterns | high | yes | yes | `longstring_max_pattern_length` |
 | `mahad` | Mahalanobis distance (multivariate outlier) | high | yes | yes | — |
-| `psychsyn` | Psychometric synonym consistency | low | yes | yes | `psychsyn_critval` |
-| `psychant` | Psychometric antonym consistency | low | no | yes | `psychant_critval` |
+| `psychsyn` | Psychometric synonym consistency | low | yes | yes | `psychsyn_critval`; bounded pairwise-complete missing-data correlations |
+| `psychant` | Psychometric antonym consistency | low | no | yes | `psychant_critval`; bounded pairwise-complete missing-data correlations |
 | `person_total` | Agreement with the sample item profile | low* | yes | yes | — |
 | `markov` | Transition entropy | low | yes | yes | bounded dense/sparse and retained-length batches |
 | `missing_rate` | Missing-response proportion | high | no | yes | optional item subset / applicability mask |
@@ -51,6 +51,13 @@ profile under the default low-direction percentile rule.
 
 `individual_reliability(..., random_seed=...)` uses an isolated reproducible
 random stream. It does not reset or advance NumPy's process-wide random state.
+
+`psychsyn(..., diag=True)` and `psychant(..., diag=True)` return each score with
+the number of selected item pairs actually available for that respondent.
+Item-pair discovery uses all pairwise-complete observations, so isolated
+omissions no longer remove an entire item from the analysis. A respondent needs
+at least three usable pairs for a score; seeded retries keep the observed pair
+count unchanged.
 
 `mahad_qqplot()` generates dependency-free theoretical chi-square coordinates
 in bounded vector batches. Plotting remains optional; with `plot=False`, large

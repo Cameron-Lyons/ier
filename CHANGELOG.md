@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.47] - 2026-08-03
+
+### Added
+
+- Psychometric synonym and antonym discovery now uses pairwise-complete item
+  correlations when responses are missing, matching the reference method's
+  missing-data policy instead of discarding every item that contains an
+  omission. Respondent scores likewise use all available selected pairs,
+  diagnostics report their actual counts, and seeded retries preserve those
+  counts while requiring the established minimum of three usable pairs.
+  Complete matrices retain the existing normalized-column fast path and locked
+  results. On scattered 5% missing-response benchmarks, the bounded kernel
+  scored all 780 pairs for 8,000 respondents by 40 items in 0.0681 seconds with
+  8.8 MiB peak traced allocation, and all 3,160 pairs for 20,000 respondents by
+  80 items in 0.6682 seconds with the same peak. Large-offset stability is
+  preserved, workspaces remain bounded, and no dependency is added.
+
 ## [2.19.46] - 2026-08-03
 
 ### Performance

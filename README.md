@@ -14,7 +14,7 @@ For a comprehensive methods review, see
 - Validated, pickle-free score and response-time archive persistence
 - Auto-detecting archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
-- Bounded item-correlation discovery for high-dimensional psychometric synonym analyses
+- Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
 - Contracted complete and bounded masked missing-response LZ estimation
 - Allocation-bounded split-half reliability with stable raw-moment correlations
 - Exact low-allocation two-point correlations for common even-odd factor designs

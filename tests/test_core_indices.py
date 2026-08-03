@@ -1,7 +1,6 @@
 """Unit tests for core IER indices and helpers."""
 
 import unittest
-import warnings
 from collections.abc import Iterator
 from typing import Any, cast
 from unittest.mock import patch
@@ -25,8 +24,8 @@ from ier.psychsyn import (
     _compute_person_scores,
     _discover_item_pairs,
     _iter_item_correlation_tiles,
+    _iter_pairwise_item_correlation_tiles,
     _normalized_item_columns,
-    _resample_missing_correlations,
     compute_person_correlations,
     get_highly_correlated_pairs,
     psychant,
@@ -629,6 +628,25 @@ class TestPsychometricFunctions(unittest.TestCase):
             [[1, 2, 3, 4], [2, 3, 4, 5], [3, 4, 5, 6], [4, 5, 6, 7]]
         )
 
+    @staticmethod
+    def _pairwise_item_correlation_reference(data: np.ndarray) -> np.ndarray:
+        """Build a scalar pairwise-complete item correlation reference."""
+        n_items = data.shape[1]
+        correlations = np.full((n_items, n_items), np.nan)
+        for row in range(n_items):
+            for column in range(n_items):
+                valid = np.isfinite(data[:, row]) & np.isfinite(data[:, column])
+                if np.count_nonzero(valid) < 2:
+                    continue
+                left = data[valid, row]
+                right = data[valid, column]
+                if np.ptp(left) == 0.0 or np.ptp(right) == 0.0:
+                    continue
+                left = left - left[0]
+                right = right - right[0]
+                correlations[row, column] = np.corrcoef(left, right)[0, 1]
+        return correlations
+
     def test_psychsyn_basic(self) -> None:
         """Test basic psychometric synonym scoring."""
         scores: npt.NDArray[np.float64] = psychsyn(self.data)
@@ -686,20 +704,34 @@ class TestPsychometricFunctions(unittest.TestCase):
         self.assertTrue(all(abs(t[2]) >= 0.5 for t in results))
 
     def test_bounded_pair_discovery_matches_correlation_matrix_reference(self) -> None:
-        """Triangular blocks preserve pair thresholds, order, and missing semantics."""
+        """Triangular blocks preserve pairwise-complete thresholds and order."""
         rng = np.random.default_rng(20260803)
         data = rng.normal(size=(53, 17))
         data[:, 2] = 1.0
         data[0, 5] = np.nan
-        with np.errstate(divide="ignore", invalid="ignore"):
-            correlations = np.corrcoef(data, rowvar=False)
-        comparable = np.nan_to_num(correlations, nan=0.0)
+        data[1, 8] = np.nan
+        data[2, 11] = np.inf
+        correlations = self._pairwise_item_correlation_reference(data)
 
         for critval, anto in ((0.2, False), (-0.2, True), (0.0, False), (0.0, True)):
             with self.subTest(critval=critval, anto=anto):
-                expected = get_highly_correlated_pairs(comparable, critval, anto)
+                expected = get_highly_correlated_pairs(correlations, critval, anto)
                 actual = _discover_item_pairs(data, critval, anto)
                 np.testing.assert_array_equal(actual, expected)
+
+    def test_pair_discovery_excludes_undefined_zero_threshold_pairs(self) -> None:
+        """Undefined constant or nonoverlapping pairs never match a zero cutoff."""
+        data = np.array(
+            [
+                [1.0, np.nan, 2.0],
+                [2.0, np.nan, 2.0],
+                [np.nan, 1.0, 2.0],
+                [np.nan, 2.0, 2.0],
+            ]
+        )
+
+        self.assertEqual(len(_discover_item_pairs(data, 0.0, False)), 0)
+        self.assertEqual(len(_discover_item_pairs(data, 0.0, True)), 0)
 
     def test_critical_value_catalog_matches_correlation_matrix_reference(self) -> None:
         """Blockwise correlation catalogs retain values and ranking direction."""
@@ -735,6 +767,31 @@ class TestPsychometricFunctions(unittest.TestCase):
                     atol=5e-16,
                 )
 
+    def test_missing_critical_value_catalog_uses_pairwise_complete_values(self) -> None:
+        """The public cutoff catalog retains partially observed item correlations."""
+        rng = np.random.default_rng(39)
+        data = rng.normal(size=(43, 9))
+        data[rng.random(data.shape) < 0.15] = np.nan
+        correlations = self._pairwise_item_correlation_reference(data)
+        rows, columns = np.triu_indices(data.shape[1], k=1)
+        values = correlations[rows, columns]
+        selected = np.isfinite(values) & (np.abs(values) >= 0.1)
+
+        for anto in (False, True):
+            with self.subTest(anto=anto):
+                order = np.argsort(values[selected]) if anto else np.argsort(-values[selected])
+                actual = psychsyn_critval(data, anto=anto, min_correlation=0.1)
+                np.testing.assert_array_equal(
+                    [(left, right) for left, right, _ in actual],
+                    np.column_stack((rows[selected], columns[selected]))[order],
+                )
+                np.testing.assert_allclose(
+                    [value for _, _, value in actual],
+                    values[selected][order],
+                    rtol=0.0,
+                    atol=1e-15,
+                )
+
     def test_item_correlation_tiles_obey_forced_workspace_bound(self) -> None:
         """Forced tiny blocks cover each lower-triangle pair exactly once."""
         rng = np.random.default_rng(41)
@@ -751,6 +808,84 @@ class TestPsychometricFunctions(unittest.TestCase):
             pairs[np.lexsort((pairs[:, 1], pairs[:, 0]))],
             expected,
         )
+
+    def test_pairwise_item_correlation_tiles_match_scalar_reference(self) -> None:
+        """Missing-data tiles match scalar pairwise correlations under tiny bounds."""
+        rng = np.random.default_rng(43)
+        data = rng.normal(size=(31, 13))
+        data[rng.random(data.shape) < 0.12] = np.nan
+        data[:, 4] = 2.0
+        expected = self._pairwise_item_correlation_reference(data)
+
+        with patch("ier.psychsyn._PSYCHSYN_CORRELATION_BLOCK_ELEMENTS", 25):
+            tiles = list(_iter_pairwise_item_correlation_tiles(data))
+
+        for rows, columns, values in tiles:
+            np.testing.assert_allclose(
+                values,
+                expected[rows, columns],
+                rtol=0.0,
+                atol=1e-15,
+                equal_nan=True,
+            )
+        pairs = np.concatenate([np.column_stack((rows, columns)) for rows, columns, _ in tiles])
+        expected_pairs = np.column_stack(np.tril_indices(data.shape[1], k=-1))
+        np.testing.assert_array_equal(
+            pairs[np.lexsort((pairs[:, 1], pairs[:, 0]))],
+            expected_pairs,
+        )
+
+    def test_pairwise_item_correlations_are_stable_for_large_offsets(self) -> None:
+        """Column offsets prevent raw-moment cancellation with missing values."""
+        rng = np.random.default_rng(45)
+        data = 1e12 + rng.normal(size=(47, 9))
+        data[rng.random(data.shape) < 0.1] = np.nan
+        expected = self._pairwise_item_correlation_reference(data)
+
+        with patch("ier.psychsyn._PSYCHSYN_CORRELATION_BLOCK_ELEMENTS", 36):
+            tiles = list(_iter_pairwise_item_correlation_tiles(data))
+
+        for rows, columns, values in tiles:
+            np.testing.assert_allclose(
+                values,
+                expected[rows, columns],
+                rtol=0.0,
+                atol=1e-12,
+                equal_nan=True,
+            )
+
+    def test_public_psychsyn_retains_pairwise_complete_items_and_counts(self) -> None:
+        """Scattered omissions retain discoverable items and usable respondent pairs."""
+        rng = np.random.default_rng(47)
+        latent = rng.normal(size=(80, 1))
+        data = latent + rng.normal(scale=0.05, size=(80, 8))
+        for item in range(data.shape[1]):
+            data[item, item] = np.nan
+        original = data.copy()
+
+        scores, pair_counts, item_pairs = psychsyn(
+            data,
+            critval=0.8,
+            diag=True,
+            resample_na=False,
+            _return_item_info=True,
+        )
+        expected_pairs = np.column_stack(np.tril_indices(data.shape[1], k=-1))
+        np.testing.assert_array_equal(item_pairs, expected_pairs)
+
+        expected_scores = np.empty(len(data))
+        expected_counts = np.empty(len(data), dtype=int)
+        for index, row in enumerate(data):
+            left = row[item_pairs[:, 0]]
+            right = row[item_pairs[:, 1]]
+            valid = np.isfinite(left) & np.isfinite(right)
+            expected_counts[index] = np.count_nonzero(valid)
+            expected_scores[index] = np.corrcoef(left[valid], right[valid])[0, 1]
+
+        np.testing.assert_allclose(scores, expected_scores, rtol=0.0, atol=2e-15)
+        np.testing.assert_array_equal(pair_counts, expected_counts)
+        self.assertTrue(np.all(pair_counts[:8] < len(item_pairs)))
+        np.testing.assert_array_equal(data, original)
 
     def test_public_pair_discovery_does_not_build_a_square_matrix(self) -> None:
         """Both public discovery paths stay behind the bounded block implementation."""
@@ -835,8 +970,18 @@ class TestPsychometricFunctions(unittest.TestCase):
         np.testing.assert_allclose(public_scores, expected_scores, rtol=0.0, atol=2e-15)
         np.testing.assert_array_equal(public_diag, expected_diag)
 
+    def test_psychsyn_requires_three_available_pairs(self) -> None:
+        """Fewer than three item pairs remain diagnostically visible but unscored."""
+        data = np.array([[1.0, 2.0, 3.0], [3.0, 2.0, 1.0]])
+        item_pairs = np.array([[0, 1], [0, 2]])
+
+        scores, counts = _compute_complete_person_scores(data, item_pairs)
+
+        self.assertTrue(np.isnan(scores).all())
+        np.testing.assert_array_equal(counts, [2, 2])
+
     def test_missing_psychsyn_batches_match_expanded_formula(self) -> None:
-        """Missing and seeded-resampling paths preserve the expanded formula."""
+        """Missing batches use every finite pair and preserve input values."""
         from ier._correlation import row_correlations
 
         rng = np.random.default_rng(20260802)
@@ -844,26 +989,21 @@ class TestPsychometricFunctions(unittest.TestCase):
         data = latent + rng.normal(scale=0.2, size=(71, 10))
         data[::7, 0] = np.nan
         data[::11, 3] = np.nan
-        correlations = np.corrcoef(data, rowvar=False)
-        correlations[np.isnan(correlations)] = 0.0
-        item_pairs = get_highly_correlated_pairs(correlations, critval=0.0, anto=False)
+        item_pairs = np.column_stack(np.tril_indices(data.shape[1], k=-1))
 
         response_i = data[:, item_pairs[:, 0]]
         response_j = data[:, item_pairs[:, 1]]
-        person_corrs = compute_person_correlations(response_i, response_j)
-        person_corrs[np.isnan(response_i) | np.isnan(response_j)] = np.nan
-        expected_diag = np.sum(~np.isnan(person_corrs), axis=1)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            expected_scores = np.nanmean(person_corrs, axis=1)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            resampled = _resample_missing_correlations(
-                person_corrs,
-                np.random.default_rng(42),
-            )
-        expected_resampled_scores = np.mean(resampled, axis=1)
-        expected_resampled_diag = np.sum(~np.isnan(resampled), axis=1)
+        valid = np.isfinite(response_i) & np.isfinite(response_j)
+        expected_diag = np.sum(valid, axis=1)
+        response_i[~valid] = np.nan
+        response_j[~valid] = np.nan
+        expected_scores = row_correlations(
+            response_i,
+            response_j,
+            zero_variance=np.nan,
+        )
+        expected_scores[expected_diag < 3] = np.nan
+        original = data.copy()
 
         with (
             patch("ier.psychsyn._PSYCHSYN_BATCH_ELEMENTS", len(item_pairs)),
@@ -879,47 +1019,50 @@ class TestPsychometricFunctions(unittest.TestCase):
                 resample_na=False,
                 rng=np.random.default_rng(42),
             )
-            resampled_scores, resampled_diag = _compute_person_scores(
-                data,
-                item_pairs,
-                resample_na=True,
-                rng=np.random.default_rng(42),
-            )
-
-        self.assertGreater(contracted.call_count, 2)
+        self.assertGreater(contracted.call_count, 1)
         self.assertTrue(
             all(call.args[0].size <= len(item_pairs) for call in contracted.call_args_list)
         )
         np.testing.assert_allclose(scores, expected_scores, rtol=0.0, atol=2e-15, equal_nan=True)
         np.testing.assert_array_equal(diag, expected_diag)
-        np.testing.assert_allclose(
-            resampled_scores,
-            expected_resampled_scores,
-            rtol=0.0,
-            atol=2e-15,
-        )
-        np.testing.assert_array_equal(resampled_diag, expected_resampled_diag)
+        np.testing.assert_array_equal(data, original)
 
-    def test_resample_missing_correlations_edge_cases(self) -> None:
-        """Test missing-correlation resampling covers all-missing and partial rows."""
-        no_missing = np.array([[0.5, -0.5]])
-        np.testing.assert_array_equal(
-            _resample_missing_correlations(no_missing, np.random.default_rng(42)),
-            no_missing,
-        )
-
-        person_corrs = np.array(
+    def test_missing_psychsyn_resampling_retries_only_eligible_rows(self) -> None:
+        """Seeded pair-direction retries preserve pair counts and insufficient rows."""
+        data = np.array(
             [
-                [np.nan, np.nan],
-                [0.5, np.nan],
-                [0.25, -0.25],
+                [1.0, 1.0, 2.0, 3.0],
+                [1.0, np.nan, 2.0, 3.0],
             ]
         )
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            result = _resample_missing_correlations(person_corrs, np.random.default_rng(42))
-        self.assertFalse(np.isnan(result).any())
-        np.testing.assert_array_equal(result[2], person_corrs[2])
+        item_pairs = np.array([[0, 1], [0, 2], [0, 3]])
+
+        plain_scores, plain_counts = _compute_person_scores(
+            data,
+            item_pairs,
+            resample_na=False,
+            rng=np.random.default_rng(42),
+        )
+        first_scores, first_counts = _compute_person_scores(
+            data,
+            item_pairs,
+            resample_na=True,
+            rng=np.random.default_rng(42),
+        )
+        second_scores, second_counts = _compute_person_scores(
+            data,
+            item_pairs,
+            resample_na=True,
+            rng=np.random.default_rng(42),
+        )
+
+        self.assertTrue(np.isnan(plain_scores).all())
+        self.assertTrue(np.isfinite(first_scores[0]))
+        self.assertTrue(np.isnan(first_scores[1]))
+        np.testing.assert_array_equal(first_scores, second_scores)
+        np.testing.assert_array_equal(plain_counts, [3, 2])
+        np.testing.assert_array_equal(first_counts, plain_counts)
+        np.testing.assert_array_equal(second_counts, plain_counts)
 
     def test_psychsyn_edge_cases(self) -> None:
         """Test psychsyn handles edge cases like high thresholds and constant data."""

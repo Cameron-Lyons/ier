@@ -88,16 +88,186 @@ def _iter_item_correlation_tiles(
             )
 
 
+def _pairwise_item_correlation_tile(
+    x: np.ndarray,
+    item_offsets: np.ndarray,
+    row_start: int,
+    row_stop: int,
+    column_start: int,
+    column_stop: int,
+) -> np.ndarray:
+    """Correlate two item blocks from pairwise-complete raw moments."""
+    row_width = row_stop - row_start
+    column_width = column_stop - column_start
+    shape = (row_width, column_width)
+    counts = np.zeros(shape, dtype=np.intp)
+    sums_row = np.zeros(shape)
+    sums_column = np.zeros(shape)
+    sums_squares_row = np.zeros(shape)
+    sums_squares_column = np.zeros(shape)
+    correlations = np.zeros(shape)
+    same_tile = row_start == column_start and row_stop == column_stop
+    batch_rows = max(
+        1,
+        _PSYCHSYN_CORRELATION_BLOCK_ELEMENTS // max(1, row_width + column_width),
+    )
+
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        row_values = np.array(x[start:stop, row_start:row_stop], dtype=float, copy=True)
+        row_valid = np.isfinite(row_values)
+        np.subtract(
+            row_values,
+            item_offsets[row_start:row_stop],
+            out=row_values,
+            where=row_valid,
+        )
+        row_values[~row_valid] = 0.0
+
+        if same_tile:
+            column_values = row_values
+            column_valid = row_valid
+        else:
+            column_values = np.array(
+                x[start:stop, column_start:column_stop],
+                dtype=float,
+                copy=True,
+            )
+            column_valid = np.isfinite(column_values)
+            np.subtract(
+                column_values,
+                item_offsets[column_start:column_stop],
+                out=column_values,
+                where=column_valid,
+            )
+            column_values[~column_valid] = 0.0
+
+        counts += np.matmul(row_valid.T, column_valid, dtype=np.intp)
+        correlations += row_values.T @ column_values
+        sums_row += row_values.T @ column_valid
+        row_squares = np.square(row_values)
+        sums_squares_row += row_squares.T @ column_valid
+
+        if not same_tile:
+            sums_column += row_valid.T @ column_values
+            sums_squares_column += row_valid.T @ np.square(column_values)
+
+    if same_tile:
+        sums_column = sums_row.T.copy()
+        sums_squares_column = sums_squares_row.T.copy()
+
+    usable = counts >= 2
+    count_values = counts.astype(float)
+    adjustment = np.zeros(shape)
+
+    np.multiply(sums_row, sums_column, out=adjustment)
+    np.divide(adjustment, count_values, out=adjustment, where=usable)
+    correlations -= adjustment
+
+    np.square(sums_row, out=sums_row)
+    np.divide(sums_row, count_values, out=sums_row, where=usable)
+    sums_squares_row -= sums_row
+    np.square(sums_column, out=sums_column)
+    np.divide(sums_column, count_values, out=sums_column, where=usable)
+    sums_squares_column -= sums_column
+
+    np.maximum(sums_squares_row, 0.0, out=sums_squares_row)
+    np.maximum(sums_squares_column, 0.0, out=sums_squares_column)
+    np.multiply(
+        sums_squares_row,
+        sums_squares_column,
+        out=sums_squares_row,
+    )
+    np.sqrt(sums_squares_row, out=sums_squares_row)
+    usable &= sums_squares_row > 0.0
+
+    result = np.full(shape, np.nan)
+    np.divide(
+        correlations,
+        sums_squares_row,
+        out=result,
+        where=usable,
+    )
+    np.clip(result, -1.0, 1.0, out=result)
+    return result
+
+
+def _finite_item_offsets(x: np.ndarray) -> np.ndarray:
+    """Choose finite column origins without cancellation or a matrix-sized temporary."""
+    n_rows, n_items = x.shape
+    offsets = np.zeros(n_items)
+    found = np.zeros(n_items, dtype=bool)
+    batch_rows = max(1, _PSYCHSYN_CORRELATION_BLOCK_ELEMENTS // n_items)
+
+    for start in range(0, n_rows, batch_rows):
+        stop = min(start + batch_rows, n_rows)
+        block = x[start:stop]
+        valid = np.isfinite(block)
+        newly_found = ~found & np.any(valid, axis=0)
+        if np.any(newly_found):
+            columns = np.flatnonzero(newly_found)
+            rows = np.argmax(valid[:, columns], axis=0)
+            offsets[columns] = block[rows, columns]
+            found[columns] = True
+        if np.all(found):
+            break
+
+    return offsets
+
+
+def _iter_pairwise_item_correlation_tiles(
+    x: np.ndarray,
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Yield pairwise-complete item correlations in bounded triangular tiles."""
+    n_items = x.shape[1]
+    tile_width = max(1, isqrt(_PSYCHSYN_CORRELATION_BLOCK_ELEMENTS))
+    all_indices = np.arange(n_items, dtype=np.intp)
+    item_offsets = _finite_item_offsets(x)
+
+    for row_start in range(0, n_items, tile_width):
+        row_stop = min(row_start + tile_width, n_items)
+        row_indices = all_indices[row_start:row_stop]
+        for column_start in range(0, row_stop, tile_width):
+            column_stop = min(column_start + tile_width, row_stop)
+            column_indices = all_indices[column_start:column_stop]
+            correlations = _pairwise_item_correlation_tile(
+                x,
+                item_offsets,
+                row_start,
+                row_stop,
+                column_start,
+                column_stop,
+            )
+
+            lower_rows, lower_columns = np.nonzero(
+                row_indices[:, np.newaxis] > column_indices[np.newaxis, :]
+            )
+            if len(lower_rows) == 0:
+                continue
+            yield (
+                row_indices[lower_rows],
+                column_indices[lower_columns],
+                correlations[lower_rows, lower_columns],
+            )
+
+
+def _iter_discovery_correlation_tiles(
+    x: np.ndarray,
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Use the fast complete-data kernel or pairwise-complete missing-data kernel."""
+    if np.isfinite(x).all():
+        normalized, valid_columns = _normalized_item_columns(x)
+        yield from _iter_item_correlation_tiles(normalized, valid_columns)
+        return
+
+    yield from _iter_pairwise_item_correlation_tiles(x)
+
+
 def _discover_item_pairs(x: np.ndarray, critval: float, anto: bool) -> np.ndarray:
     """Discover threshold-matching item pairs without a complete square matrix."""
-    normalized, valid_columns = _normalized_item_columns(x)
     selected_blocks: list[np.ndarray] = []
-    for row_indices, column_indices, correlations in _iter_item_correlation_tiles(
-        normalized,
-        valid_columns,
-    ):
-        comparable = np.nan_to_num(correlations, nan=0.0)
-        selected = comparable <= critval if anto else comparable >= critval
+    for row_indices, column_indices, correlations in _iter_discovery_correlation_tiles(x):
+        selected = correlations <= critval if anto else correlations >= critval
         if np.any(selected):
             selected_blocks.append(
                 np.column_stack((row_indices[selected], column_indices[selected]))
@@ -293,6 +463,8 @@ def _compute_complete_person_scores(
     """Score finite responses in bounded respondent batches."""
     scores = np.empty(len(x))
     n_pairs = len(item_pairs)
+    if n_pairs < 3:
+        return np.full(len(x), np.nan), np.full(len(x), n_pairs, dtype=int)
     batch_rows = max(1, _PSYCHSYN_BATCH_ELEMENTS // n_pairs)
 
     for start in range(0, len(x), batch_rows):
@@ -326,81 +498,73 @@ def _compute_person_scores(
         stop = min(start + batch_rows, n_rows)
         response_i = x[start:stop, item_pairs[:, 0]]
         response_j = x[start:stop, item_pairs[:, 1]]
-        finite_rows = np.isfinite(response_i).all(axis=1)
-        finite_rows &= np.isfinite(response_j).all(axis=1)
+        valid = np.isfinite(response_i) & np.isfinite(response_j)
+        valid_counts = np.sum(valid, axis=1, dtype=np.intp)
+        response_i[~valid] = np.nan
+        response_j[~valid] = np.nan
 
-        batch_scores = row_correlations(response_i, response_j)
-        batch_scores[~finite_rows] = np.nan
+        batch_scores = row_correlations(
+            response_i,
+            response_j,
+            zero_variance=np.nan,
+        )
+        batch_scores[valid_counts < 3] = np.nan
         scores[start:stop] = batch_scores
-        diag_values[start:stop] = finite_rows * n_pairs
+        diag_values[start:stop] = valid_counts
 
     missing_rows = np.isnan(scores)
     if not resample_na or not np.any(missing_rows):
         return scores, diag_values
 
-    overall_mean = 0.0 if np.all(missing_rows) else float(np.abs(np.mean(scores[~missing_rows])))
-
-    missing_indices = np.flatnonzero(missing_rows)
-    for start in range(0, len(missing_indices), batch_rows):
-        row_indices = missing_indices[start : start + batch_rows]
-        random_signs = rng.choice([-1, 1], size=(len(row_indices), n_pairs))
-        scores[row_indices] = np.mean(random_signs, axis=1) * overall_mean
-
-    diag_values[missing_rows] = n_pairs
+    _resample_undefined_person_scores(
+        x,
+        item_pairs,
+        scores,
+        diag_values,
+        rng,
+        batch_rows,
+    )
     return scores, diag_values
 
 
-def _resample_missing_correlations(
-    person_corrs: np.ndarray, rng: np.random.Generator
-) -> np.ndarray:
-    """
-    Resample missing correlations based on available data.
+def _resample_undefined_person_scores(
+    x: np.ndarray,
+    item_pairs: np.ndarray,
+    scores: np.ndarray,
+    pair_counts: np.ndarray,
+    rng: np.random.Generator,
+    batch_rows: int,
+) -> None:
+    """Retry undefined correlations by randomly swapping available pair directions."""
+    unresolved = np.flatnonzero(np.isnan(scores) & (pair_counts >= 3))
 
-    Parameters:
-    - person_corrs: Array of person correlations with potential NaN values
+    for start in range(0, len(unresolved), batch_rows):
+        row_indices = unresolved[start : start + batch_rows]
+        left = x[row_indices[:, np.newaxis], item_pairs[:, 0]]
+        right = x[row_indices[:, np.newaxis], item_pairs[:, 1]]
+        valid = np.isfinite(left) & np.isfinite(right)
+        left[~valid] = np.nan
+        right[~valid] = np.nan
 
-    Returns:
-    - Array with resampled values replacing NaN
-    """
-    missing_mask = np.isnan(person_corrs)
-    total_missing = missing_mask.sum()
+        pending = np.arange(len(row_indices))
+        for _ in range(10):
+            swap = rng.integers(0, 2, size=left.shape, dtype=np.int8).astype(bool)
+            swap &= valid
+            held = left[swap].copy()
+            left[swap] = right[swap]
+            right[swap] = held
 
-    if total_missing == 0:
-        return person_corrs
-
-    result = person_corrs.copy()
-    n_pairs = result.shape[1]
-
-    all_nan_rows = missing_mask.all(axis=1)
-
-    with np.errstate(invalid="ignore"):
-        row_means = np.abs(np.nanmean(result, axis=1))
-
-    overall_mean = np.abs(np.nanmean(result))
-    row_means[all_nan_rows] = overall_mean if not np.isnan(overall_mean) else 0.0
-
-    random_signs = rng.choice([-1, 1], size=total_missing)
-
-    if all_nan_rows.any():
-        all_nan_count = all_nan_rows.sum() * n_pairs
-        result[all_nan_rows] = (
-            random_signs[:all_nan_count].reshape(-1, n_pairs) * row_means[all_nan_rows, np.newaxis]
-        )
-        remaining_signs = random_signs[all_nan_count:]
-    else:
-        remaining_signs = random_signs
-
-    has_some_valid = ~all_nan_rows & missing_mask.any(axis=1)
-    if has_some_valid.any():
-        partial_missing_mask = missing_mask & has_some_valid[:, np.newaxis]
-        row_indices = np.broadcast_to(np.arange(result.shape[0])[:, np.newaxis], result.shape)[
-            partial_missing_mask
-        ]
-        result[partial_missing_mask] = (
-            remaining_signs[: partial_missing_mask.sum()] * row_means[row_indices]
-        )
-
-    return result
+            candidates = row_correlations(
+                left[pending],
+                right[pending],
+                zero_variance=np.nan,
+            )
+            resolved = np.isfinite(candidates)
+            if np.any(resolved):
+                scores[row_indices[pending[resolved]]] = candidates[resolved]
+                pending = pending[~resolved]
+            if len(pending) == 0:
+                break
 
 
 def psychsyn_critval(
@@ -429,13 +593,9 @@ def psychsyn_critval(
 
     x_array = validate_matrix_input(x, min_columns=2)
 
-    normalized, valid_columns = _normalized_item_columns(x_array)
     pair_blocks: list[np.ndarray] = []
     correlation_blocks: list[np.ndarray] = []
-    for row_indices, column_indices, correlations in _iter_item_correlation_tiles(
-        normalized,
-        valid_columns,
-    ):
+    for row_indices, column_indices, correlations in _iter_discovery_correlation_tiles(x_array):
         selected = ~np.isnan(correlations) & (np.abs(correlations) >= min_correlation)
         if np.any(selected):
             pair_blocks.append(np.column_stack((column_indices[selected], row_indices[selected])))
