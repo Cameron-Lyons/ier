@@ -10,17 +10,21 @@ structure, and base rate of IER.
    independent families (consistency, pattern, outlier, attention check) rather
    than a single index. `screen()` exposes this decision as `consensus_flags` and
    defaults to requiring two per-index flags; tune it with `min_flags`.
-2. **Use sample-relative percentiles carefully.** Default `screen(..., percentile=95)`
+2. **Require enough evaluable signals.** When missing inputs can make component
+   scores unavailable, set `min_valid_indices` so consensus is withheld rather
+   than inferred from too little evidence. Inspect `valid_index_counts` and
+   `consensus_eligible` in the result.
+3. **Use sample-relative percentiles carefully.** Default `screen(..., percentile=95)`
    and `composite_flag(..., percentile=95)` are convenient starting points, not
    gold standards. With small *N*, percentiles are unstable.
-3. **Reuse validated cutoffs.** When prior validation supports fixed cutoffs, pass
+4. **Reuse validated cutoffs.** When prior validation supports fixed cutoffs, pass
    them by index (for example, `screen(data, thresholds={"irv": 0.25,
    "longstring": 8})`). The result reports the actual cutoff used for every index.
-4. **Anchor with designed checks.** Infrequency / instructed-response items give
+5. **Anchor with designed checks.** Infrequency / instructed-response items give
    confirmatory evidence when available (`infrequency`).
-5. **Inspect before excluding.** Review open-ended responses, timestamps, and
+6. **Inspect before excluding.** Review open-ended responses, timestamps, and
    substantive patterns before listwise deletion.
-6. **Report sensitivity.** Show how results change under alternate cutoffs
+7. **Report sensitivity.** Show how results change under alternate cutoffs
    (e.g., 90th vs 95th vs 99th percentile).
 
 Percentile-based public flagging helpers reject non-finite thresholds and

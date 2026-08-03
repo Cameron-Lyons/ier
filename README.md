@@ -16,6 +16,7 @@ For a comprehensive methods review, see
 - Opt-in uncalibrated logistic composite values in every CLI output format
 - Opt-in minimum valid-index requirements for defensible composite coverage
 - Configurable multi-index consensus decisions for respondent-level screening
+- Opt-in minimum valid-index requirements and eligibility reporting for screening consensus
 - Fixed or sample-relative per-index screening thresholds
 - Skip-logic-aware missing-response rates with required-item subsets and applicability masks
 - Configurable attention-check missing policies with count or proportion scoring
@@ -65,6 +66,7 @@ print("IRV:", irv(data))
 result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print("Indices:", result["indices_used"])
 print("Flag counts:", result["flag_counts"])
+print("Valid index counts:", result["valid_index_counts"])
 print("Consensus flags:", result["consensus_flags"])
 
 scores = composite(data, indices=["irv", "longstring", "person_total", "markov"])
@@ -102,6 +104,7 @@ large_result = screen(data, workers=4)
 ier screen data.csv --scale-min 1 --scale-max 5
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
+ier screen data.csv --indices irv longstring missing_rate --min-valid-indices 2
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --workers 4
 ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
@@ -154,6 +157,11 @@ After index scoring, screening flag counts and composite scores are reduced one
 index at a time. Large multi-index workflows therefore avoid a second
 respondent-by-index matrix while retaining every per-index score and flag in the
 result.
+
+Set `screen(..., min_valid_indices=N)` or CLI `--min-valid-indices N` to require
+at least `N` available index scores before a respondent is eligible for a
+consensus decision. Results always include per-respondent `valid_index_counts`
+and `consensus_eligible`; omitting the requirement preserves existing decisions.
 
 All composite helpers accept optional positive finite `weights`. Weighting is
 applied after low-is-suspicious indices are direction-corrected and after

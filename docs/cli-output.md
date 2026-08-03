@@ -63,8 +63,12 @@ Row positions are respondent identifiers when `respondent_ids` is absent.
 ### Screen schema
 
 `screen` archives include `n_indices`, `min_flags`, `index_names`, `thresholds`,
-`flag_counts`, and `consensus_flags`. Numeric thresholds align with
-`index_names`; `NaN` represents a presence-based index without a numeric cutoff.
+`flag_counts`, `valid_index_counts`, `consensus_eligible`, and `consensus_flags`.
+When `--min-valid-indices` is supplied, the scalar `min_valid_indices` records
+the completeness requirement. Numeric thresholds align with `index_names`;
+`NaN` represents a presence-based index without a numeric cutoff. JSON exposes
+the same availability fields and uses `null` for an unset minimum. CSV includes
+`valid_index_count` and `consensus_eligible` columns for every respondent.
 
 Each successful index has a `score__NAME` float vector and `flag__NAME` boolean
 vector. Summary values use `summary_columns`, `summary_statistics`, and

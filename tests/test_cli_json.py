@@ -31,8 +31,11 @@ def _screen_result() -> ScreenResult:
         "flags": {"example": flags},
         "thresholds": {"example": 2.0},
         "flag_counts": flags.astype(int),
+        "valid_index_counts": np.array([1, 0, 1, 1, 1]),
+        "consensus_eligible": np.array([True, False, True, True, True]),
         "consensus_flags": flags,
         "min_flags": 1,
+        "min_valid_indices": None,
         "n_indices": 1,
         "indices_used": ["example"],
         "errors": {},
@@ -59,6 +62,9 @@ class TestCliJson(unittest.TestCase):
         screen_payload = json.loads(screen_output.getvalue())
         self.assertEqual(screen_payload["n_respondents"], 5)
         self.assertEqual(screen_payload["flag_counts"], [0, 1, 0, 1, 1])
+        self.assertEqual(screen_payload["valid_index_counts"], [1, 0, 1, 1, 1])
+        self.assertEqual(screen_payload["consensus_eligible"], [True, False, True, True, True])
+        self.assertIsNone(screen_payload["min_valid_indices"])
         self.assertEqual(screen_payload["consensus_flags"], result["flags"]["example"].tolist())
         self.assertEqual(screen_payload["scores"]["example"], [1.0, None, None, None, 5.0])
         self.assertEqual(screen_payload["flags"]["example"], [False, True, False, True, True])

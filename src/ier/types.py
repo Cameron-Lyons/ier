@@ -49,8 +49,11 @@ class ScreenResult(TypedDict):
     flags: IndexFlagMap
     thresholds: IndexThresholdMap
     flag_counts: IntArray
+    valid_index_counts: IntArray
+    consensus_eligible: BoolArray
     consensus_flags: BoolArray
     min_flags: int
+    min_valid_indices: int | None
     n_indices: int
     indices_used: list[str]
     errors: IndexErrorMap

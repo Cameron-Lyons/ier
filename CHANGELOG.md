@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.17] - 2026-08-03
+
+### Added
+
+- Screening now accepts `min_valid_indices` / `--min-valid-indices` to require
+  enough available index scores before a respondent can receive a consensus flag.
+- Screening results and every structured CLI format now report respondent-level
+  `valid_index_counts` and `consensus_eligible` values. CSV output includes the
+  equivalent singular columns, and configured NPZ archives retain the minimum.
+
+### Changed
+
+- Composite and screening completeness controls now reuse one shared validator.
+  Availability counts continue to accumulate one score vector at a time, without
+  allocating a respondent-by-index matrix.
+
 ## [2.19.16] - 2026-08-03
 
 ### Added

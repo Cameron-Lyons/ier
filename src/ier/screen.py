@@ -17,6 +17,7 @@ from ier._registry import (
     resolve_index_options,
     score_registered_indices,
     validate_index_names,
+    validate_min_valid_indices,
     validate_worker_count,
 )
 from ier._validation import MatrixLike, validate_matrix_input
@@ -58,6 +59,14 @@ def _count_flags(flags: Mapping[str, np.ndarray], n_respondents: int) -> np.ndar
     return counts
 
 
+def _count_valid_scores(scores: Mapping[str, np.ndarray], n_respondents: int) -> np.ndarray:
+    """Count available per-respondent scores without constructing an index matrix."""
+    counts = np.zeros(n_respondents, dtype=np.int_)
+    for values in scores.values():
+        counts += ~np.isnan(values)
+    return counts
+
+
 def screen(
     x: MatrixLike,
     indices: list[str] | None = None,
@@ -65,6 +74,7 @@ def screen(
     options: IndexOptions | None = None,
     percentile: float = 95.0,
     min_flags: int = 2,
+    min_valid_indices: int | None = None,
     thresholds: Mapping[str, float] | None = None,
     strict: bool = False,
     workers: int = 1,
@@ -93,6 +103,8 @@ def screen(
     - percentile: Percentile cutoff for flagging (default 95th).
     - min_flags: Minimum number of per-index flags required for a respondent-level
                  consensus flag (default 2).
+    - min_valid_indices: Optional minimum number of available index scores required
+                         before a respondent can receive a consensus flag.
     - thresholds: Optional fixed per-index cutoffs. Scores at or beyond a fixed
                   cutoff are flagged; indices without an override use percentiles.
     - strict: If True, raise when any selected index fails instead of recording
@@ -107,8 +119,11 @@ def screen(
         - "flags": dict mapping index name to boolean flag array
         - "thresholds": actual per-index cutoffs (None for presence flagging)
         - "flag_counts": array of total flags per respondent
+        - "valid_index_counts": array of available index scores per respondent
+        - "consensus_eligible": respondents meeting ``min_valid_indices``
         - "consensus_flags": respondent-level flags meeting ``min_flags``
         - "min_flags": configured consensus threshold
+        - "min_valid_indices": configured completeness threshold or None
         - "n_indices": number of indices successfully computed
         - "indices_used": list of index names computed
         - "errors": dict mapping failed index names to error messages
@@ -138,6 +153,7 @@ def screen(
         indices = default_screen_indices()
     else:
         validate_index_names(indices)
+    min_valid_indices = validate_min_valid_indices(min_valid_indices, len(indices))
 
     fixed_thresholds = _resolve_screen_thresholds(thresholds, indices)
     resolved = resolve_index_options(options)
@@ -175,7 +191,13 @@ def screen(
         applied_thresholds[name] = cutoff
 
     flag_counts = _count_flags(flags, n_respondents)
-    consensus_flags = flag_counts >= min_flags
+    valid_index_counts = _count_valid_scores(scores, n_respondents)
+    consensus_eligible = (
+        np.ones(n_respondents, dtype=bool)
+        if min_valid_indices is None
+        else valid_index_counts >= min_valid_indices
+    )
+    consensus_flags = (flag_counts >= min_flags) & consensus_eligible
 
     summary: dict[str, ScreenIndexSummary] = {}
     for name, score_arr in scores.items():
@@ -202,8 +224,11 @@ def screen(
         "flags": flags,
         "thresholds": applied_thresholds,
         "flag_counts": flag_counts,
+        "valid_index_counts": valid_index_counts,
+        "consensus_eligible": consensus_eligible,
         "consensus_flags": consensus_flags,
         "min_flags": min_flags,
+        "min_valid_indices": min_valid_indices,
         "n_indices": len(scores),
         "indices_used": list(scores.keys()),
         "errors": errors,

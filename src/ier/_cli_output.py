@@ -215,17 +215,34 @@ def _emit_screen_text(
             for name, cutoff in result["thresholds"].items()
         ),
     ]
+    if result["min_valid_indices"] is not None:
+        lines.append(
+            f"consensus eligible: {int(np.sum(result['consensus_eligible']))} "
+            f"(min_valid_indices={result['min_valid_indices']})"
+        )
     if result["errors"]:
         lines.append("errors:")
         for name, message in sorted(result["errors"].items()):
             lines.append(f"  {name}: {message}")
     counts = result["flag_counts"]
+    valid_counts = result["valid_index_counts"]
+    eligible = result["consensus_eligible"]
     labels = _respondent_label_values(result["n_respondents"], respondent_ids)
     order = np.argsort(counts)[::-1][: max(top, 0)]
     label_name = "identifier" if respondent_ids is not None else "index"
-    lines.append(f"top flagged respondents ({label_name}, flag_count):")
-    for idx in order:
-        lines.append(f"  {labels[int(idx)]}\t{int(counts[idx])}")
+    if result["min_valid_indices"] is None:
+        lines.append(f"top flagged respondents ({label_name}, flag_count):")
+        for idx in order:
+            lines.append(f"  {labels[int(idx)]}\t{int(counts[idx])}")
+    else:
+        lines.append(
+            f"top flagged respondents ({label_name}, flag_count, valid_index_count, eligible):"
+        )
+        for idx in order:
+            lines.append(
+                f"  {labels[int(idx)]}\t{int(counts[idx])}\t{int(valid_counts[idx])}"
+                f"\t{int(bool(eligible[idx]))}"
+            )
     return "\n".join(lines)
 
 
@@ -261,8 +278,17 @@ def _write_screen_json(
         "errors": result["errors"],
         "thresholds": result["thresholds"],
         "flag_counts": _JsonArray(np.asarray(result["flag_counts"]), "integer"),
+        "valid_index_counts": _JsonArray(
+            np.asarray(result["valid_index_counts"]),
+            "integer",
+        ),
+        "consensus_eligible": _JsonArray(
+            np.asarray(result["consensus_eligible"]),
+            "boolean",
+        ),
         "consensus_flags": _JsonArray(np.asarray(result["consensus_flags"]), "boolean"),
         "min_flags": result["min_flags"],
+        "min_valid_indices": result["min_valid_indices"],
         "scores": {
             name: _JsonArray(np.asarray(arr), "number") for name, arr in result["scores"].items()
         },
@@ -288,11 +314,19 @@ def _write_screen_csv(
     n = result["n_respondents"]
     scores = result["scores"]
     flags = result["flags"]
-    fieldnames = ["respondent", "flag_count", "consensus_flag"]
+    fieldnames = [
+        "respondent",
+        "flag_count",
+        "valid_index_count",
+        "consensus_eligible",
+        "consensus_flag",
+    ]
     for name in result["indices_used"]:
         fieldnames.extend([f"{name}_score", f"{name}_flag"])
 
     counts = np.asarray(result["flag_counts"])
+    valid_counts = np.asarray(result["valid_index_counts"])
+    eligible = np.asarray(result["consensus_eligible"])
     consensus = np.asarray(result["consensus_flags"])
     labels = _respondent_label_values(n, respondent_ids)
     writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -301,6 +335,8 @@ def _write_screen_csv(
         row: dict[str, object] = {
             "respondent": labels[i],
             "flag_count": int(counts[i]),
+            "valid_index_count": int(valid_counts[i]),
+            "consensus_eligible": int(bool(eligible[i])),
             "consensus_flag": int(bool(consensus[i])),
         }
         for name in result["indices_used"]:

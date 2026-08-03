@@ -118,6 +118,11 @@ also supports missing-as-failure, available-case omission, and strict propagatio
 The policy is carried through `IndexOptions`; unavailable scores reuse the same
 flagging and composite-coverage rules as every other registry index.
 
+Screening counts available scores alongside flags without stacking either set of
+vectors. An optional `min_valid_indices` rule marks rows with insufficient score
+coverage as ineligible for consensus while retaining the individual scores,
+flags, counts, and eligibility decision for audit.
+
 ## Composite scores
 
 `composite()` z-combines selected indices with direction multipliers so that

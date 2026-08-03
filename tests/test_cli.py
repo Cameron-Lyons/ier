@@ -1524,6 +1524,50 @@ class TestCli(unittest.TestCase):
             [count >= 1 for count in payload["flag_counts"]],
         )
 
+    def test_screen_minimum_valid_indices_controls_consensus(self) -> None:
+        source = self.root / "coverage-screen.csv"
+        source.write_text(
+            "i1,i2,i3,i4\n5,1,1,1\n,,1,2\n,,3,3\n",
+            encoding="utf-8",
+        )
+        out = self.root / "coverage-screen.json"
+
+        code = main(
+            [
+                "screen",
+                str(source),
+                "--indices",
+                "infrequency",
+                "longstring",
+                "--infrequency-item-indices",
+                "0,1",
+                "--infrequency-expected-responses",
+                "5,1",
+                "--infrequency-missing",
+                "omit",
+                "--threshold",
+                "infrequency=1",
+                "--threshold",
+                "longstring=2",
+                "--min-flags",
+                "1",
+                "--min-valid-indices",
+                "2",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["min_valid_indices"], 2)
+        self.assertEqual(payload["valid_index_counts"], [2, 1, 1])
+        self.assertEqual(payload["consensus_eligible"], [True, False, False])
+        self.assertEqual(payload["flag_counts"], [1, 0, 1])
+        self.assertEqual(payload["consensus_flags"], [True, False, False])
+
     def test_screen_invalid_consensus_threshold_returns_structured_error(self) -> None:
         stderr = StringIO()
         with patch("sys.stderr", stderr):
@@ -1531,6 +1575,25 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertIn("error: min_flags must be a positive integer", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_screen_invalid_minimum_valid_indices_returns_structured_error(self) -> None:
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "screen",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--min-valid-indices",
+                    "3",
+                ]
+            )
+
+        self.assertEqual(code, 1)
+        self.assertIn("error: min_valid_indices cannot exceed", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_screen_json_uses_null_for_non_finite_scores(self) -> None:
@@ -1675,6 +1738,8 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 0)
         rows = list(csv.DictReader(StringIO(out.read_text(encoding="utf-8"))))
         self.assertEqual([row["psychsyn_score"] for row in rows], ["", "", ""])
+        self.assertEqual([row["valid_index_count"] for row in rows], ["0", "0", "0"])
+        self.assertEqual([row["consensus_eligible"] for row in rows], ["1", "1", "1"])
         self.assertTrue(all(row["consensus_flag"] in {"0", "1"} for row in rows))
 
     def test_composite_csv_output(self) -> None:
