@@ -101,6 +101,33 @@ CLI archives written with `--include-components`. Aggregate-only composite and
 response-time archives do not contain reusable registered-index vectors and are
 rejected with a contextual error.
 
+### Response-time mixture model archives
+
+Persist a fitted reference-cohort calibration separately from respondent result
+archives:
+
+```python
+from ier import (
+    fit_response_time_mixture,
+    load_response_time_mixture_model,
+    response_time_mixture_scores,
+    save_response_time_mixture_model,
+)
+
+model = fit_response_time_mixture(reference_times, n_components=3, random_seed=42)
+save_response_time_mixture_model("timing-model.npz", model)
+loaded = load_response_time_mixture_model("timing-model.npz")
+later_probabilities = response_time_mixture_scores(later_times, loaded)
+```
+
+The schema stores only a version, model result type, component count, weights,
+means, variances, and the log-transform choice. The writer validates a fresh
+snapshot before atomically replacing the destination; the loader disables
+pickling, rejects missing or extra members, checks strict scalar/vector dtypes,
+and reconstructs independent read-only parameter arrays. Model archives are not
+respondent results, so use the dedicated loader rather than `load_archive()` or
+`archive-info`.
+
 Reuse validated registered-index scores directly from the CLI:
 
 ```bash

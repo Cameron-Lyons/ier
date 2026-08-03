@@ -9,8 +9,10 @@ from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
 from .archive import load_archive as load_archive
 from .archive import load_response_time_archive as load_response_time_archive
+from .archive import load_response_time_mixture_model as load_response_time_mixture_model
 from .archive import load_score_archive as load_score_archive
 from .archive import save_response_time_archive as save_response_time_archive
+from .archive import save_response_time_mixture_model as save_response_time_mixture_model
 from .archive import save_score_archive as save_score_archive
 from .composite import composite as composite
 from .composite import composite_flag as composite_flag
@@ -126,6 +128,7 @@ __all__ = [
     "longstring_scores",
     "load_archive",
     "load_response_time_archive",
+    "load_response_time_mixture_model",
     "load_score_archive",
     "lz",
     "lz_flag",
@@ -164,6 +167,7 @@ __all__ = [
     "screen",
     "screen_scores",
     "save_response_time_archive",
+    "save_response_time_mixture_model",
     "save_score_archive",
     "ScreenIndexSummary",
     "ScreenResult",

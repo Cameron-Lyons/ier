@@ -74,8 +74,10 @@ The command-line path is split by responsibility:
   low-level typed, pickle-free NumPy writer.
 - `archive.py` owns atomic same-directory staging, the shared stream writer, and
   public validated save/load boundaries for reusable registered score vectors
-  and response-time results. Its generic loader reads the declared result type
-  once and dispatches to the same complete specialized validators.
+  and response-time results, plus a dedicated mixture-calibration model schema.
+  Its generic result loader reads the declared result type once and dispatches
+  to the same complete specialized validators; model archives use their dedicated
+  loader because they contain parameters rather than respondent results.
 
 Screen and composite commands carry the registry's ordered soft-failure map
 through text, JSON, and NPZ serializers and mirror failures to standard error
@@ -206,6 +208,9 @@ ordinary observations and normalizes only underflowed rows in log space.
 an immutable calibration, while `response_time_mixture_scores()` applies those
 parameters to later cohorts with one expectation step. Returned posterior vectors
 own their one-dimensional storage rather than retaining the responsibility matrix.
+The model save/load pair streams those small parameter vectors through the shared
+atomic NPZ writer and reconstructs a fully validated read-only calibration, so
+cross-process reuse retains the same numerical and safety contracts.
 Retained summary vectors and mixture probabilities pass through the same shared
 single-vector validation and threshold boundary, so cutoff sensitivity analysis
 does not recalculate row summaries or refit EM. The archive reflag CLI loads that

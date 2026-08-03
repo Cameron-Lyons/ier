@@ -8,11 +8,15 @@ import pytest
 from ier import (
     composite_scores,
     composite_summary,
+    fit_response_time_mixture,
     load_archive,
     load_response_time_archive,
+    load_response_time_mixture_model,
     load_score_archive,
+    response_time_mixture_scores,
     response_time_score_flags,
     save_response_time_archive,
+    save_response_time_mixture_model,
     save_score_archive,
     screen,
     screen_scores,
@@ -168,6 +172,148 @@ def test_response_time_mixture_archive_preserves_high_tail(tmp_path: Path) -> No
     assert loaded["flag_direction"] == "high"
     assert loaded["respondent_ids"] is None
     np.testing.assert_array_equal(loaded["flags"], flags)
+
+
+def test_response_time_mixture_model_archive_round_trip_supports_later_scoring(
+    tmp_path: Path,
+) -> None:
+    rng = np.random.default_rng(20260803)
+    reference = np.vstack(
+        [
+            rng.lognormal(mean=-0.7, sigma=0.2, size=(20, 7)),
+            rng.lognormal(mean=1.2, sigma=0.35, size=(40, 7)),
+        ]
+    )
+    later = rng.lognormal(mean=0.5, sigma=0.7, size=(11, 7))
+    model = fit_response_time_mixture(reference, n_components=3, random_seed=42)
+    destination = tmp_path / "timing-model.npz"
+
+    save_response_time_mixture_model(destination, model)
+    loaded = load_response_time_mixture_model(destination)
+
+    with np.load(destination, allow_pickle=False) as raw:
+        assert raw.files == [
+            "schema_version",
+            "result_type",
+            "n_components",
+            "weights",
+            "means",
+            "variances",
+            "log_transform",
+        ]
+        assert raw["schema_version"].item() == 1
+        assert raw["result_type"].item() == "response_time_mixture_model"
+        assert raw["n_components"].item() == 3
+        assert raw["log_transform"].dtype == np.bool_
+        assert all(not raw[name].dtype.hasobject for name in raw.files)
+
+    assert loaded.n_components == model.n_components
+    assert loaded.fast_component == model.fast_component
+    assert loaded.log_transform == model.log_transform
+    assert not loaded.weights.flags.writeable
+    assert not loaded.means.flags.writeable
+    assert not loaded.variances.flags.writeable
+    np.testing.assert_array_equal(loaded.weights, model.weights)
+    np.testing.assert_array_equal(loaded.means, model.means)
+    np.testing.assert_array_equal(loaded.variances, model.variances)
+    np.testing.assert_array_equal(
+        response_time_mixture_scores(later, loaded),
+        response_time_mixture_scores(later, model),
+    )
+
+
+def _response_time_mixture_model_payload() -> dict[str, np.ndarray]:
+    return {
+        "schema_version": np.asarray(1, dtype=np.int64),
+        "result_type": np.asarray("response_time_mixture_model", dtype=np.str_),
+        "n_components": np.asarray(2, dtype=np.int64),
+        "weights": np.asarray([0.25, 0.75], dtype=np.float64),
+        "means": np.asarray([-1.0, 1.0], dtype=np.float64),
+        "variances": np.asarray([0.5, 1.5], dtype=np.float64),
+        "log_transform": np.asarray(True, dtype=np.bool_),
+    }
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"schema_version": np.asarray(2)}, "unsupported.*schema version"),
+        ({"result_type": np.asarray("response_time")}, "result_type"),
+        ({"n_components": np.asarray(1)}, "at least 2"),
+        ({"n_components": np.asarray(3)}, "lengths must match"),
+        ({"weights": np.asarray([[0.25, 0.75]])}, "numeric vector"),
+        ({"weights": np.asarray(["0.25", "0.75"])}, "numeric vector"),
+        ({"weights": np.asarray([0.0, 1.0])}, "weights must be positive"),
+        ({"weights": np.asarray([0.4, 0.5])}, "weights must sum to one"),
+        ({"means": np.asarray([-1.0, np.inf])}, "finite values"),
+        ({"variances": np.asarray([0.5, 0.0])}, "variances must be positive"),
+        ({"log_transform": np.asarray(1)}, "Boolean scalar"),
+        ({"unexpected": np.asarray(1)}, "unexpected member"),
+    ],
+)
+def test_malformed_response_time_mixture_model_archive_is_rejected(
+    tmp_path: Path,
+    updates: dict[str, np.ndarray],
+    message: str,
+) -> None:
+    payload = _response_time_mixture_model_payload()
+    payload.update(updates)
+    destination = tmp_path / "malformed-model.npz"
+    np.savez(destination, **payload)
+
+    with pytest.raises(ValueError, match=message):
+        load_response_time_mixture_model(destination)
+
+
+def test_response_time_mixture_model_requires_complete_pickle_free_npz(
+    tmp_path: Path,
+) -> None:
+    missing_payload = _response_time_mixture_model_payload()
+    missing_payload.pop("means")
+    missing = tmp_path / "missing-model.npz"
+    np.savez(missing, **missing_payload)
+
+    object_payload = _response_time_mixture_model_payload()
+    object_payload["weights"] = np.asarray([object(), object()], dtype=object)
+    unsafe = tmp_path / "object-model.npz"
+    np.savez(unsafe, **object_payload)
+
+    plain = tmp_path / "model.npy"
+    np.save(plain, np.asarray([1.0, 2.0]))
+
+    with pytest.raises(ValueError, match="missing required member: means"):
+        load_response_time_mixture_model(missing)
+    with pytest.raises(ValueError, match="not pickle-free"):
+        load_response_time_mixture_model(unsafe)
+    with pytest.raises(ValueError, match="must be an NPZ archive"):
+        load_response_time_mixture_model(plain)
+
+
+def test_response_time_mixture_model_writer_validates_before_replacing(
+    tmp_path: Path,
+) -> None:
+    model = fit_response_time_mixture(
+        np.asarray([[0.4, 0.5], [0.6, 0.7], [4.0, 5.0], [6.0, 7.0]]),
+        random_seed=42,
+    )
+    destination = tmp_path / "model.npz"
+    save_response_time_mixture_model(destination, model)
+    original = destination.read_bytes()
+
+    model.weights.setflags(write=True)
+    model.weights[0] = 0.0
+    with pytest.raises(ValueError, match="weights must be positive"):
+        save_response_time_mixture_model(destination, model)
+
+    assert destination.read_bytes() == original
+    with pytest.raises(ValueError, match="must end in .npz"):
+        save_response_time_mixture_model(tmp_path / "model.bin", model)
+    with pytest.raises(TypeError, match="model must be"):
+        save_response_time_mixture_model(
+            tmp_path / "other.npz",
+            object(),  # type: ignore[arg-type]
+        )
+    assert not (tmp_path / "other.npz").exists()
 
 
 def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Path) -> None:

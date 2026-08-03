@@ -367,6 +367,26 @@ CLI text, JSON, and NPZ output also records whether the cutoff was fixed or
 percentile-derived and retains the requested percentile. The archive loader
 supports both legacy v1 files and provenance-aware v2 files.
 
+Reference-cohort mixture calibration has a separate compact model archive:
+
+```python
+from ier import (
+    fit_response_time_mixture,
+    load_response_time_mixture_model,
+    response_time_mixture_scores,
+    save_response_time_mixture_model,
+)
+
+model = fit_response_time_mixture(reference_times, n_components=3, random_seed=42)
+save_response_time_mixture_model("timing-model.npz", model)
+loaded = load_response_time_mixture_model("timing-model.npz")
+probabilities = response_time_mixture_scores(later_times, loaded)
+```
+
+This archive contains no respondent data. It is versioned, pickle-free, strictly
+validated on load, and atomically replaced on save. Loaded parameter vectors are
+independent and read-only.
+
 Reapply a cutoff from the command line without loading the original timing
 matrix or recalculating its metric:
 
