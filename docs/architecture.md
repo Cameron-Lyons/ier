@@ -223,12 +223,14 @@ the closed-form product of response-difference signs, avoiding centered matrices
 larger factors retain centered contraction reductions. Peak allocation therefore
 does not grow with the factor count.
 Psychometric synonym and antonym scoring reuse the same row-correlation kernel
-in bounded respondent batches. Missing responses therefore do not trigger a
-complete respondent-by-pair contribution matrix, and seeded resampling is also
-reduced in bounded chunks. Item-pair discovery separately centers columns in
-bounded blocks and evaluates only strict-lower-triangle correlation tiles;
-high-item workloads no longer retain a complete item-by-item correlation
-matrix. The critical-value catalog shares the same discovery kernel.
+in bounded respondent batches and report each respondent's actual available-pair
+count. Missing-response discovery accumulates pairwise-complete counts, sums,
+squares, and products in bounded respondent and strict-lower-triangle item
+tiles. Per-column finite origins prevent raw-moment cancellation without a
+matrix-sized centered copy. Complete matrices retain the faster normalized-
+column kernel. Both paths avoid a complete item-by-item correlation matrix, and
+the critical-value catalog shares the same dispatch. Seeded retries only process
+undefined rows that retain at least three usable pairs.
 Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
 reducer. Pair selection, optional reverse scoring, and missing-aware means stay
 within the common element budget instead of materializing complete pair matrices.
