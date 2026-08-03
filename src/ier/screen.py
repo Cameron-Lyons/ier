@@ -26,6 +26,7 @@ def screen(
     *,
     options: IndexOptions | None = None,
     percentile: float = 95.0,
+    min_flags: int = 2,
 ) -> ScreenResult:
     """
     Screen respondents across multiple IER detection indices.
@@ -49,12 +50,16 @@ def screen(
               "semantic_syn", "semantic_ant", "infrequency".
     - options: Shared index configuration (``IndexOptions``).
     - percentile: Percentile cutoff for flagging (default 95th).
+    - min_flags: Minimum number of per-index flags required for a respondent-level
+                 consensus flag (default 2).
 
     Returns:
     - Dictionary with:
         - "scores": dict mapping index name to score array
         - "flags": dict mapping index name to boolean flag array
         - "flag_counts": array of total flags per respondent
+        - "consensus_flags": respondent-level flags meeting ``min_flags``
+        - "min_flags": configured consensus threshold
         - "n_indices": number of indices successfully computed
         - "indices_used": list of index names computed
         - "errors": dict mapping failed index names to error messages
@@ -70,7 +75,11 @@ def screen(
         >>> result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
         >>> print(result["indices_used"])
         >>> print(result["flag_counts"])
+        >>> print(result["consensus_flags"])
     """
+    if isinstance(min_flags, bool) or not isinstance(min_flags, int) or min_flags < 1:
+        raise ValueError("min_flags must be a positive integer")
+
     x_array = validate_matrix_input(x, check_type=False)
     n_respondents = x_array.shape[0]
 
@@ -105,6 +114,7 @@ def screen(
         np.column_stack(list(flags.values())) if flags else np.zeros((n_respondents, 0), dtype=bool)
     )
     flag_counts: np.ndarray = np.sum(flag_matrix, axis=1)
+    consensus_flags = flag_counts >= min_flags
 
     summary: dict[str, ScreenIndexSummary] = {}
     for name, score_arr in scores.items():
@@ -130,6 +140,8 @@ def screen(
         "scores": scores,
         "flags": flags,
         "flag_counts": flag_counts,
+        "consensus_flags": consensus_flags,
+        "min_flags": min_flags,
         "n_indices": len(scores),
         "indices_used": list(scores.keys()),
         "errors": errors,

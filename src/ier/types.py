@@ -32,6 +32,8 @@ class ScreenResult(TypedDict):
     scores: IndexScoreMap
     flags: IndexFlagMap
     flag_counts: IntArray
+    consensus_flags: BoolArray
+    min_flags: int
     n_indices: int
     indices_used: list[str]
     errors: IndexErrorMap

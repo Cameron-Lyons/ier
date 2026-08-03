@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.4] - 2026-08-02
+
+### Added
+
+- `screen()` now returns configurable respondent-level `consensus_flags` alongside
+  per-index flags and counts, with a default `min_flags=2` agreement threshold.
+- The CLI exposes `--min-flags` and includes consensus decisions in text, JSON,
+  and CSV output.
+
 ## [2.2.3] - 2026-08-02
 
 ### Changed

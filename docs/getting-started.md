@@ -83,12 +83,13 @@ from ier import IndexOptions, screen
 
 result = screen(responses, options=IndexOptions(scale_min=1, scale_max=5))
 print(result["flag_counts"])
+print(result["consensus_flags"])
 ```
 
 Or from the CLI:
 
 ```bash
-ier screen responses.csv --scale-min 1 --scale-max 5
+ier screen responses.csv --scale-min 1 --scale-max 5 --min-flags 2
 ```
 
 ## Next steps

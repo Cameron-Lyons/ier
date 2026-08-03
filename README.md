@@ -10,6 +10,7 @@ For a comprehensive methods review, see
 
 - Multiple detection families: consistency, response patterns, response styles, outliers, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
+- Configurable multi-index consensus decisions for respondent-level screening
 - CLI: `ier screen data.csv` / `ier composite data.csv` (text / JSON / CSV)
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Soft per-index errors during screening and composite scoring
@@ -50,6 +51,7 @@ print("IRV:", irv(data))
 result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print("Indices:", result["indices_used"])
 print("Flag counts:", result["flag_counts"])
+print("Consensus flags:", result["consensus_flags"])
 
 scores = composite(data, indices=["irv", "longstring", "person_total", "markov"])
 print("Composite:", scores)
