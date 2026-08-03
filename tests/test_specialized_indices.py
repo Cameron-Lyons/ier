@@ -300,6 +300,35 @@ class TestGuttman(unittest.TestCase):
         np.testing.assert_array_equal(result, expected)
         np.testing.assert_array_equal(data, original)
 
+    def test_wide_categorical_scale_uses_bounded_pairwise_counter(self) -> None:
+        """Wide scales avoid more full category passes than pair comparisons."""
+        from ier.guttman import _count_categorical_errors, _count_pairwise_errors
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 21, size=(257, 20)).astype(float)
+        data[rng.random(data.shape) < 0.1] = np.nan
+        original = data.copy()
+        expected = self._expanded_counts(data)
+
+        with (
+            patch("ier.guttman._GUTTMAN_BATCH_CELLS", 160),
+            patch(
+                "ier.guttman._count_pairwise_errors",
+                wraps=_count_pairwise_errors,
+            ) as pairwise_counter,
+            patch(
+                "ier.guttman._count_categorical_errors",
+                wraps=_count_categorical_errors,
+            ) as categorical_counter,
+        ):
+            result = guttman(data, normalize=False)
+
+        self.assertGreater(pairwise_counter.call_count, 2)
+        self.assertTrue(all(call.args[0].size <= 160 for call in pairwise_counter.call_args_list))
+        categorical_counter.assert_not_called()
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(data, original)
+
     def test_high_cardinality_raw_counts(self) -> None:
         """Test the bounded-memory fallback on continuous-style response data."""
         n_items = 70

@@ -239,9 +239,11 @@ not grow with the respondent count. Theoretical Q-Q coordinates solve
 chi-square quantiles through bounded vectorized regularized-gamma and safeguarded
 Newton batches, with the independent scalar solver retained as a fallback.
 Guttman scoring likewise batches item means, difficulty-ordered selection,
-valid-response counts, and error accumulation by respondent. Small categorical
-scales use cumulative category counts within each batch, while high-cardinality
-data use the same row bound with direct item-pair comparisons.
+valid-response counts, and error accumulation by respondent. It compares the
+number of full cumulative-category passes with the triangular item-pair count,
+using the cheaper exact counter for each scale width. Both paths retain the same
+row bound, so narrow categorical scales keep their cumulative-count advantage
+while wider scales avoid redundant passes and larger workspaces.
 Split-half individual reliability generates the established seeded item splits
 once, then reuses each bounded respondent block across them. Row correlations
 use raw sums, squares, and cross-products without allocating complete centered

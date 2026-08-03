@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.46] - 2026-08-03
+
+### Performance
+
+- Guttman error scoring now compares the exact work implied by cumulative
+  category passes with the triangular item-pair count and selects the cheaper
+  bounded kernel. On a 20,000-respondent, 80-item benchmark with 10% missing
+  responses, 64-category scoring improved from 0.2328 to 0.0440 seconds, a
+  5.29x speedup, while peak traced allocation fell from 20.4 to 12.5 MiB. The
+  48-category workload improved from 0.1754 to 0.0438 seconds, a 4.01x speedup.
+  The common five-category path remains on its existing cumulative counter with
+  unchanged timing and allocation. Raw and normalized results remain exactly
+  equal, missing comparisons retain their established semantics, batching stays
+  bounded, and no dependency is added.
+
 ## [2.19.45] - 2026-08-03
 
 ### Performance

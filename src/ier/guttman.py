@@ -143,6 +143,7 @@ def _count_guttman_errors(
     """Count increasing response pairs in bounded row batches."""
     n_people, n_items = x.shape
     batch_rows = max(1, _GUTTMAN_BATCH_CELLS // n_items)
+    use_categorical_counter = categories is not None and 2 * (len(categories) - 1) <= (n_items - 1)
     errors = np.zeros(n_people, dtype=np.int64)
     valid_counts = np.empty(n_people) if count_valid else None
 
@@ -151,10 +152,11 @@ def _count_guttman_errors(
         block = x[start:stop, difficulty_order]
         if valid_counts is not None:
             valid_counts[start:stop] = np.count_nonzero(~np.isnan(block), axis=1)
-        if categories is None:
-            errors[start:stop] = _count_pairwise_errors(block)
-        else:
+        if use_categorical_counter:
+            assert categories is not None
             errors[start:stop] = _count_categorical_errors(block, categories)
+        else:
+            errors[start:stop] = _count_pairwise_errors(block)
 
     return errors.astype(float), valid_counts
 
