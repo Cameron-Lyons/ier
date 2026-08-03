@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-08-02
+
+### Added
+
+- `ier screen` and `ier composite` now accept repeatable, comma-separated
+  `--item-columns` selections. Named items are resolved from the input header in
+  requested order, can be combined with `--id-column`, and allow survey exports
+  containing unselected nonnumeric metadata to be scored directly.
+
 ## [2.7.4] - 2026-08-02
 
 ### Changed

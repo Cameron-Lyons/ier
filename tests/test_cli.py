@@ -19,6 +19,7 @@ from ier.cli import (
     _load_matrix,
     _parse_float_list,
     _parse_int_list,
+    _parse_name_list,
     _parse_pair_list,
     _parse_thresholds,
     main,
@@ -240,6 +241,143 @@ class TestCli(unittest.TestCase):
         )
         payload = json.loads(composite_out.read_text(encoding="utf-8"))
         self.assertEqual(payload["respondent_ids"], identifiers)
+
+    def test_named_item_columns_exclude_metadata_and_preserve_order(self) -> None:
+        mixed = self.root / "mixed-columns.csv"
+        mixed.write_text(
+            "participant,cohort,i1,age,i2,i3,i4\n"
+            "case-01,A,1,34,2,3,4\n"
+            "case-02,B,4,29,3,2,1\n"
+            "case-03,A,2,41,2,4,4\n",
+            encoding="utf-8",
+        )
+
+        matrix, identifiers = _load_input(
+            mixed,
+            None,
+            "participant",
+            ["i3", "i1", "i4", "i2"],
+        )
+
+        self.assertEqual(identifiers, ["case-01", "case-02", "case-03"])
+        np.testing.assert_array_equal(
+            matrix,
+            [[3.0, 1.0, 4.0, 2.0], [2.0, 4.0, 1.0, 3.0], [4.0, 2.0, 4.0, 2.0]],
+        )
+
+    def test_numeric_looking_item_headers_can_be_selected(self) -> None:
+        numeric_headers = self.root / "numeric-headers.csv"
+        numeric_headers.write_text(
+            "1,2,metadata\n3,4,A\n5,6,B\n",
+            encoding="utf-8",
+        )
+
+        matrix, identifiers = _load_input(numeric_headers, None, item_columns=["2", "1"])
+
+        self.assertIsNone(identifiers)
+        np.testing.assert_array_equal(matrix, [[4.0, 3.0], [6.0, 5.0]])
+
+    def test_item_column_selection_works_across_commands_and_outputs(self) -> None:
+        mixed = self.root / "mixed-command-columns.csv"
+        mixed.write_text(
+            "participant,group,i1,i2,i3,i4\n"
+            "case-01,A,1,1,1,1\n"
+            "case-02,B,1,2,3,4\n"
+            "case-03,A,4,4,2,1\n",
+            encoding="utf-8",
+        )
+        screen_out = self.root / "selected-screen.json"
+        composite_out = self.root / "selected-composite.csv"
+
+        self.assertEqual(
+            main(
+                [
+                    "screen",
+                    str(mixed),
+                    "--id-column",
+                    "participant",
+                    "--item-columns",
+                    "i1,i2",
+                    "--item-columns",
+                    "i3,i4",
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(screen_out),
+                ]
+            ),
+            0,
+        )
+        screen_payload = json.loads(screen_out.read_text(encoding="utf-8"))
+        self.assertEqual(screen_payload["respondent_ids"], ["case-01", "case-02", "case-03"])
+
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(mixed),
+                    "--id-column",
+                    "participant",
+                    "--item-columns",
+                    "i1,i2,i3,i4",
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(composite_out),
+                ]
+            ),
+            0,
+        )
+        composite_rows = list(csv.DictReader(StringIO(composite_out.read_text(encoding="utf-8"))))
+        self.assertEqual(
+            [row["respondent"] for row in composite_rows],
+            ["case-01", "case-02", "case-03"],
+        )
+
+    def test_invalid_item_column_selections_return_structured_errors(self) -> None:
+        cases = {
+            "missing": (
+                "participant,i1,i2\na,1,2\n",
+                ["--item-columns", "unknown"],
+                "item column 'unknown' was not found",
+            ),
+            "duplicate-request": (
+                "participant,i1,i2\na,1,2\n",
+                ["--item-columns", "i1,i1"],
+                "item columns cannot contain duplicate names",
+            ),
+            "duplicate-header": (
+                "participant,i1,i1\na,1,2\n",
+                ["--item-columns", "i1"],
+                "item column 'i1' appears more than once",
+            ),
+            "id-overlap": (
+                "participant,i1,i2\na,1,2\n",
+                ["--id-column", "participant", "--item-columns", "participant,i1"],
+                "cannot also be selected as an item column",
+            ),
+            "headerless": (
+                "1,2,3\n4,5,6\n",
+                ["--item-columns", "i1,i2"],
+                "item column 'i1' was not found in the header",
+            ),
+        }
+        for name, (contents, args, message) in cases.items():
+            with self.subTest(name=name):
+                path = self.root / f"{name}-items.csv"
+                path.write_text(contents, encoding="utf-8")
+                stderr = StringIO()
+                with patch("sys.stderr", stderr):
+                    code = main(["screen", str(path), *args, "--indices", "irv"])
+                self.assertEqual(code, 1)
+                self.assertIn(message, stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_invalid_respondent_id_columns_return_structured_errors(self) -> None:
         cases = {
@@ -514,6 +652,8 @@ class TestCli(unittest.TestCase):
         self.assertIsNone(_parse_float_list(None))
         self.assertIsNone(_parse_float_list(" , "))
         self.assertEqual(_parse_float_list("1.5,2"), [1.5, 2.0])
+        self.assertIsNone(_parse_name_list(None))
+        self.assertEqual(_parse_name_list(["i1, i2", "i3"]), ["i1", "i2", "i3"])
         self.assertIsNone(_parse_pair_list(None))
         self.assertEqual(_parse_pair_list("0,1;2,3"), [(0, 1), (2, 3)])
         self.assertIsNone(_parse_pair_list(";;"))
@@ -527,6 +667,8 @@ class TestCli(unittest.TestCase):
             _parse_thresholds(["irv"])
         with self.assertRaises(ValueError):
             _parse_thresholds(["irv=1", "irv=2"])
+        with self.assertRaises(ValueError):
+            _parse_name_list([" , "])
 
     def test_invalid_fixed_threshold_returns_structured_error(self) -> None:
         stderr = StringIO()

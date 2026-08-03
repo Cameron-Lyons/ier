@@ -102,6 +102,21 @@ ier screen responses.csv --id-column participant_id --format csv --output screen
 Identifier values must be unique and nonblank. The selected column is excluded
 from the numeric item matrix before scoring.
 
+Survey exports may also contain demographics, conditions, or other non-item
+metadata. Select only named numeric item columns, in scoring order, with a
+comma-separated or repeated option:
+
+```bash
+ier screen responses.csv \
+  --id-column participant_id \
+  --item-columns q1,q2,q3 \
+  --item-columns q4,q5,q6
+```
+
+Named item selection requires a header. Item-index options such as
+`--mad-positive-items` use zero-based positions in the selected order, not the
+original file's column positions.
+
 ## Next steps
 
 - Run multi-index screening with [`screen()`](workflows/screening.md)
