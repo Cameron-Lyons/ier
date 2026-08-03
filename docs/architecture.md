@@ -165,7 +165,8 @@ pairwise-complete correlation semantics and per-respondent valid-split counts.
 Complete-response onset detection derives stable sliding-window variability
 from rolling means and bounded deviation buffers. Its changepoint test retains
 only prefix and candidate-position workspaces instead of complete centered and
-test-statistic matrices; missing-response rows keep the established scalar path.
+test-statistic matrices. Missing-response blocks compress rows into equal
+retained-length groups and reuse the same bounded complete-response kernel.
 Person–total correlation calculates item-profile means and respondent
 correlations in bounded batches as well. The shared kernel accepts the index's
 undefined-correlation policy, so constant person or item profiles remain

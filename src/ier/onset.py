@@ -76,22 +76,30 @@ def onset(
     if not has_missing:
         return _onset_complete(x_array, window_size)
 
-    for i in range(n_rows):
-        row = x_array[i, :]
-        if na_rm:
-            row = row[~np.isnan(row)]
+    return _onset_missing(x_array, window_size, min_items)
 
-        if len(row) < min_items:
-            continue
 
-        running_irv = _running_inconsistency(row, window_size)
+def _onset_missing(
+    x: np.ndarray,
+    window_size: int,
+    min_items: int,
+) -> np.ndarray:
+    """Compress and score missing-response rows in bounded equal-length groups."""
+    n_rows, n_items = x.shape
+    result = np.full(n_rows, np.nan)
 
-        if len(running_irv) < 3:
-            continue
+    for start, stop in row_slices(n_rows, n_items):
+        block = x[start:stop]
+        valid = ~np.isnan(block)
+        valid_counts = np.asarray(np.sum(valid, axis=1, dtype=np.intp))
+        eligible_counts = np.unique(valid_counts[valid_counts >= min_items])
 
-        cp = _shao_zhang_changepoint(running_irv)
-        if cp is not None:
-            result[i] = float(cp + window_size - 1)
+        for raw_count in eligible_counts:
+            valid_count = int(raw_count)
+            local_rows = np.flatnonzero(valid_counts == valid_count)
+            selected = block[local_rows]
+            compressed = selected[valid[local_rows]].reshape(len(local_rows), valid_count)
+            result[start + local_rows] = _onset_complete(compressed, window_size)
 
     return result
 
@@ -143,16 +151,6 @@ def onset_flag(
     return result
 
 
-def _running_inconsistency(row: np.ndarray, window_size: int) -> np.ndarray:
-    """Compute running standard deviation over sliding windows."""
-    if len(row) < window_size:
-        return np.array([])
-
-    windows = np.lib.stride_tricks.sliding_window_view(row, window_size)
-    result: np.ndarray = np.std(windows, axis=1)
-    return result
-
-
 def _running_inconsistency_complete(x: np.ndarray, window_size: int) -> np.ndarray:
     """Compute complete-row window deviations in bounded rolling workspaces."""
     centered = x.astype(float, copy=True)
@@ -178,21 +176,6 @@ def _running_inconsistency_complete(x: np.ndarray, window_size: int) -> np.ndarr
     squared_deviations /= window_size
     np.sqrt(squared_deviations, out=squared_deviations)
     return squared_deviations
-
-
-def _shao_zhang_changepoint(series: np.ndarray) -> int | None:
-    """
-    Apply the Shao & Zhang self-normalized cumulative sum test to detect a changepoint.
-
-    Returns the index of the changepoint, or None if the test statistic does not
-    exceed the critical value.
-    """
-    n = len(series)
-    if n < 3:
-        return None
-
-    changepoint = _shao_zhang_changepoints(series[None, :])[0]
-    return None if np.isnan(changepoint) else int(changepoint)
 
 
 def _shao_zhang_changepoints(series: np.ndarray) -> np.ndarray:
