@@ -73,6 +73,36 @@ result = screen(
 Missing required config is recorded in `result["errors"]` instead of aborting
 the whole screening run. `composite()` uses the same soft-fail policy.
 
+## Balanced acquiescence
+
+Pair positively and negatively worded items to isolate agreement tendency from
+item content:
+
+```python
+result = screen(
+    data,
+    indices=["acquiescence"],
+    options=IndexOptions(
+        scale_min=1,
+        scale_max=5,
+        acquiescence_positive_items=[0, 2, 4],
+        acquiescence_negative_items=[1, 3, 5],
+    ),
+)
+```
+
+The CLI exposes the same ordered pairs:
+
+```bash
+ier screen responses.csv --indices acquiescence --scale-min 1 --scale-max 5 \
+  --acquiescence-positive-items 0,2,4 \
+  --acquiescence-negative-items 1,3,5
+```
+
+Both lists must be supplied together. Indices are zero-based positions in the
+scored item matrix after any named-column selection. Missing or invalid pair
+configuration follows the normal soft/strict index-error policy.
+
 ## Section-aware IRV
 
 Use equal sections to detect response variability that deteriorates within one

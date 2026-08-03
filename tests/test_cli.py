@@ -14,6 +14,7 @@ from unittest.mock import patch
 import numpy as np
 
 from ier import (
+    acquiescence,
     composite,
     composite_flag,
     composite_probability,
@@ -149,6 +150,71 @@ class TestCli(unittest.TestCase):
                 self.assertEqual(code, 0)
                 payload = json.loads(output.read_text(encoding="utf-8"))
                 np.testing.assert_array_equal(payload["scores"][index], expected)
+
+    def test_balanced_acquiescence_item_options_match_direct_scores(self) -> None:
+        data = np.loadtxt(self.csv_path, delimiter=",", skiprows=1)
+        selected = data[:, [4, 2, 0, 3]]
+        expected = acquiescence(
+            selected,
+            scale_min=1,
+            scale_max=5,
+            positive_items=[0, 2],
+            negative_items=[1, 3],
+        )
+        output = self.root / "balanced-acquiescence.json"
+
+        code = main(
+            [
+                "screen",
+                str(self.csv_path),
+                "--indices",
+                "acquiescence",
+                "--item-columns",
+                "i5,i3,i1,i4",
+                "--scale-min",
+                "1",
+                "--scale-max",
+                "5",
+                "--acquiescence-positive-items",
+                "0,2",
+                "--acquiescence-negative-items",
+                "1,3",
+                "--format",
+                "json",
+                "--output",
+                str(output),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        np.testing.assert_array_equal(payload["scores"]["acquiescence"], expected)
+
+    def test_incomplete_acquiescence_item_options_follow_soft_and_strict_policy(self) -> None:
+        soft_output = self.root / "acquiescence-error.json"
+        stderr = StringIO()
+        arguments = [
+            "screen",
+            str(self.csv_path),
+            "--indices",
+            "acquiescence",
+            "--acquiescence-positive-items",
+            "0,2",
+            "--min-flags",
+            "1",
+        ]
+
+        with patch("sys.stderr", stderr):
+            soft_code = main([*arguments, "--format", "json", "--output", str(soft_output)])
+            strict_code = main([*arguments, "--strict"])
+
+        self.assertEqual(soft_code, 0)
+        payload = json.loads(soft_output.read_text(encoding="utf-8"))
+        self.assertEqual(payload["scores"], {})
+        self.assertIn("must specify both", payload["errors"]["acquiescence"])
+        self.assertEqual(strict_code, 1)
+        self.assertIn("must specify both", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_archive_info_auto_detects_score_metadata_in_text_and_json(self) -> None:
         archive = self.root / "scores.npz"
