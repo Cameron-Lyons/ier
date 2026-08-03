@@ -34,6 +34,16 @@ def _add_respondent_ids(
     payload["respondent_ids"] = np.asarray(respondent_ids, dtype=np.str_)
 
 
+def _add_errors(
+    payload: dict[str, np.ndarray],
+    errors: Mapping[str, str] | None,
+) -> None:
+    """Add aligned, pickle-free error metadata to a result payload."""
+    items = list((errors or {}).items())
+    payload["error_names"] = np.asarray([name for name, _ in items], dtype=np.str_)
+    payload["error_messages"] = np.asarray([message for _, message in items], dtype=np.str_)
+
+
 def _require_npz_output_path(path: Path | None) -> Path:
     """Validate and return the explicit file destination required by NPZ output."""
     if path is None or path == Path("-"):
@@ -61,7 +71,6 @@ def _write_screen_npz(
 ) -> None:
     """Write complete screening results as a versioned NumPy archive."""
     names = result["indices_used"]
-    errors = list(result["errors"].items())
     summary_columns = ["mean", "std", "min", "max"]
     summary_statistics = np.asarray(
         [
@@ -96,10 +105,9 @@ def _write_screen_npz(
                 [result["summary"][name]["n_flagged"] for name in names],
                 dtype=np.int64,
             ),
-            "error_names": np.asarray([name for name, _ in errors], dtype=np.str_),
-            "error_messages": np.asarray([message for _, message in errors], dtype=np.str_),
         }
     )
+    _add_errors(payload, result["errors"])
     for name in names:
         payload[f"score__{name}"] = np.asarray(result["scores"][name], dtype=np.float64)
         payload[f"flag__{name}"] = np.asarray(result["flags"][name], dtype=np.bool_)
@@ -114,6 +122,7 @@ def _write_composite_npz(
     respondent_ids: list[str] | None = None,
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
+    errors: Mapping[str, str] | None = None,
 ) -> None:
     """Write composite results as a versioned NumPy archive."""
     payload = _metadata("composite", len(scores))
@@ -128,6 +137,7 @@ def _write_composite_npz(
         payload["weights"] = np.asarray(list(weights.values()), dtype=np.float64)
     if min_valid_indices is not None:
         payload["min_valid_indices"] = np.asarray(min_valid_indices, dtype=np.int64)
+    _add_errors(payload, errors)
     _add_respondent_ids(payload, len(scores), respondent_ids)
     _write_npz_archive(path, payload)
 

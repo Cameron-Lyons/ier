@@ -126,6 +126,12 @@ def _parse_weights(raw: list[str] | None) -> dict[str, float] | None:
     return _parse_named_floats(raw, "weight", positive=True)
 
 
+def _report_soft_errors(errors: dict[str, str]) -> None:
+    """Report skipped indices without corrupting structured standard output."""
+    for name, message in errors.items():
+        print(f"warning: index '{name}' was skipped: {message}", file=sys.stderr)
+
+
 def _options_from_args(args: argparse.Namespace) -> IndexOptions:
     return IndexOptions(
         na_rm=args.na_rm,
@@ -510,6 +516,7 @@ def _run_command(args: argparse.Namespace) -> int:
             strict=args.strict,
             workers=args.workers,
         )
+        _report_soft_errors(result["errors"])
         if args.format == "json":
             _write_json_output(
                 args.output,
@@ -536,13 +543,15 @@ def _run_command(args: argparse.Namespace) -> int:
         options=options,
         weights=weights,
         min_valid_indices=args.min_valid_indices,
+        return_diagnostics=True,
         strict=args.strict,
         workers=args.workers,
     )
-    if not isinstance(scores_result, np.ndarray):
+    if not isinstance(scores_result, tuple):
         print("error: unexpected composite return type", file=sys.stderr)
         return 1
-    scores = scores_result
+    scores, errors = scores_result
+    _report_soft_errors(errors)
 
     if args.format == "json":
         _write_json_output(
@@ -554,6 +563,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 respondent_ids,
                 weights,
                 args.min_valid_indices,
+                errors,
             ),
         )
         return 0
@@ -569,6 +579,7 @@ def _run_command(args: argparse.Namespace) -> int:
             respondent_ids,
             weights,
             args.min_valid_indices,
+            errors,
         )
         return 0
     else:
@@ -579,6 +590,7 @@ def _run_command(args: argparse.Namespace) -> int:
             respondent_ids,
             weights,
             args.min_valid_indices,
+            errors,
         )
     _write_output(text, args.output)
     return 0

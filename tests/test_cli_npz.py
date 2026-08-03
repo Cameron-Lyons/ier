@@ -109,6 +109,8 @@ class TestCliNpz(unittest.TestCase):
         self.assertEqual(composite_result["weight_names"].tolist(), ["irv", "longstring"])
         self.assertEqual(composite_result["weights"].tolist(), [2.0, 0.5])
         self.assertEqual(composite_result["min_valid_indices"].item(), 2)
+        self.assertEqual(composite_result["error_names"].tolist(), [])
+        self.assertEqual(composite_result["error_messages"].tolist(), [])
         self.assertEqual(composite_result["scores"].shape, (3,))
         self.assertEqual(
             composite_result["respondent_ids"].tolist(), ["case-01", "case-02", "case-03"]
@@ -170,6 +172,33 @@ class TestCliNpz(unittest.TestCase):
         with np.load(out, allow_pickle=False) as archive:
             self.assertEqual(archive["index_names"].tolist(), ["irv", "onset"])
             self.assertTrue(np.isnan(archive["thresholds"][1]))
+            self.assertEqual(archive["error_names"].tolist(), ["mad"])
+            self.assertIn("mad_positive_items", archive["error_messages"][0])
+
+    def test_composite_output_preserves_soft_failures(self) -> None:
+        matrix = self.root / "partial-composite.csv"
+        matrix.write_text("1,2,3,4\n4,3,2,1\n", encoding="utf-8")
+        out = self.root / "partial-composite.npz"
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "composite",
+                    str(matrix),
+                    "--indices",
+                    "irv",
+                    "mad",
+                    "--format",
+                    "npz",
+                    "--output",
+                    str(out),
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertIn("warning: index 'mad' was skipped", stderr.getvalue())
+        with np.load(out, allow_pickle=False) as archive:
             self.assertEqual(archive["error_names"].tolist(), ["mad"])
             self.assertIn("mad_positive_items", archive["error_messages"][0])
 

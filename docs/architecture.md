@@ -48,6 +48,11 @@ The command-line path is split by responsibility:
 - `_cli_output.py` renders text plus bounded strict JSON and CSV results.
 - `_cli_npz.py` writes versioned, typed, pickle-free NumPy result archives.
 
+Screen and composite commands carry the registry's ordered soft-failure map
+through text, JSON, and NPZ serializers and mirror failures to standard error
+for every format. Score computation still runs once, and CSV remains a compact
+respondent table.
+
 Keeping parsing, matrix construction, serialization, and orchestration separate
 makes format-specific changes independently testable without adding runtime
 packages or coupling them to statistical index implementations.

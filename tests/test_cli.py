@@ -113,18 +113,22 @@ class TestCli(unittest.TestCase):
         self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_screen_reports_soft_errors(self) -> None:
-        code = main(
-            [
-                "screen",
-                str(self.csv_path),
-                "--indices",
-                "mad",
-                "evenodd",
-                "--top",
-                "1",
-            ]
-        )
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "screen",
+                    str(self.csv_path),
+                    "--indices",
+                    "mad",
+                    "evenodd",
+                    "--top",
+                    "1",
+                ]
+            )
         self.assertEqual(code, 0)
+        self.assertIn("warning: index 'mad' was skipped", stderr.getvalue())
+        self.assertIn("warning: index 'evenodd' was skipped", stderr.getvalue())
 
     def test_strict_screen_returns_structured_index_error(self) -> None:
         stderr = StringIO()
@@ -159,6 +163,72 @@ class TestCli(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 0)
+
+    def test_composite_soft_errors_are_visible_in_text_json_and_csv(self) -> None:
+        json_out = self.root / "partial-composite.json"
+        json_stderr = StringIO()
+        with patch("sys.stderr", json_stderr):
+            json_code = main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "mad",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(json_out),
+                ]
+            )
+
+        self.assertEqual(json_code, 0)
+        json_payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual(list(json_payload["errors"]), ["mad"])
+        self.assertIn("mad_positive_items", json_payload["errors"]["mad"])
+        self.assertIn("warning: index 'mad' was skipped", json_stderr.getvalue())
+
+        text_stdout = StringIO()
+        text_stderr = StringIO()
+        with patch("sys.stdout", text_stdout), patch("sys.stderr", text_stderr):
+            text_code = main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "mad",
+                    "--top",
+                    "1",
+                ]
+            )
+
+        self.assertEqual(text_code, 0)
+        self.assertIn("errors:\n  mad: mad_positive_items", text_stdout.getvalue())
+        self.assertIn("warning: index 'mad' was skipped", text_stderr.getvalue())
+
+        csv_out = self.root / "partial-composite.csv"
+        csv_stderr = StringIO()
+        with patch("sys.stderr", csv_stderr):
+            csv_code = main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "mad",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(csv_out),
+                ]
+            )
+
+        self.assertEqual(csv_code, 0)
+        self.assertTrue(
+            csv_out.read_text(encoding="utf-8").startswith("respondent,composite_score")
+        )
+        self.assertIn("warning: index 'mad' was skipped", csv_stderr.getvalue())
 
     def test_response_time_json_preserves_ids_and_fixed_cutoff(self) -> None:
         timings = self.root / "timings.csv"

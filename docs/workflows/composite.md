@@ -109,6 +109,12 @@ indices continue. Pass `strict=True` to `composite()`, `composite_flag()`,
 `composite_summary()`, or `composite_probability()` when every selected index
 must succeed.
 
+The CLI does not discard these soft failures. Every format writes a warning to
+standard error, text output includes an `errors` section, JSON includes an
+`errors` object, and NPZ stores aligned `error_names` and `error_messages`
+vectors. CSV remains a respondent-only table, so retain the separate
+standard-error stream when provenance is required.
+
 All composite helpers accept `workers`. The default of `1` evaluates indices
 sequentially; larger values retain index and diagnostic order while trading
 higher temporary memory for potential throughput improvements.
@@ -143,5 +149,6 @@ remain compatible with spreadsheet and statistics tools.
 NPZ output preserves the numeric score vector, combination method, and optional
 respondent IDs. Text, JSON, and NPZ outputs also record explicitly supplied
 weight overrides; unlisted selected indices use weight 1. When supplied, the
-minimum valid-index rule is recorded alongside those fields. See the
+minimum valid-index rule and any soft failures are recorded alongside those
+fields. See the
 [versioned archive schema](../cli-output.md).
