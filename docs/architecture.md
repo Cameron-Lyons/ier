@@ -149,6 +149,9 @@ Python and command-line workflows; the latter validates file values in bounded
 row batches and preserves read-only memory mapping for Boolean NumPy inputs.
 False cells do not contribute to either the missing count or denominator. A
 zero denominator yields `NaN`, which the shared flagging policy leaves unflagged.
+Scoring also reduces responses and masks in fixed-size row blocks. Required-item
+subsets are selected within each block rather than copied for the full cohort,
+keeping temporary memory independent of respondent count.
 
 Attention-check scoring keeps its legacy missing-as-pass behavior by default but
 also supports missing-as-failure, available-case omission, and strict propagation.

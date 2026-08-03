@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.62] - 2026-08-03
+
+### Changed
+
+- Missing-response scoring now reduces response and applicability matrices in
+  bounded row blocks. Required-item subsets are selected only within the current
+  block instead of copying the complete cohort, preserving scores, validation,
+  read-only inputs, and registry behavior while making temporary memory independent
+  of respondent count. The row-reduction benchmark now covers every item-selection
+  and applicability mode, and no dependency is added.
+
 ## [2.19.61] - 2026-08-03
 
 ### Fixed
