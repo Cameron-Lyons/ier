@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+echo "==> project/lock version"
+python3 scripts/check_lock_version.py
+
 if command -v uv >/dev/null 2>&1; then
   echo "==> sync locked quality environments"
   uv sync --locked --all-groups
