@@ -112,6 +112,25 @@ class TestGuttman(unittest.TestCase):
                 self.assertGreaterEqual(r, 0)
                 self.assertLessEqual(r, 1)
 
+    def test_missing_values_exclude_only_unavailable_pairs(self) -> None:
+        """Test missing responses leave all remaining ordered pairs available."""
+        data = [[1, np.nan, 3, 2], [3, 2, np.nan, 1]]
+        result = guttman(data)
+        np.testing.assert_allclose(result, [2.0 / 3.0, 2.0 / 3.0])
+
+    def test_high_cardinality_raw_counts(self) -> None:
+        """Test the bounded-memory fallback on continuous-style response data."""
+        n_items = 70
+        data = np.arange(n_items, dtype=float).reshape(1, -1)
+        result = guttman(data, normalize=False)
+        np.testing.assert_array_equal(result, [n_items * (n_items - 1) / 2])
+
+    def test_all_missing_data_returns_nan_without_warnings(self) -> None:
+        """Test respondents with no comparable items return missing scores."""
+        data = np.full((2, 4), np.nan)
+        result = guttman(data)
+        self.assertTrue(np.all(np.isnan(result)))
+
     def test_flag_function(self) -> None:
         """Test Guttman flagging."""
         data = [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1]]
