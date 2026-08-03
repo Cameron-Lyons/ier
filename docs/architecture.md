@@ -228,9 +228,11 @@ valid-response counts, and error accumulation by respondent. Small categorical
 scales use cumulative category counts within each batch, while high-cardinality
 data use the same row bound with direct item-pair comparisons.
 Split-half individual reliability generates the established seeded item splits
-once, then reuses each bounded respondent block across them. Complete floating
-blocks are centered in their selection buffers, while missing-aware blocks keep
-pairwise-complete correlation semantics and per-respondent valid-split counts.
+once, then reuses each bounded respondent block across them. Row correlations
+use raw sums, squares, and cross-products without allocating complete centered
+half matrices. A scale-aware cancellation check sends only numerically risky
+row pairs through stable centering; pairwise-complete missing semantics and
+per-respondent valid-split counts remain unchanged.
 Complete-response onset detection derives stable sliding-window variability
 from rolling means and bounded deviation buffers. Its changepoint test retains
 only prefix and candidate-position workspaces instead of complete centered and

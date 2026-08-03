@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.39] - 2026-08-03
+
+### Performance
+
+- Split-half individual reliability now derives row correlations from bounded
+  raw-moment workspaces and materializes centered buffers only for numerically
+  cancellation-prone row pairs. On a 100,000-respondent, 80-item benchmark
+  with 20 splits and 10% missing responses, median time improved from 0.5691
+  to 0.4546 seconds and peak traced allocation from 12.0 to 7.6 MiB. The
+  complete-response workload also improved from 0.1968 to 0.1841 seconds with
+  the same 7.6 MiB peak. Seeded split order, pairwise missing semantics,
+  constant rows, and large-offset numerical stability are preserved without
+  adding a dependency.
+
 ## [2.19.38] - 2026-08-03
 
 ### Performance
