@@ -13,6 +13,7 @@ from ier import (
     IndexOptions,
     __version__,
     composite,
+    composite_summary,
     index_catalog,
     response_time,
     response_time_consistency,
@@ -328,6 +329,11 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Require at least N available component scores per respondent",
     )
+    composite_parser.add_argument(
+        "--include-components",
+        action="store_true",
+        help="Include raw component scores and per-respondent availability counts",
+    )
     _add_shared_options(composite_parser)
 
     response_time_parser = sub.add_parser(
@@ -536,21 +542,39 @@ def _run_command(args: argparse.Namespace) -> int:
         return 0
 
     weights = _parse_weights(args.weight)
-    scores_result = composite(
-        matrix,
-        indices=args.indices,
-        method=args.method,
-        options=options,
-        weights=weights,
-        min_valid_indices=args.min_valid_indices,
-        return_diagnostics=True,
-        strict=args.strict,
-        workers=args.workers,
-    )
-    if not isinstance(scores_result, tuple):
-        print("error: unexpected composite return type", file=sys.stderr)
-        return 1
-    scores, errors = scores_result
+    component_scores: dict[str, np.ndarray] | None = None
+    valid_index_counts: np.ndarray | None = None
+    if args.include_components:
+        details = composite_summary(
+            matrix,
+            indices=args.indices,
+            method=args.method,
+            options=options,
+            weights=weights,
+            min_valid_indices=args.min_valid_indices,
+            strict=args.strict,
+            workers=args.workers,
+        )
+        scores = details["composite"]
+        errors = details["errors"]
+        component_scores = details["indices"]
+        valid_index_counts = details["valid_index_counts"]
+    else:
+        scores_result = composite(
+            matrix,
+            indices=args.indices,
+            method=args.method,
+            options=options,
+            weights=weights,
+            min_valid_indices=args.min_valid_indices,
+            return_diagnostics=True,
+            strict=args.strict,
+            workers=args.workers,
+        )
+        if not isinstance(scores_result, tuple):
+            print("error: unexpected composite return type", file=sys.stderr)
+            return 1
+        scores, errors = scores_result
     _report_soft_errors(errors)
 
     if args.format == "json":
@@ -564,12 +588,20 @@ def _run_command(args: argparse.Namespace) -> int:
                 weights,
                 args.min_valid_indices,
                 errors,
+                component_scores,
+                valid_index_counts,
             ),
         )
         return 0
     elif args.format == "csv":
         with _output_stream(args.output) as handle:
-            _write_composite_csv(handle, scores, respondent_ids)
+            _write_composite_csv(
+                handle,
+                scores,
+                respondent_ids,
+                component_scores,
+                valid_index_counts,
+            )
         return 0
     elif args.format == "npz":
         _write_composite_npz(
@@ -580,6 +612,8 @@ def _run_command(args: argparse.Namespace) -> int:
             weights,
             args.min_valid_indices,
             errors,
+            component_scores,
+            valid_index_counts,
         )
         return 0
     else:
@@ -591,6 +625,8 @@ def _run_command(args: argparse.Namespace) -> int:
             weights,
             args.min_valid_indices,
             errors,
+            component_scores,
+            valid_index_counts,
         )
     _write_output(text, args.output)
     return 0

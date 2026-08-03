@@ -123,8 +123,21 @@ def _write_composite_npz(
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
     errors: Mapping[str, str] | None = None,
+    component_scores: Mapping[str, np.ndarray] | None = None,
+    valid_index_counts: np.ndarray | None = None,
 ) -> None:
     """Write composite results as a versioned NumPy archive."""
+    if (component_scores is None) != (valid_index_counts is None):
+        raise ValueError("component scores and valid index counts must be provided together")
+    if valid_index_counts is not None and len(valid_index_counts) != len(scores):
+        raise ValueError("valid index count length must match composite score length")
+    if component_scores is not None:
+        for name, values in component_scores.items():
+            if len(values) != len(scores):
+                raise ValueError(
+                    f"component score length for {name} must match composite score length"
+                )
+
     payload = _metadata("composite", len(scores))
     payload.update(
         {
@@ -137,6 +150,12 @@ def _write_composite_npz(
         payload["weights"] = np.asarray(list(weights.values()), dtype=np.float64)
     if min_valid_indices is not None:
         payload["min_valid_indices"] = np.asarray(min_valid_indices, dtype=np.int64)
+    if component_scores is not None:
+        assert valid_index_counts is not None
+        payload["index_names"] = np.asarray(list(component_scores), dtype=np.str_)
+        payload["valid_index_counts"] = np.asarray(valid_index_counts, dtype=np.int64)
+        for name, values in component_scores.items():
+            payload[f"score__{name}"] = np.asarray(values, dtype=np.float64)
     _add_errors(payload, errors)
     _add_respondent_ids(payload, len(scores), respondent_ids)
     _write_npz_archive(path, payload)

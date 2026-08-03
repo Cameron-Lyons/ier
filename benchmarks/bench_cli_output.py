@@ -1,8 +1,9 @@
-"""Benchmark CLI JSON, CSV, and NPZ serialization on synthetic screening results.
+"""Benchmark CLI JSON, CSV, and NPZ serialization on synthetic scoring results.
 
 Usage:
     uv run python benchmarks/bench_cli_output.py
     uv run python benchmarks/bench_cli_output.py --format json --respondents 250000
+    uv run python benchmarks/bench_cli_output.py --workflow composite --format all
 """
 
 from __future__ import annotations
@@ -13,21 +14,30 @@ import statistics
 import tempfile
 import time
 import tracemalloc
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from ier._cli_npz import _write_screen_npz
-from ier._cli_output import _output_stream, _write_screen_csv, _write_screen_json
+from ier._cli_npz import _write_composite_npz, _write_screen_npz
+from ier._cli_output import (
+    _output_stream,
+    _write_composite_csv,
+    _write_composite_json,
+    _write_screen_csv,
+    _write_screen_json,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ier.types import ScreenResult
 
 OutputFormat = Literal["csv", "json", "npz"]
 
 
-def _make_result(n_respondents: int, n_indices: int) -> ScreenResult:
+def _make_screen_result(n_respondents: int, n_indices: int) -> ScreenResult:
     names = [f"score_{index}" for index in range(n_indices)]
     values = np.linspace(0.0, 1.0, n_respondents)
     flags = values > 0.95
@@ -55,7 +65,7 @@ def _make_result(n_respondents: int, n_indices: int) -> ScreenResult:
     }
 
 
-def _write_result(
+def _write_screen_result(
     output_format: OutputFormat,
     destination: Path,
     result: ScreenResult,
@@ -71,10 +81,54 @@ def _write_result(
     _write_screen_npz(destination, result)
 
 
-def _benchmark(
+def _make_composite_result(
+    n_respondents: int,
+    n_indices: int,
+) -> tuple[np.ndarray, dict[str, np.ndarray], np.ndarray]:
+    values = np.linspace(0.0, 1.0, n_respondents)
+    component_scores = {f"score_{index}": values + index / n_indices for index in range(n_indices)}
+    valid_index_counts = np.full(n_respondents, n_indices, dtype=np.int_)
+    return values, component_scores, valid_index_counts
+
+
+def _write_composite_result(
     output_format: OutputFormat,
     destination: Path,
-    result: ScreenResult,
+    scores: np.ndarray,
+    component_scores: dict[str, np.ndarray],
+    valid_index_counts: np.ndarray,
+) -> None:
+    if output_format == "csv":
+        with _output_stream(destination) as handle:
+            _write_composite_csv(
+                handle,
+                scores,
+                component_scores=component_scores,
+                valid_index_counts=valid_index_counts,
+            )
+        return
+    if output_format == "json":
+        with _output_stream(destination) as handle:
+            _write_composite_json(
+                handle,
+                scores,
+                "mean",
+                component_scores=component_scores,
+                valid_index_counts=valid_index_counts,
+            )
+        return
+    _write_composite_npz(
+        destination,
+        scores,
+        "mean",
+        component_scores=component_scores,
+        valid_index_counts=valid_index_counts,
+    )
+
+
+def _benchmark(
+    operation: Callable[[], None],
+    destination: Path,
     repeats: int,
 ) -> tuple[float, float, float]:
     timings: list[float] = []
@@ -83,7 +137,7 @@ def _benchmark(
         gc.collect()
         tracemalloc.start()
         started = time.perf_counter()
-        _write_result(output_format, destination, result)
+        operation()
         timings.append(time.perf_counter() - started)
         peaks.append(tracemalloc.get_traced_memory()[1])
         tracemalloc.stop()
@@ -100,6 +154,11 @@ def main() -> None:
     parser.add_argument("--indices", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument(
+        "--workflow",
+        choices=["screen", "composite"],
+        default="screen",
+    )
+    parser.add_argument(
         "--format",
         choices=["csv", "json", "npz", "all", "both"],
         default="all",
@@ -109,7 +168,14 @@ def main() -> None:
     if args.respondents < 1 or args.indices < 1 or args.repeats < 1:
         parser.error("respondents, indices, and repeats must be positive")
 
-    result = _make_result(args.respondents, args.indices)
+    screen_result = (
+        _make_screen_result(args.respondents, args.indices) if args.workflow == "screen" else None
+    )
+    composite_result = (
+        _make_composite_result(args.respondents, args.indices)
+        if args.workflow == "composite"
+        else None
+    )
     if args.format == "all":
         formats: list[OutputFormat] = ["csv", "json", "npz"]
     elif args.format == "both":
@@ -117,15 +183,30 @@ def main() -> None:
     else:
         formats = [args.format]
 
-    print(f"respondents={args.respondents} indices={args.indices}")
+    print(f"workflow={args.workflow} respondents={args.respondents} indices={args.indices}")
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         for output_format in formats:
-            destination = root / f"screen.{output_format}"
+            destination = root / f"{args.workflow}.{output_format}"
+            if args.workflow == "screen":
+                assert screen_result is not None
+                operation = partial(
+                    _write_screen_result,
+                    output_format,
+                    destination,
+                    screen_result,
+                )
+            else:
+                assert composite_result is not None
+                operation = partial(
+                    _write_composite_result,
+                    output_format,
+                    destination,
+                    *composite_result,
+                )
             seconds, peak_mib, output_mib = _benchmark(
-                output_format,
+                operation,
                 destination,
-                result,
                 args.repeats,
             )
             print(

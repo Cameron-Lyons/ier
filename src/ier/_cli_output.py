@@ -303,6 +303,24 @@ def _write_screen_csv(
         writer.writerow(row)
 
 
+def _validate_composite_components(
+    n_respondents: int,
+    component_scores: Mapping[str, np.ndarray] | None,
+    valid_index_counts: np.ndarray | None,
+) -> None:
+    """Validate optional respondent-aligned composite detail arrays."""
+    if (component_scores is None) != (valid_index_counts is None):
+        raise ValueError("component scores and valid index counts must be provided together")
+    if component_scores is None:
+        return
+    assert valid_index_counts is not None
+    if len(valid_index_counts) != n_respondents:
+        raise ValueError("valid index count length must match composite score length")
+    for name, values in component_scores.items():
+        if len(values) != n_respondents:
+            raise ValueError(f"component score length for {name} must match composite score length")
+
+
 def _emit_composite_text(
     scores: np.ndarray,
     method: str,
@@ -311,8 +329,12 @@ def _emit_composite_text(
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
     errors: Mapping[str, str] | None = None,
+    component_scores: Mapping[str, np.ndarray] | None = None,
+    valid_index_counts: np.ndarray | None = None,
 ) -> str:
-    order = np.argsort(scores)[::-1][: max(top, 0)]
+    _validate_composite_components(len(scores), component_scores, valid_index_counts)
+    finite_rows = np.flatnonzero(np.isfinite(scores))
+    order = finite_rows[np.argsort(scores[finite_rows])[::-1]][: max(top, 0)]
     labels = _respondent_label_values(len(scores), respondent_ids)
     label_name = "identifier" if respondent_ids is not None else "index"
     lines = [
@@ -329,9 +351,20 @@ def _emit_composite_text(
         lines.append("errors:")
         for name, message in sorted(errors.items()):
             lines.append(f"  {name}: {message}")
-    lines.append(f"top composite scores ({label_name}, score):")
+    detail_names = list(component_scores) if component_scores is not None else []
+    if detail_names:
+        lines.append("indices: " + ", ".join(detail_names))
+    columns = [label_name, "score"]
+    if component_scores is not None:
+        columns.extend(["valid_indices", *detail_names])
+    lines.append(f"top composite scores ({', '.join(columns)}):")
     for idx in order:
-        lines.append(f"  {labels[int(idx)]}\t{float(scores[idx]):.6f}")
+        fields = [str(labels[int(idx)]), f"{float(scores[idx]):.6f}"]
+        if component_scores is not None:
+            assert valid_index_counts is not None
+            fields.append(str(int(valid_index_counts[idx])))
+            fields.extend(f"{float(component_scores[name][idx]):.6f}" for name in detail_names)
+        lines.append("  " + "\t".join(fields))
     return "\n".join(lines)
 
 
@@ -342,6 +375,8 @@ def _emit_composite_json(
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
     errors: Mapping[str, str] | None = None,
+    component_scores: Mapping[str, np.ndarray] | None = None,
+    valid_index_counts: np.ndarray | None = None,
 ) -> str:
     output = StringIO()
     _write_composite_json(
@@ -352,6 +387,8 @@ def _emit_composite_json(
         weights,
         min_valid_indices,
         errors,
+        component_scores,
+        valid_index_counts,
     )
     return output.getvalue()
 
@@ -364,8 +401,11 @@ def _write_composite_json(
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
     errors: Mapping[str, str] | None = None,
+    component_scores: Mapping[str, np.ndarray] | None = None,
+    valid_index_counts: np.ndarray | None = None,
 ) -> None:
     """Write composite JSON while bounding respondent-array allocation."""
+    _validate_composite_components(len(scores), component_scores, valid_index_counts)
     payload: dict[str, object] = {
         "method": method,
         "scores": _JsonArray(scores, "number"),
@@ -376,6 +416,17 @@ def _write_composite_json(
         payload["weights"] = dict(weights)
     if min_valid_indices is not None:
         payload["min_valid_indices"] = min_valid_indices
+    if component_scores is not None:
+        assert valid_index_counts is not None
+        payload["indices_used"] = list(component_scores)
+        payload["component_scores"] = {
+            name: _JsonArray(np.asarray(values), "number")
+            for name, values in component_scores.items()
+        }
+        payload["valid_index_counts"] = _JsonArray(
+            np.asarray(valid_index_counts),
+            "integer",
+        )
     if respondent_ids is not None:
         payload["respondent_ids"] = _JsonArray(
             _respondent_label_values(len(scores), respondent_ids),
@@ -388,13 +439,25 @@ def _write_composite_csv(
     handle: TextIO,
     scores: np.ndarray,
     respondent_ids: list[str] | None = None,
+    component_scores: Mapping[str, np.ndarray] | None = None,
+    valid_index_counts: np.ndarray | None = None,
 ) -> None:
     """Write respondent-aligned composite scores directly to a CSV stream."""
+    _validate_composite_components(len(scores), component_scores, valid_index_counts)
+    detail_names = list(component_scores) if component_scores is not None else []
     writer = csv.writer(handle)
-    writer.writerow(["respondent", "composite_score"])
+    header = ["respondent", "composite_score"]
+    if component_scores is not None:
+        header.extend(["valid_index_count", *(f"{name}_score" for name in detail_names)])
+    writer.writerow(header)
     labels = _respondent_label_values(len(scores), respondent_ids)
-    for label, score in zip(labels, scores, strict=True):
-        writer.writerow([label, _csv_number(score)])
+    for index, (label, score) in enumerate(zip(labels, scores, strict=True)):
+        row: list[object] = [label, _csv_number(score)]
+        if component_scores is not None:
+            assert valid_index_counts is not None
+            row.append(int(valid_index_counts[index]))
+            row.extend(_csv_number(component_scores[name][index]) for name in detail_names)
+        writer.writerow(row)
 
 
 def _emit_response_time_text(

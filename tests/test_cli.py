@@ -13,9 +13,9 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ier import composite
+from ier import composite, composite_summary
 from ier._cli_input import _load_input, _load_matrix
-from ier._cli_output import _emit_composite_json, _write_composite_csv
+from ier._cli_output import _emit_composite_json, _emit_composite_text, _write_composite_csv
 from ier.cli import (
     _parse_float_list,
     _parse_int_list,
@@ -175,6 +175,7 @@ class TestCli(unittest.TestCase):
                     "--indices",
                     "irv",
                     "mad",
+                    "--include-components",
                     "--format",
                     "json",
                     "--output",
@@ -186,6 +187,9 @@ class TestCli(unittest.TestCase):
         json_payload = json.loads(json_out.read_text(encoding="utf-8"))
         self.assertEqual(list(json_payload["errors"]), ["mad"])
         self.assertIn("mad_positive_items", json_payload["errors"]["mad"])
+        self.assertEqual(json_payload["indices_used"], ["irv"])
+        self.assertEqual(list(json_payload["component_scores"]), ["irv"])
+        self.assertEqual(json_payload["valid_index_counts"], [1, 1, 1])
         self.assertIn("warning: index 'mad' was skipped", json_stderr.getvalue())
 
         text_stdout = StringIO()
@@ -866,6 +870,78 @@ class TestCli(unittest.TestCase):
         self.assertEqual(text_code, 0)
         self.assertIn("minimum valid indices: 2", stdout.getvalue())
 
+    def test_composite_components_are_available_in_json_csv_and_text(self) -> None:
+        json_out = self.root / "component-composite.json"
+        code = main(
+            [
+                "composite",
+                str(self.csv_path),
+                "--indices",
+                "irv",
+                "longstring",
+                "--include-components",
+                "--format",
+                "json",
+                "--output",
+                str(json_out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["indices_used"], ["irv", "longstring"])
+        self.assertEqual(list(payload["component_scores"]), ["irv", "longstring"])
+        self.assertEqual(payload["valid_index_counts"], [2, 2, 2])
+
+        matrix, _ = _load_input(self.csv_path, None, None)
+        expected = composite_summary(matrix, indices=["irv", "longstring"])
+        np.testing.assert_allclose(payload["scores"], expected["composite"])
+        for name in expected["indices_used"]:
+            np.testing.assert_allclose(payload["component_scores"][name], expected["indices"][name])
+
+        csv_out = self.root / "component-composite.csv"
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--include-components",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(csv_out),
+                ]
+            ),
+            0,
+        )
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        self.assertEqual(
+            list(rows[0]),
+            ["respondent", "composite_score", "valid_index_count", "irv_score", "longstring_score"],
+        )
+        self.assertEqual([row["valid_index_count"] for row in rows], ["2", "2", "2"])
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            text_code = main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--include-components",
+                    "--top",
+                    "1",
+                ]
+            )
+        self.assertEqual(text_code, 0)
+        self.assertIn("indices: irv, longstring", stdout.getvalue())
+        self.assertIn("index, score, valid_indices, irv, longstring", stdout.getvalue())
+
     def test_named_item_columns_exclude_metadata_and_preserve_order(self) -> None:
         mixed = self.root / "mixed-columns.csv"
         mixed.write_text(
@@ -1117,6 +1193,38 @@ class TestCli(unittest.TestCase):
         self.assertNotIn("NaN", text)
         self.assertNotIn("Infinity", text)
         self.assertEqual(json.loads(text)["scores"], [1.0, None, None, None])
+
+    def test_composite_text_ranking_excludes_non_finite_scores(self) -> None:
+        text = _emit_composite_text(
+            np.array([1.0, np.nan, np.inf, -np.inf], dtype=float),
+            "mean",
+            4,
+        )
+
+        self.assertIn("\n  0\t1.000000", text)
+        self.assertNotIn("\n  1\t", text)
+        self.assertNotIn("\n  2\t", text)
+        self.assertNotIn("\n  3\t", text)
+
+    def test_composite_component_arrays_must_be_respondent_aligned(self) -> None:
+        scores = np.array([1.0, 2.0])
+        with self.assertRaisesRegex(ValueError, "must be provided together"):
+            _emit_composite_json(scores, "mean", component_scores={"irv": scores})
+        with self.assertRaisesRegex(ValueError, "valid index count length"):
+            _write_composite_csv(
+                StringIO(),
+                scores,
+                component_scores={"irv": scores},
+                valid_index_counts=np.array([1]),
+            )
+        with self.assertRaisesRegex(ValueError, "component score length for irv"):
+            _emit_composite_text(
+                scores,
+                "mean",
+                2,
+                component_scores={"irv": np.array([1.0])},
+                valid_index_counts=np.array([1, 1]),
+            )
 
     def test_composite_csv_uses_empty_cells_for_all_non_finite_values(self) -> None:
         output = StringIO()

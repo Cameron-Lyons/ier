@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.15.0] - 2026-08-02
+
+### Added
+
+- `ier composite --include-components` now exposes successful raw per-index
+  scores and respondent-level valid-index counts in text, JSON, CSV, and NPZ.
+  The option reuses the detailed summary workflow without rescoring, retains
+  existing failure metadata, streams JSON arrays and CSV rows, and writes typed
+  NPZ members without stacking a component matrix. On 100,000 respondents and
+  five indices, detailed CSV used 0.274 MiB peak temporary allocation, JSON used
+  0.525 MiB, and NPZ used 0.899 MiB, without adding a dependency.
+
+### Fixed
+
+- Composite text ranking now excludes `NaN` and infinite aggregate scores
+  instead of allowing unavailable rows to appear above finite scores.
+
 ## [2.14.1] - 2026-08-02
 
 ### Fixed

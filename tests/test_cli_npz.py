@@ -65,6 +65,7 @@ class TestCliNpz(unittest.TestCase):
                     "longstring=0.5",
                     "--min-valid-indices",
                     "2",
+                    "--include-components",
                     "--output",
                     str(composite_out),
                 ]
@@ -111,6 +112,10 @@ class TestCliNpz(unittest.TestCase):
         self.assertEqual(composite_result["min_valid_indices"].item(), 2)
         self.assertEqual(composite_result["error_names"].tolist(), [])
         self.assertEqual(composite_result["error_messages"].tolist(), [])
+        self.assertEqual(composite_result["index_names"].tolist(), ["irv", "longstring"])
+        self.assertEqual(composite_result["valid_index_counts"].tolist(), [2, 2, 2])
+        self.assertEqual(composite_result["score__irv"].shape, (3,))
+        self.assertEqual(composite_result["score__longstring"].shape, (3,))
         self.assertEqual(composite_result["scores"].shape, (3,))
         self.assertEqual(
             composite_result["respondent_ids"].tolist(), ["case-01", "case-02", "case-03"]
@@ -201,6 +206,8 @@ class TestCliNpz(unittest.TestCase):
         with np.load(out, allow_pickle=False) as archive:
             self.assertEqual(archive["error_names"].tolist(), ["mad"])
             self.assertIn("mad_positive_items", archive["error_messages"][0])
+            self.assertNotIn("index_names", archive.files)
+            self.assertNotIn("valid_index_counts", archive.files)
 
     def test_output_path_validation_precedes_input_loading(self) -> None:
         missing = self.root / "missing.csv"
