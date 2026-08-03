@@ -313,6 +313,30 @@ class TestCli(unittest.TestCase):
         self.assertEqual(payload["scores"], [0.5, 1.0, 3.0])
         self.assertEqual(payload["flags"], [True, True, False])
 
+    def test_matrix_loader_converts_rows_incrementally(self) -> None:
+        converted_cells = 0
+
+        def iter_rows(path: Path, delimiter: str | None) -> object:
+            del path, delimiter
+            yield ["1", "2"]
+            self.assertEqual(converted_cells, 2)
+            yield ["3", "4"]
+
+        def parse_cell(cell: str) -> float:
+            nonlocal converted_cells
+            converted_cells += 1
+            return float(cell)
+
+        with (
+            patch("ier.cli._iter_rows", side_effect=iter_rows),
+            patch("ier.cli._parse_numeric_cell", side_effect=parse_cell),
+        ):
+            matrix = _load_matrix(Path("unused.csv"), None)
+
+        np.testing.assert_array_equal(matrix, [[1.0, 2.0], [3.0, 4.0]])
+        matrix[0, 0] = 9.0
+        self.assertEqual(matrix[0, 0], 9.0)
+
     def test_indices_command_text_output(self) -> None:
         stdout = StringIO()
         with patch("sys.stdout", stdout):
