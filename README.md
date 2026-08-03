@@ -18,7 +18,7 @@ For a comprehensive methods review, see
 - Contracted complete and bounded masked missing-response LZ estimation
 - Allocation-bounded split-half reliability with stable raw-moment correlations
 - Exact low-allocation two-point correlations for common even-odd factor designs
-- Bounded grouped missing-response Markov entropy scoring
+- Batched dense, sparse, and grouped missing-response Markov entropy scoring
 - Batched missing-response longest-run and repeating-pattern scoring
 - Batched dependency-free chi-square quantiles for large Mahalanobis Q-Q plots
 - Grouped missing-aware medians for response-time summaries and mixtures

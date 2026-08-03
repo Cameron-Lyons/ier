@@ -31,7 +31,7 @@ defaults, and options that must be configured before an index can run.
 | `psychsyn` | Psychometric synonym consistency | low | yes | yes | `psychsyn_critval` |
 | `psychant` | Psychometric antonym consistency | low | no | yes | `psychant_critval` |
 | `person_total` | Agreement with the sample item profile | low* | yes | yes | — |
-| `markov` | Transition entropy | low | yes | yes | bounded retained-length groups |
+| `markov` | Transition entropy | low | yes | yes | bounded dense/sparse and retained-length batches |
 | `missing_rate` | Missing-response proportion | high | no | yes | optional item subset / applicability mask |
 | `u3_poly` | Polytomous person-fit / Guttman-like | high | yes | no | `scale_min` / `scale_max` |
 | `midpoint` | Midpoint responding | high | yes | no | `scale_min` / `scale_max`, `midpoint_tolerance` |

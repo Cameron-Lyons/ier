@@ -3,6 +3,9 @@
 Usage:
     uv run python benchmarks/bench_markov.py
     uv run python benchmarks/bench_markov.py --respondents 200000 --items 100 --states 7
+    uv run python benchmarks/bench_markov.py --respondents 20000 --items 80 --states 65
+    uv run python benchmarks/bench_markov.py --respondents 20000 --states 1000 \
+        --missing-rate 0.1
     uv run python benchmarks/bench_markov.py --missing-rate 0.1
 """
 

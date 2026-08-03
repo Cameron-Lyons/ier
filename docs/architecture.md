@@ -202,11 +202,13 @@ validated vector directly, then shares cutoff resolution and all four output
 serializers with the original response-time command.
 
 Markov transition entropy counts categorical pairs in bounded row batches for
-up to 64 observed states. Higher-cardinality inputs use only each row's observed
-states and pairs, avoiding a dense global state-square allocation. Both paths
-evaluate the equivalent count form of conditional entropy. Missing-response rows
-are grouped by retained length and compressed in bounded batches, preserving the
-post-removal response order while reusing the same dense or sparse kernel.
+up to 64 observed states. Higher-cardinality inputs lexicographically sort origin states
+and transition pairs within 16,384-transition-cell batches, deriving observed
+run counts without a dense global state-square allocation or respondent-wise
+dispatch. Both paths evaluate the equivalent count form of conditional entropy.
+Missing-response rows are grouped by retained length and compressed in bounded
+batches, preserving the post-removal response order while reusing the same dense
+or sparse kernel.
 
 Numeric longest-run and repeating-pattern indices use the shared retained-length
 compression iterator when responses are missing. Each bounded group preserves

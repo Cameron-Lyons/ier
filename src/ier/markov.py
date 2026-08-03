@@ -24,6 +24,7 @@ _MAX_DENSE_STATES = 64
 _TRANSITION_BATCH_WORKSPACE_BYTES = 64 * 1024 * 1024
 _CATEGORY_DISCOVERY_ROWS = 4096
 _MISSING_COMPRESSION_BATCH_CELLS = 131_072
+_SPARSE_TRANSITION_BATCH_CELLS = 16_384
 
 
 def markov(
@@ -173,10 +174,53 @@ def _dense_transition_counts(encoded: np.ndarray, n_states: int) -> np.ndarray:
 
 
 def _transition_entropies_sparse(x: np.ndarray) -> np.ndarray:
-    """Score high-cardinality complete rows without dense state-square arrays."""
+    """Score high-cardinality rows in bounded sorted-transition batches."""
+    n_transitions = x.shape[1] - 1
+    batch_rows = max(1, _SPARSE_TRANSITION_BATCH_CELLS // n_transitions)
     result = np.empty(len(x), dtype=float)
-    for row_index, row in enumerate(x):
-        result[row_index] = _transition_entropy_row(row)
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        result[start:stop] = _transition_entropy_sparse_batch(x[start:stop])
+    return result
+
+
+def _transition_entropy_sparse_batch(x: np.ndarray) -> np.ndarray:
+    """Compute sparse transition entropy without a global state-square workspace."""
+    origins = x[:, :-1]
+    destinations = x[:, 1:]
+    order = np.lexsort((destinations, origins), axis=1)
+    sorted_origins = np.take_along_axis(origins, order, axis=1)
+
+    run_starts = np.empty(sorted_origins.shape, dtype=bool)
+    run_starts[:, 0] = True
+    np.not_equal(
+        sorted_origins[:, 1:],
+        sorted_origins[:, :-1],
+        out=run_starts[:, 1:],
+    )
+    origin_terms = _sparse_count_terms(run_starts)
+
+    sorted_destinations = np.take_along_axis(destinations, order, axis=1)
+    run_starts[:, 1:] |= sorted_destinations[:, 1:] != sorted_destinations[:, :-1]
+    pair_terms = _sparse_count_terms(run_starts)
+
+    result: np.ndarray = (origin_terms - pair_terms) / origins.shape[1]
+    return result
+
+
+def _sparse_count_terms(run_starts: np.ndarray) -> np.ndarray:
+    """Return each row's sum of ``count * log2(count)`` from run boundaries."""
+    n_rows, width = run_starts.shape
+    positions = np.flatnonzero(run_starts)
+    counts = np.empty_like(positions)
+    counts[:-1] = positions[1:] - positions[:-1]
+    counts[-1] = run_starts.size - positions[-1]
+
+    np.floor_divide(positions, width, out=positions)
+    terms = counts.astype(float)
+    np.log2(terms, out=terms)
+    terms *= counts
+    result: np.ndarray = np.bincount(positions, weights=terms, minlength=n_rows)
     return result
 
 
