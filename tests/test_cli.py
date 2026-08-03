@@ -20,12 +20,16 @@ from ier import (
     composite_probability,
     composite_scores,
     composite_summary,
+    fit_response_time_mixture,
     irv,
+    load_response_time_mixture_model,
     lz,
     missing_rate,
     psychant,
     psychsyn,
+    response_time_mixture_scores,
     save_response_time_archive,
+    save_response_time_mixture_model,
     save_score_archive,
 )
 from ier._cli_input import (
@@ -1272,6 +1276,177 @@ class TestCli(unittest.TestCase):
         self.assertEqual(payload["flag_direction"], "high")
         self.assertEqual(payload["flags"], [True, True, True, True, False, False, False, False])
         self.assertTrue(all(0.0 <= score <= 1.0 for score in payload["scores"]))
+
+    def test_response_time_fit_saves_named_column_calibration(self) -> None:
+        reference = self.root / "reference-timings.csv"
+        reference.write_text(
+            "participant,cohort,t1,t2,t3\n"
+            "a,A,0.3,8,0.5\nb,A,0.4,8,0.6\nc,A,0.5,8,0.7\n"
+            "d,B,2.0,8,2.5\ne,B,2.3,8,2.8\nf,B,2.6,8,3.0\n"
+            "g,C,6.0,8,7.0\nh,C,6.5,8,7.5\ni,C,7.0,8,8.0\n",
+            encoding="utf-8",
+        )
+        model_path = self.root / "timing-model.npz"
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            code = main(
+                [
+                    "response-time-fit",
+                    str(reference),
+                    str(model_path),
+                    "--id-column",
+                    "participant",
+                    "--item-columns",
+                    "t3,t1",
+                    "--components",
+                    "3",
+                    "--random-seed",
+                    "42",
+                ]
+            )
+
+        expected_data = np.asarray(
+            [
+                [0.5, 0.3],
+                [0.6, 0.4],
+                [0.7, 0.5],
+                [2.5, 2.0],
+                [2.8, 2.3],
+                [3.0, 2.6],
+                [7.0, 6.0],
+                [7.5, 6.5],
+                [8.0, 7.0],
+            ]
+        )
+        expected = fit_response_time_mixture(
+            expected_data,
+            n_components=3,
+            random_seed=42,
+        )
+        loaded = load_response_time_mixture_model(model_path)
+
+        self.assertEqual(code, 0)
+        self.assertIn("saved response-time mixture model with 3 components", stdout.getvalue())
+        np.testing.assert_array_equal(loaded.weights, expected.weights)
+        np.testing.assert_array_equal(loaded.means, expected.means)
+        np.testing.assert_array_equal(loaded.variances, expected.variances)
+
+    def test_response_time_uses_saved_model_without_refitting(self) -> None:
+        reference = np.asarray(
+            [
+                [0.3, 0.4, 0.5],
+                [0.4, 0.5, 0.6],
+                [0.5, 0.6, 0.7],
+                [4.0, 5.0, 6.0],
+                [5.0, 6.0, 7.0],
+                [6.0, 7.0, 8.0],
+            ]
+        )
+        model = fit_response_time_mixture(reference, random_seed=42)
+        model_path = self.root / "saved-model.npz"
+        save_response_time_mixture_model(model_path, model)
+        later_path = self.root / "later-timings.csv"
+        later_path.write_text(
+            "participant,t1,t2,t3\nfast,0.4,0.5,0.6\nregular,4,5,6\nmissing,,,\n",
+            encoding="utf-8",
+        )
+        later = np.asarray([[0.4, 0.5, 0.6], [4.0, 5.0, 6.0], [np.nan, np.nan, np.nan]])
+        expected = response_time_mixture_scores(later, model)
+        out = self.root / "calibrated-timings.json"
+
+        with patch(
+            "ier.cli.response_time_mixture",
+            side_effect=AssertionError("unexpected refit"),
+        ):
+            code = main(
+                [
+                    "response-time",
+                    str(later_path),
+                    "--id-column",
+                    "participant",
+                    "--mixture-model",
+                    str(model_path),
+                    "--threshold",
+                    "0.5",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(out),
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["metric"], "mixture")
+        self.assertEqual(payload["flag_direction"], "high")
+        self.assertEqual(payload["respondent_ids"], ["fast", "regular", "missing"])
+        np.testing.assert_array_equal(payload["scores"][:2], expected[:2])
+        self.assertIsNone(payload["scores"][2])
+        np.testing.assert_array_equal(payload["flags"], expected >= 0.5)
+
+    def test_response_time_saved_model_rejects_fit_options_before_loading_data(self) -> None:
+        model = fit_response_time_mixture(
+            np.asarray([[0.4], [0.5], [4.0], [5.0]]),
+            random_seed=42,
+        )
+        model_path = self.root / "model.npz"
+        save_response_time_mixture_model(model_path, model)
+        conflicts = [
+            (["--metric", "median"], "requires --metric mixture"),
+            (["--components", "3"], "cannot be combined"),
+            (["--no-log-transform"], "cannot be combined"),
+            (["--random-seed", "42"], "cannot be combined"),
+        ]
+
+        for extra, message in conflicts:
+            stderr = StringIO()
+            with (
+                self.subTest(extra=extra),
+                patch("sys.stderr", stderr),
+                patch("ier.cli._load_input", side_effect=AssertionError("loaded input")),
+            ):
+                code = main(
+                    [
+                        "response-time",
+                        str(self.csv_path),
+                        "--mixture-model",
+                        str(model_path),
+                        *extra,
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn(message, stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_response_time_model_commands_report_invalid_archives_and_paths(self) -> None:
+        invalid = self.root / "invalid-model.npz"
+        np.savez(invalid, values=np.asarray([1.0, 2.0]))
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            score_code = main(
+                [
+                    "response-time",
+                    str(self.csv_path),
+                    "--mixture-model",
+                    str(invalid),
+                ]
+            )
+            fit_code = main(
+                [
+                    "response-time-fit",
+                    str(self.csv_path),
+                    str(self.root / "model.bin"),
+                ]
+            )
+
+        self.assertEqual(score_code, 1)
+        self.assertEqual(fit_code, 1)
+        self.assertIn("unexpected member: values", stderr.getvalue())
+        self.assertIn("output path must end in .npz", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_response_time_reflag_reuses_legacy_archive_across_text_json_and_csv(
         self,

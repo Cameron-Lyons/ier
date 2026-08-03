@@ -135,6 +135,8 @@ item-response indices:
 ```bash
 ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
+ier response-time-fit reference-times.csv timing-model.npz --components 3 --random-seed 42
+ier response-time later-times.csv --mixture-model timing-model.npz --threshold 0.5
 ```
 
 Retain a timing score vector when comparing decision cutoffs:
@@ -386,6 +388,19 @@ probabilities = response_time_mixture_scores(later_times, loaded)
 This archive contains no respondent data. It is versioned, pickle-free, strictly
 validated on load, and atomically replaced on save. Loaded parameter vectors are
 independent and read-only.
+
+Create and reuse the same calibration from the command line:
+
+```bash
+ier response-time-fit reference-times.csv timing-model.npz --components 3 --random-seed 42
+ier response-time later-times.csv --mixture-model timing-model.npz --format npz \
+  --output later-timing.npz
+```
+
+The saved model implies the mixture metric, retains the calibrated transform and
+high-tail flag direction, and works with the normal text, JSON, CSV, and NPZ
+response-time outputs. Fitting-only options are rejected when `--mixture-model`
+is present.
 
 Reapply a cutoff from the command line without loading the original timing
 matrix or recalculating its metric:

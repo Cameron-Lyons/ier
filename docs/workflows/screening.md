@@ -449,12 +449,17 @@ ier response-time timings.csv --metric median --percentile 5
 ier response-time timings.csv --metric consistency --threshold 0.05 --format csv
 ier response-time timings.csv --metric mixture --components 2 --random-seed 42
 ier response-time timings.csv --metric median --format npz --output timing.npz
+ier response-time-fit reference-times.csv timing-model.npz --components 3 --random-seed 42
+ier response-time later-times.csv --mixture-model timing-model.npz --threshold 0.5
 ier response-time-reflag timing.npz --percentile 1 --format npz --output strict.npz
 ```
 
 Direct timing metrics and consistency scores use low-tail flagging. Mixture
 probabilities use high-tail flagging. Fixed thresholds include equality; derived
 percentile cutoffs exclude ties, matching the other public flagging workflows.
+Supplying `--mixture-model` implies the mixture metric and applies the archived
+calibration without refitting. It cannot be combined with fitting-only component,
+transform, or random-seed options.
 Retained direct scores use `direction="low"` by default; pass `direction="high"`
 for mixture probabilities. This sensitivity path never recomputes row summaries
 or refits the mixture. The NPZ loader also validates that archived flags agree
@@ -497,6 +502,8 @@ ier screen data.csv --indices lz --lz-difficulty difficulty.npy \
   --lz-discrimination discrimination.csv --lz-theta theta.npy --lz-model 2pl
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier response-time timings.csv --metric median --threshold 1.0
+ier response-time-fit reference-times.csv timing-model.npz --components 3
+ier response-time later-times.csv --mixture-model timing-model.npz
 ier screen data.csv.gz --format json --output screening.json.gz
 ier screen data.npy --indices irv longstring --format json
 ier screen data.npy --indices irv longstring --format npz --output screening.npz

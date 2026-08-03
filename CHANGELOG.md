@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.57] - 2026-08-03
+
+### Added
+
+- `response-time-fit` now writes a reusable calibration from a reference timing
+  matrix, including named column selection, while `response-time
+  --mixture-model` applies it to later cohorts without refitting. Saved-model
+  scoring implies the mixture metric, preserves high-tail flagging across every
+  output format, and rejects fitting-only options before reading the input
+  matrix. No dependency is added.
+
 ## [2.19.56] - 2026-08-03
 
 ### Added
