@@ -8,6 +8,7 @@ from ._validation import MatrixLike as MatrixLike
 from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
 from .archive import load_score_archive as load_score_archive
+from .archive import save_score_archive as save_score_archive
 from .composite import composite as composite
 from .composite import composite_flag as composite_flag
 from .composite import composite_probability as composite_probability
@@ -139,6 +140,7 @@ __all__ = [
     "response_time_mixture",
     "screen",
     "screen_scores",
+    "save_score_archive",
     "ScreenIndexSummary",
     "ScreenResult",
     "ScoreArchive",

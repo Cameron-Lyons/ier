@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
-from zipfile import ZIP_STORED, ZipFile
 
 import numpy as np
 
@@ -13,6 +12,7 @@ from ier._cli_composite import (
     validate_composite_flags,
     validate_composite_probabilities,
 )
+from ier.archive import _write_npz_archive as _stream_npz_archive
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -62,12 +62,7 @@ def _require_npz_output_path(path: Path | None) -> Path:
 def _write_npz_archive(path: Path | None, payload: dict[str, np.ndarray]) -> None:
     """Write one pickle-free NumPy result archive to an explicit file path."""
     destination = _require_npz_output_path(path)
-    if any(value.dtype.hasobject for value in payload.values()):
-        raise ValueError("NPZ output cannot contain object arrays")
-    with ZipFile(destination, mode="w", compression=ZIP_STORED, allowZip64=True) as archive:
-        for name, value in payload.items():
-            with archive.open(f"{name}.npy", mode="w", force_zip64=True) as member:
-                np.save(member, value, allow_pickle=False)
+    _stream_npz_archive(destination, payload)
 
 
 def _write_screen_npz(

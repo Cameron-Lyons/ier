@@ -55,9 +55,10 @@ The command-line path is split by responsibility:
 - `_cli_composite.py` validates shared respondent alignment and flag metadata
   contracts for every composite serializer.
 - `_cli_output.py` renders text plus bounded strict JSON and CSV results.
-- `_cli_npz.py` writes versioned, typed, pickle-free NumPy result archives.
-- `archive.py` validates and loads registered score vectors from screen and
-  detailed composite NPZ output for later reuse.
+- `_cli_npz.py` assembles complete command result payloads and delegates the
+  low-level typed, pickle-free NumPy stream writer.
+- `archive.py` owns the shared stream writer plus public validated save/load
+  boundaries for reusable registered score vectors.
 
 Screen and composite commands carry the registry's ordered soft-failure map
 through text, JSON, and NPZ serializers and mirror failures to standard error
@@ -242,6 +243,6 @@ Plotting remains optional and reports a centralized install hint from
 - Response-time mixture EM and end-to-end scoring: `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - Reusable composite sensitivity analysis: `benchmarks/bench_composite.py`.
-- Validated score-archive loading: `benchmarks/bench_archive.py`.
+- Validated score-archive saving and loading: `benchmarks/bench_archive.py`.
 - Shared fixed and percentile flagging throughput and memory: `benchmarks/bench_flagging.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.

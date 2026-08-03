@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.25] - 2026-08-03
+
+### Added
+
+- `save_score_archive()` writes ordered raw registered-index vectors, optional
+  respondent IDs, and soft failures as a compact versioned NPZ archive. Screen
+  and composite archives round-trip through `load_score_archive()` and feed
+  directly into the reusable scoring APIs.
+
+### Changed
+
+- Public and command-line persistence now share one streaming, uncompressed,
+  pickle-free serializer. The public writer validates paths, registry support,
+  vector alignment, finiteness, identifiers, and failure metadata before opening
+  the destination, without constructing an intermediate score matrix.
+- On a 500,000-respondent, 15-index archive, validated saving takes 15.2 ms
+  versus 14.7 ms for direct unvalidated serialization, with the same 4.0 MiB
+  peak traced allocation and no added dependency.
+
 ## [2.19.24] - 2026-08-03
 
 ### Added

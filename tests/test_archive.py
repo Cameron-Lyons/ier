@@ -9,6 +9,7 @@ from ier import (
     composite_scores,
     composite_summary,
     load_score_archive,
+    save_score_archive,
     screen,
     screen_scores,
 )
@@ -131,7 +132,15 @@ def _base_payload() -> dict[str, np.ndarray]:
         ({"score__irv": np.asarray([0.1, np.inf])}, "finite values or NaN"),
         ({"respondent_ids": np.asarray(["same", "same"])}, "IDs must be unique"),
         ({"respondent_ids": np.asarray(["case-1"])}, "ID count"),
+        ({"respondent_ids": np.asarray(["case-1", " "])}, "IDs must be nonblank"),
         ({"error_names": np.asarray(["mad"])}, "stored together"),
+        (
+            {
+                "error_names": np.asarray(["mad"]),
+                "error_messages": np.asarray([" "]),
+            },
+            "error messages must be nonblank",
+        ),
     ],
 )
 def test_malformed_archive_metadata_is_rejected(
@@ -194,3 +203,141 @@ def test_plain_npy_file_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="must be an NPZ archive"):
         load_score_archive(destination)
+
+
+def test_public_writer_round_trip_preserves_order_and_metadata(tmp_path: Path) -> None:
+    destination = tmp_path / "scores.npz"
+    scores = {
+        "irv": np.asarray([0.1, np.nan, 0.8]),
+        "longstring": np.asarray([2.0, 5.0, 9.0]),
+    }
+    respondent_ids = ["case-1", "case-2", "case-3"]
+    errors = {"mad": "positive-item configuration is required"}
+
+    save_score_archive(
+        str(destination),
+        scores,
+        respondent_ids=respondent_ids,
+        errors=errors,
+    )
+
+    with np.load(destination, allow_pickle=False) as raw:
+        assert raw.files == [
+            "schema_version",
+            "result_type",
+            "n_respondents",
+            "index_names",
+            "error_names",
+            "error_messages",
+            "score__irv",
+            "score__longstring",
+            "respondent_ids",
+        ]
+        assert all(not raw[name].dtype.hasobject for name in raw.files)
+
+    loaded = load_score_archive(destination)
+    assert loaded["result_type"] == "screen"
+    assert loaded["n_respondents"] == 3
+    assert list(loaded["scores"]) == ["irv", "longstring"]
+    assert loaded["respondent_ids"] == respondent_ids
+    assert loaded["errors"] == errors
+    for name, values in scores.items():
+        np.testing.assert_array_equal(loaded["scores"][name], values)
+
+
+def test_public_writer_composite_round_trip_supports_reuse(tmp_path: Path) -> None:
+    destination = tmp_path / "components.npz"
+    scores = {
+        "irv": np.asarray([0.1, 0.2, 0.9]),
+        "person_total": np.asarray([5.0, 8.0, 2.0]),
+    }
+
+    save_score_archive(destination, scores, result_type="composite")
+    loaded = load_score_archive(destination)
+
+    assert loaded["result_type"] == "composite"
+    np.testing.assert_allclose(
+        composite_scores(loaded["scores"]),
+        composite_scores(scores),
+        rtol=1e-14,
+        atol=1e-14,
+    )
+
+
+def test_public_writer_rejects_invalid_core_inputs(tmp_path: Path) -> None:
+    destination = tmp_path / "scores.npz"
+    valid = {"irv": np.asarray([0.1, 0.2])}
+
+    with pytest.raises(ValueError, match="must end in .npz"):
+        save_score_archive(tmp_path / "scores.bin", valid)
+    with pytest.raises(ValueError, match="result_type"):
+        save_score_archive(destination, valid, result_type="unknown")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="scores must be a mapping"):
+        save_score_archive(destination, [])  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="does not contain reusable"):
+        save_score_archive(destination, {})
+    with pytest.raises(ValueError, match="invalid index"):
+        save_score_archive(destination, {"unknown": [0.1, 0.2]})
+    with pytest.raises(ValueError, match="invalid index"):
+        save_score_archive(
+            destination,
+            {"midpoint": [0.1, 0.2]},
+            result_type="composite",
+        )
+    with pytest.raises(ValueError, match="same respondent count"):
+        save_score_archive(destination, {"irv": [0.1], "longstring": [1.0, 2.0]})
+    with pytest.raises(ValueError, match="finite values or NaN"):
+        save_score_archive(destination, {"irv": [0.1, np.inf]})
+
+
+def test_public_writer_rejects_invalid_error_metadata(tmp_path: Path) -> None:
+    destination = tmp_path / "scores.npz"
+    scores = {"irv": [0.1, 0.2]}
+
+    with pytest.raises(TypeError, match="errors must be a mapping"):
+        save_score_archive(destination, scores, errors=[])  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="both scores and errors"):
+        save_score_archive(destination, scores, errors={"irv": "failed"})
+    with pytest.raises(ValueError, match="invalid index"):
+        save_score_archive(destination, scores, errors={"unknown": "failed"})
+    with pytest.raises(ValueError, match="messages must be nonblank"):
+        save_score_archive(destination, scores, errors={"mad": "  "})
+    with pytest.raises(ValueError, match="messages must be strings"):
+        save_score_archive(destination, scores, errors={"mad": 1})  # type: ignore[dict-item]
+    with pytest.raises(ValueError, match="invalid index"):
+        save_score_archive(
+            destination,
+            scores,
+            result_type="composite",
+            errors={"midpoint": "failed"},
+        )
+
+
+def test_public_writer_rejects_invalid_respondent_ids(tmp_path: Path) -> None:
+    destination = tmp_path / "scores.npz"
+    scores = {"irv": [0.1, 0.2]}
+
+    with pytest.raises(TypeError, match="sequence of strings"):
+        save_score_archive(destination, scores, respondent_ids="ab")
+    with pytest.raises(ValueError, match="ID count"):
+        save_score_archive(destination, scores, respondent_ids=["only-one"])
+    with pytest.raises(ValueError, match="IDs must be nonblank"):
+        save_score_archive(destination, scores, respondent_ids=["case-1", " "])
+    with pytest.raises(ValueError, match="IDs must be unique"):
+        save_score_archive(destination, scores, respondent_ids=["same", "same"])
+    with pytest.raises(ValueError, match="IDs must be strings"):
+        save_score_archive(
+            destination,
+            scores,
+            respondent_ids=["case-1", 2],  # type: ignore[list-item]
+        )
+
+
+def test_public_writer_validates_before_touching_destination(tmp_path: Path) -> None:
+    destination = tmp_path / "existing.npz"
+    destination.write_bytes(b"existing-content")
+
+    with pytest.raises(ValueError, match="finite values or NaN"):
+        save_score_archive(destination, {"irv": [0.1, np.inf]})
+
+    assert destination.read_bytes() == b"existing-content"
