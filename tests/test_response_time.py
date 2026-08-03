@@ -15,6 +15,7 @@ from ier.response_time import (
     ResponseTimeMixtureModel,
     _em_gaussian_mixture,
     _mixture_expectation,
+    _score_gaussian_mixture_data,
     fit_response_time_mixture,
     response_time,
     response_time_consistency,
@@ -278,6 +279,43 @@ class TestResponseTimeMixture(unittest.TestCase):
         )
         self.assertEqual(scores[0], responsibilities[0, model.fast_component])
         self.assertTrue(np.isnan(scores[1]))
+
+    def test_model_scoring_matches_full_responsibilities_without_matrix_allocation(
+        self,
+    ) -> None:
+        components = 9
+        raw_weights = np.linspace(1.0, 2.0, components)
+        model = ResponseTimeMixtureModel(
+            weights=raw_weights / np.sum(raw_weights),
+            means=np.linspace(-3.0, 3.0, components),
+            variances=np.linspace(0.25, 1.25, components),
+        )
+        data = np.array([-4.0, -1.25, 0.0, 2.5, 4.0, 1_000_000.0])
+        responsibilities = np.empty((len(data), components))
+        _mixture_expectation(
+            data,
+            model.weights,
+            model.means,
+            model.variances,
+            responsibilities,
+            np.empty(len(data)),
+        )
+        expected = responsibilities[:, model.fast_component]
+        allocated_shapes: list[tuple[int, ...]] = []
+        real_empty = np.empty
+
+        def tracked_empty(
+            shape: int | tuple[int, ...], *args: object, **kwargs: object
+        ) -> np.ndarray:
+            if isinstance(shape, tuple):
+                allocated_shapes.append(shape)
+            return real_empty(shape, *args, **kwargs)
+
+        with patch("ier.response_time.np.empty", side_effect=tracked_empty):
+            actual = _score_gaussian_mixture_data(data, model)
+
+        np.testing.assert_allclose(actual, expected, rtol=5e-15, atol=0.0)
+        self.assertFalse(any(len(shape) > 1 for shape in allocated_shapes))
 
     def test_mixture_model_validates_and_owns_parameters(self) -> None:
         weights = np.array([0.25, 0.75])

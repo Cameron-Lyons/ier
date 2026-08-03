@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.59] - 2026-08-03
+
+### Changed
+
+- Fixed response-time mixture calibration now scores the fastest-component
+  posterior by streaming component densities through respondent-sized buffers
+  instead of allocating a respondent-by-component responsibility matrix. The
+  stable log-domain fallback is retained for underflowed rows, workspace no
+  longer grows with component count, numerical behavior is preserved, and no
+  dependency is added.
+
 ## [2.19.58] - 2026-08-03
 
 ### Added

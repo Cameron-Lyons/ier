@@ -478,7 +478,10 @@ density calculations underflow for an extreme valid observation. A fitted
 `ResponseTimeMixtureModel` owns read-only parameter vectors and preserves the
 transform used during calibration. `response_time_mixture_scores()` applies it
 to later cohorts without refitting, including batches smaller than the component
-count, and returns an independently owned one-dimensional posterior vector.
+count. Component densities are streamed through respondent-sized buffers, so
+temporary scoring memory does not grow with component count; only underflowed
+rows repeat the component pass in log space. The returned posterior vector owns
+its storage independently.
 
 ## CLI
 
