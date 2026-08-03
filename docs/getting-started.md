@@ -329,6 +329,33 @@ saved = load_score_archive("screening.npz")
 revised = screen_scores(saved["scores"], percentile=99)
 ```
 
+Merge separately computed index batches before reflagging or recombining:
+
+```python
+from ier import merge_score_archives, save_score_archive
+
+merged = merge_score_archives(["patterns.npz", "consistency.npz"])
+save_score_archive(
+    "combined.npz",
+    merged["scores"],
+    result_type=merged["result_type"],
+    respondent_ids=merged["respondent_ids"],
+    errors=merged["errors"],
+)
+```
+
+```bash
+ier archive-merge combined.npz patterns.npz consistency.npz
+ier screen-reflag combined.npz --percentile 99 --format json
+```
+
+Fully identified inputs are aligned to the first archive's respondent order.
+Inputs without IDs must all have the same row count and are assumed to share row
+order. Mixed identity metadata, different ID sets, duplicate score indices, and
+conflicting failure messages are rejected. `--result-type composite` applies the
+stricter composite-component registry contract. The output uses the standard
+atomic, pickle-free score schema and may replace one of its inputs.
+
 If the result type is not known beforehand, use the generic validated loader or
 inspect its metadata from the command line:
 

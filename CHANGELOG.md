@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.72] - 2026-08-03
+
+### Added
+
+- `merge_score_archives()` and `ier archive-merge` combine independently
+  computed registered-index batches without rescoring or adding a dependency.
+  Merges preserve input index order, reject duplicate scores and conflicting
+  failures, carry successful retries over prior soft failures, and validate the
+  requested screen/composite contract. Fully identified archives are aligned to
+  the first archive's respondent order, including safe automatic reordering;
+  mixed or mismatched identity metadata is rejected. Unidentified archives must
+  have equal row counts and retain their existing order. CLI output is the same
+  atomic, versioned, pickle-free score schema and may replace an input archive.
+  On the maintained 500,000-respondent, 15-index benchmark, merging two aligned
+  archives takes 12.4 ms and 57.9 MiB traced peak, compared with 11.8 ms and the
+  same peak for loading one equivalent validated archive.
+
 ## [2.19.71] - 2026-08-03
 
 ### Added

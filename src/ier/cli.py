@@ -27,6 +27,7 @@ from ier import (
     load_response_time_archive,
     load_response_time_mixture_model,
     load_score_archive,
+    merge_score_archives,
     psychsyn_model_scores,
     response_time,
     response_time_consistency,
@@ -34,6 +35,7 @@ from ier import (
     response_time_mixture_scores,
     save_psychsyn_model,
     save_response_time_mixture_model,
+    save_score_archive,
     screen,
     screen_scores,
 )
@@ -579,6 +581,28 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_metadata_output_options(archive_info_parser)
 
+    archive_merge_parser = sub.add_parser(
+        "archive-merge",
+        help="Merge independently computed score archives without rescoring.",
+    )
+    archive_merge_parser.add_argument(
+        "output",
+        type=Path,
+        help="Destination merged score archive ending in .npz",
+    )
+    archive_merge_parser.add_argument(
+        "archives",
+        type=Path,
+        nargs="+",
+        help="Two or more validated score archives, in index precedence order",
+    )
+    archive_merge_parser.add_argument(
+        "--result-type",
+        choices=["screen", "composite"],
+        default="screen",
+        help="Validate merged indices for screen or composite reuse (default: screen)",
+    )
+
     screen_parser = sub.add_parser("screen", help="Run multi-index screening on a matrix.")
     screen_parser.add_argument(
         "data",
@@ -894,6 +918,26 @@ def _run_command(args: argparse.Namespace) -> int:
 
     if args.command == "archive-info":
         return write_archive_info_result(args, load_archive(args.archive))
+
+    if args.command == "archive-merge":
+        if args.output.suffix.casefold() != ".npz":
+            raise ValueError("merged score archive output path must end in .npz")
+        merged_archive = merge_score_archives(
+            args.archives,
+            result_type=args.result_type,
+        )
+        save_score_archive(
+            args.output,
+            merged_archive["scores"],
+            result_type=merged_archive["result_type"],
+            respondent_ids=merged_archive["respondent_ids"],
+            errors=merged_archive["errors"],
+        )
+        print(
+            f"saved {len(merged_archive['scores'])} merged index scores for "
+            f"{merged_archive['n_respondents']} respondents to {args.output}"
+        )
+        return 0
 
     if args.command in {"screen", "composite"}:
         validate_worker_count(args.workers)

@@ -14,6 +14,7 @@ For a comprehensive methods review, see
 - Validated, pickle-free score, timing-result, and timing-model archive persistence
 - Auto-detecting result/model archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
+- Safe score-archive merging with respondent-ID alignment and atomic in-place output
 - Bounded complete and pairwise-complete discovery and scoring for psychometric synonyms
 - Reusable immutable psychometric pair calibration for later cohorts
 - Atomic, pickle-free psychometric pair model persistence and CLI reuse
@@ -158,6 +159,7 @@ ier composite data.csv --indices irv longstring --include-components --format js
 ier composite data.csv --format csv --output scores.csv
 ier composite-recombine composite.npz --weight irv=2 --method mean --format json
 ier composite-recombine composite.npz --indices irv longstring --no-standardize
+ier archive-merge combined.npz patterns.npz consistency.npz
 ier archive-info composite.npz --format json
 ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
@@ -314,6 +316,32 @@ raw registered-index vectors directly from Python, then
 IDs, and soft failures. Full CLI screen output and detailed composite archives
 written with `--include-components` are compatible as well; schema, registry,
 alignment, and pickle-free safety checks run before reuse.
+
+Independently computed batches can be joined without the response matrix:
+
+```python
+from ier import merge_score_archives, save_score_archive
+
+merged = merge_score_archives(["patterns.npz", "consistency.npz"])
+save_score_archive(
+    "combined.npz",
+    merged["scores"],
+    result_type=merged["result_type"],
+    respondent_ids=merged["respondent_ids"],
+    errors=merged["errors"],
+)
+```
+
+```bash
+ier archive-merge combined.npz patterns.npz consistency.npz
+```
+
+When every input has respondent IDs, vectors are reordered to the first
+archive's ID order. Mixing identified and unidentified inputs, mismatched ID
+sets, duplicate score names, or conflicting failure messages is rejected.
+Without IDs, equal respondent counts are treated as matching row order. A
+successful score removes an earlier soft failure for that index. Use
+`--result-type composite` to enforce composite-compatible components.
 
 CLI users can apply the same decision layer to those validated archives without
 the original response matrix:

@@ -22,6 +22,7 @@ from ier import (
     index_catalog,
     load_response_time_archive,
     load_score_archive,
+    merge_score_archives,
     save_response_time_archive,
     save_score_archive,
 )
@@ -141,8 +142,8 @@ def main() -> None:
     available_names = list(index_catalog())
     if args.respondents < 1 or args.repeats < 1 or args.write_repeats < 1:
         parser.error("respondents, repeats, and write-repeats must be positive")
-    if not 1 <= args.indices <= len(available_names):
-        parser.error(f"indices must be between 1 and {len(available_names)}")
+    if not 2 <= args.indices <= len(available_names):
+        parser.error(f"indices must be between 2 and {len(available_names)}")
 
     names = available_names[: args.indices]
     rng = np.random.default_rng(args.seed)
@@ -156,8 +157,14 @@ def main() -> None:
         validated_path = Path(directory) / "validated-scores.npz"
         raw_timing_path = Path(directory) / "raw-timing.npz"
         timing_path = Path(directory) / "validated-timing.npz"
+        first_batch_path = Path(directory) / "first-batch.npz"
+        second_batch_path = Path(directory) / "second-batch.npz"
         _raw_save(raw_path, scores)
         save_score_archive(validated_path, scores)
+        split = len(scores) // 2
+        score_items = list(scores.items())
+        save_score_archive(first_batch_path, dict(score_items[:split]))
+        save_score_archive(second_batch_path, dict(score_items[split:]))
         _raw_response_time_save(
             raw_timing_path,
             timing_scores,
@@ -176,6 +183,10 @@ def main() -> None:
         raw_seconds, raw_peak, raw = _measure(lambda: _raw_load(validated_path), args.repeats)
         validated_seconds, validated_peak, validated = _measure(
             lambda: load_score_archive(validated_path)["scores"],
+            args.repeats,
+        )
+        merge_seconds, merge_peak, merged = _measure(
+            lambda: merge_score_archives([first_batch_path, second_batch_path])["scores"],
             args.repeats,
         )
         raw_timing_seconds, raw_timing_peak, raw_timing = _measure(
@@ -218,6 +229,7 @@ def main() -> None:
 
     for name in names:
         np.testing.assert_array_equal(validated[name], raw[name])
+        np.testing.assert_array_equal(merged[name], raw[name])
     for name in ("scores", "flags"):
         np.testing.assert_array_equal(validated_timing[name], raw_timing[name])
 
@@ -230,6 +242,7 @@ def main() -> None:
         f"validated load: median={validated_seconds:.4f}s peak={validated_peak:.1f} MiB "
         f"overhead={validated_seconds / raw_seconds:.2f}x"
     )
+    print(f"validated two-archive merge: median={merge_seconds:.4f}s peak={merge_peak:.1f} MiB")
     print(
         f"raw response-time load: median={raw_timing_seconds:.4f}s peak={raw_timing_peak:.1f} MiB"
     )

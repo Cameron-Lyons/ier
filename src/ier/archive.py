@@ -923,6 +923,118 @@ def load_score_archive(path: str | Path) -> ScoreArchive:
         return _read_score_archive(archive)
 
 
+def merge_score_archives(
+    paths: Sequence[str | Path],
+    *,
+    result_type: ScoreArchiveResultType = "screen",
+) -> ScoreArchive:
+    """
+    Load and merge independently computed registered-index score archives.
+
+    At least two validated score archives are required. Index order follows the
+    input archive order and duplicate score indices are rejected. All archives
+    must describe the same respondents: when every archive contains identifiers,
+    score vectors are aligned to the first archive's identifier order; when none
+    contains identifiers, equal respondent counts are treated as matching row
+    order. Mixing identified and unidentified archives is rejected.
+
+    A successful score supersedes soft-failure metadata for the same index.
+    Repeated identical failures are retained once, while conflicting messages
+    are rejected. Aligned arrays are reused without copying; only vectors whose
+    respondent order differs are reordered.
+
+    Parameters:
+    - paths: Ordered sequence of score archive paths to merge.
+    - result_type: Output validation contract, ``"screen"`` or ``"composite"``.
+
+    Returns:
+    - A validated in-memory ``ScoreArchive`` ready for ``screen_scores()``,
+      ``composite_scores()``, or ``save_score_archive()``.
+
+    Example:
+        >>> from ier import merge_score_archives, save_score_archive
+        >>> merged = merge_score_archives(["patterns.npz", "consistency.npz"])
+        >>> save_score_archive(
+        ...     "combined.npz",
+        ...     merged["scores"],
+        ...     result_type=merged["result_type"],
+        ...     respondent_ids=merged["respondent_ids"],
+        ...     errors=merged["errors"],
+        ... )
+    """
+    if isinstance(paths, (str, bytes, Path)):
+        raise TypeError("paths must be a sequence of score archive paths")
+    archive_paths = list(paths)
+    if len(archive_paths) < 2:
+        raise ValueError("at least two score archives are required to merge")
+
+    validated_result_type = _validate_result_type(result_type)
+    archives = [load_score_archive(path) for path in archive_paths]
+    n_respondents = archives[0]["n_respondents"]
+    if any(archive["n_respondents"] != n_respondents for archive in archives[1:]):
+        raise ValueError("score archives must contain the same number of respondents")
+
+    identified = [archive["respondent_ids"] is not None for archive in archives]
+    if any(identified) and not all(identified):
+        raise ValueError("score archives must all include respondent IDs or all omit them")
+
+    canonical_ids = archives[0]["respondent_ids"]
+    row_orders: list[np.ndarray | None] = [None]
+    if canonical_ids is None:
+        row_orders.extend(None for _ in archives[1:])
+    else:
+        canonical_set = set(canonical_ids)
+        for archive in archives[1:]:
+            respondent_ids = archive["respondent_ids"]
+            assert respondent_ids is not None
+            if set(respondent_ids) != canonical_set:
+                raise ValueError("score archive respondent ID sets must match")
+            if respondent_ids == canonical_ids:
+                row_orders.append(None)
+                continue
+            positions = {respondent_id: index for index, respondent_id in enumerate(respondent_ids)}
+            row_orders.append(
+                np.fromiter(
+                    (positions[respondent_id] for respondent_id in canonical_ids),
+                    dtype=np.intp,
+                    count=n_respondents,
+                )
+            )
+
+    merged_scores: dict[str, np.ndarray] = {}
+    for archive, row_order in zip(archives, row_orders, strict=True):
+        for name, values in archive["scores"].items():
+            if name in merged_scores:
+                raise ValueError(f"duplicate score index across archives: {name}")
+            merged_scores[name] = values if row_order is None else values[row_order]
+    _validate_archive_index_names(list(merged_scores), validated_result_type)
+
+    merged_errors: dict[str, str] = {}
+    for archive in archives:
+        for name, message in archive["errors"].items():
+            if name in merged_scores:
+                continue
+            previous = merged_errors.get(name)
+            if previous is not None and previous != message:
+                raise ValueError(f"conflicting error messages across archives for index: {name}")
+            merged_errors.setdefault(name, message)
+    validated_errors = _validate_error_metadata(
+        list(merged_errors),
+        list(merged_errors.values()),
+        set(merged_scores),
+        validated_result_type,
+    )
+
+    return {
+        "schema_version": _ARCHIVE_SCHEMA_VERSION,
+        "result_type": validated_result_type,
+        "n_respondents": n_respondents,
+        "scores": merged_scores,
+        "respondent_ids": None if canonical_ids is None else canonical_ids.copy(),
+        "errors": validated_errors,
+    }
+
+
 def load_archive(path: str | Path) -> InspectableArchive:
     """
     Load and auto-detect any supported result or model archive.

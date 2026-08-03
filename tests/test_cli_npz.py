@@ -306,6 +306,20 @@ class TestCliNpz(unittest.TestCase):
                 self.assertNotIn("No such file", stderr.getvalue())
                 self.assertNotIn("Traceback", stderr.getvalue())
 
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "archive-merge",
+                    str(self.root / "merged.bin"),
+                    str(self.root / "missing-a.npz"),
+                    str(self.root / "missing-b.npz"),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("must end in .npz", stderr.getvalue())
+        self.assertNotIn("No such file", stderr.getvalue())
+
         missing_archive = self.root / "missing.npz"
         stderr = StringIO()
         with patch("sys.stderr", stderr):
@@ -358,6 +372,61 @@ class TestCliNpz(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("ending in .npz", stderr.getvalue())
         self.assertNotIn("No such file", stderr.getvalue())
+
+    def test_archive_merge_aligns_ids_and_atomically_replaces_an_input(self) -> None:
+        patterns = self.root / "patterns.npz"
+        consistency = self.root / "consistency.npz"
+        reflagged = self.root / "reflagged.npz"
+        save_score_archive(
+            patterns,
+            {"longstring": [2.0, 4.0, 8.0]},
+            respondent_ids=["case-a", "case-b", "case-c"],
+        )
+        save_score_archive(
+            consistency,
+            {"irv": [0.1, 0.9, 0.5]},
+            respondent_ids=["case-c", "case-a", "case-b"],
+        )
+
+        merged_code = main(
+            [
+                "archive-merge",
+                str(patterns),
+                str(patterns),
+                str(consistency),
+                "--result-type",
+                "composite",
+            ]
+        )
+        reflag_code = main(
+            [
+                "screen-reflag",
+                str(patterns),
+                "--threshold",
+                "longstring=4",
+                "--threshold",
+                "irv=0.5",
+                "--min-flags",
+                "1",
+                "--format",
+                "npz",
+                "--output",
+                str(reflagged),
+            ]
+        )
+
+        self.assertEqual(merged_code, 0)
+        self.assertEqual(reflag_code, 0)
+        merged = load_score_archive(patterns)
+        self.assertEqual(merged["result_type"], "composite")
+        self.assertEqual(list(merged["scores"]), ["longstring", "irv"])
+        self.assertEqual(merged["respondent_ids"], ["case-a", "case-b", "case-c"])
+        np.testing.assert_array_equal(merged["scores"]["longstring"], [2.0, 4.0, 8.0])
+        np.testing.assert_array_equal(merged["scores"]["irv"], [0.9, 0.5, 0.1])
+        with np.load(reflagged, allow_pickle=False) as raw:
+            self.assertEqual(raw["index_names"].tolist(), ["longstring", "irv"])
+            self.assertEqual(raw["respondent_ids"].tolist(), ["case-a", "case-b", "case-c"])
+            self.assertEqual(raw["consensus_flags"].tolist(), [False, True, True])
 
     def test_response_time_reflag_atomically_replaces_source_archive(self) -> None:
         archive = self.root / "timing.npz"
