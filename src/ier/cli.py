@@ -8,7 +8,7 @@ import gzip
 import json
 import sys
 from array import array
-from io import StringIO
+from contextlib import contextmanager
 from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TextIO
@@ -28,7 +28,7 @@ from ier import (
 from ier._flagging import resolve_threshold, threshold_flags
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Sequence
 
     from ier.types import IndexCatalog, ScreenResult
 
@@ -565,14 +565,24 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _write_output(text: str, path: Path | None) -> None:
+    with _output_stream(path) as handle:
+        handle.write(text)
+        if path is None or path == Path("-"):
+            handle.write("\n")
+
+
+@contextmanager
+def _output_stream(path: Path | None) -> Iterator[TextIO]:
+    """Yield a text output stream without closing standard output."""
     if path is None or path == Path("-"):
-        print(text)
+        yield sys.stdout
         return
     if path.suffix.casefold() == ".gz":
         with gzip.open(path, mode="wt", newline="", encoding="utf-8") as handle:
-            handle.write(text)
+            yield handle
         return
-    path.write_text(text, encoding="utf-8")
+    with path.open(mode="w", newline="", encoding="utf-8") as handle:
+        yield handle
 
 
 def _json_numbers(values: np.ndarray) -> list[float | None]:
@@ -585,17 +595,16 @@ def _csv_number(value: float) -> float | None:
     return float(value) if np.isfinite(value) else None
 
 
-def _respondent_labels(
+def _respondent_label_values(
     n_respondents: int,
     respondent_ids: list[str] | None,
-) -> list[int | str]:
-    """Return validated output labels for respondent-aligned results."""
+) -> Sequence[int | str]:
+    """Return validated, potentially lazy labels for respondent-aligned results."""
     if respondent_ids is None:
-        return list(range(n_respondents))
+        return range(n_respondents)
     if len(respondent_ids) != n_respondents:
         raise ValueError("respondent ID count must match result length")
-    labels: list[int | str] = list(respondent_ids)
-    return labels
+    return respondent_ids
 
 
 def _emit_index_catalog_text(catalog: IndexCatalog) -> str:
@@ -628,7 +637,8 @@ def _emit_index_catalog_json(catalog: IndexCatalog) -> str:
     )
 
 
-def _emit_index_catalog_csv(catalog: IndexCatalog) -> str:
+def _write_index_catalog_csv(handle: TextIO, catalog: IndexCatalog) -> None:
+    """Write the index catalog directly to a CSV stream."""
     fieldnames = [
         "index",
         "flag_direction",
@@ -638,8 +648,7 @@ def _emit_index_catalog_csv(catalog: IndexCatalog) -> str:
         "composite_enabled",
         "required_options",
     ]
-    buf = StringIO()
-    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer = csv.DictWriter(handle, fieldnames=fieldnames)
     writer.writeheader()
     for name, metadata in catalog.items():
         writer.writerow(
@@ -653,7 +662,6 @@ def _emit_index_catalog_csv(catalog: IndexCatalog) -> str:
                 "required_options": ",".join(metadata["required_options"]),
             }
         )
-    return buf.getvalue()
 
 
 def _emit_screen_text(
@@ -679,7 +687,7 @@ def _emit_screen_text(
         for name, message in sorted(result["errors"].items()):
             lines.append(f"  {name}: {message}")
     counts = result["flag_counts"]
-    labels = _respondent_labels(result["n_respondents"], respondent_ids)
+    labels = _respondent_label_values(result["n_respondents"], respondent_ids)
     order = np.argsort(counts)[::-1][: max(top, 0)]
     label_name = "identifier" if respondent_ids is not None else "index"
     lines.append(f"top flagged respondents ({label_name}, flag_count):")
@@ -718,14 +726,18 @@ def _emit_screen_json(
         "summary": summary,
     }
     if respondent_ids is not None:
-        payload["respondent_ids"] = _respondent_labels(result["n_respondents"], respondent_ids)
+        payload["respondent_ids"] = _respondent_label_values(
+            result["n_respondents"], respondent_ids
+        )
     return json.dumps(payload, indent=2, allow_nan=False)
 
 
-def _emit_screen_csv(
+def _write_screen_csv(
+    handle: TextIO,
     result: ScreenResult,
     respondent_ids: list[str] | None = None,
-) -> str:
+) -> None:
+    """Write respondent-aligned screening results directly to a CSV stream."""
     n = result["n_respondents"]
     scores = result["scores"]
     flags = result["flags"]
@@ -733,10 +745,11 @@ def _emit_screen_csv(
     for name in result["indices_used"]:
         fieldnames.extend([f"{name}_score", f"{name}_flag"])
 
-    rows: list[dict[str, object]] = []
     counts = np.asarray(result["flag_counts"])
     consensus = np.asarray(result["consensus_flags"])
-    labels = _respondent_labels(n, respondent_ids)
+    labels = _respondent_label_values(n, respondent_ids)
+    writer = csv.DictWriter(handle, fieldnames=fieldnames)
+    writer.writeheader()
     for i in range(n):
         row: dict[str, object] = {
             "respondent": labels[i],
@@ -746,13 +759,7 @@ def _emit_screen_csv(
         for name in result["indices_used"]:
             row[f"{name}_score"] = _csv_number(scores[name][i])
             row[f"{name}_flag"] = int(bool(flags[name][i]))
-        rows.append(row)
-
-    buf = StringIO()
-    writer = csv.DictWriter(buf, fieldnames=fieldnames)
-    writer.writeheader()
-    writer.writerows(rows)
-    return buf.getvalue()
+        writer.writerow(row)
 
 
 def _emit_composite_text(
@@ -762,7 +769,7 @@ def _emit_composite_text(
     respondent_ids: list[str] | None = None,
 ) -> str:
     order = np.argsort(scores)[::-1][: max(top, 0)]
-    labels = _respondent_labels(len(scores), respondent_ids)
+    labels = _respondent_label_values(len(scores), respondent_ids)
     label_name = "identifier" if respondent_ids is not None else "index"
     lines = [
         f"respondents: {len(scores)}",
@@ -785,21 +792,21 @@ def _emit_composite_json(
         "n_respondents": len(scores),
     }
     if respondent_ids is not None:
-        payload["respondent_ids"] = _respondent_labels(len(scores), respondent_ids)
+        payload["respondent_ids"] = _respondent_label_values(len(scores), respondent_ids)
     return json.dumps(payload, indent=2, allow_nan=False)
 
 
-def _emit_composite_csv(
+def _write_composite_csv(
+    handle: TextIO,
     scores: np.ndarray,
     respondent_ids: list[str] | None = None,
-) -> str:
-    buf = StringIO()
-    writer = csv.writer(buf)
+) -> None:
+    """Write respondent-aligned composite scores directly to a CSV stream."""
+    writer = csv.writer(handle)
     writer.writerow(["respondent", "composite_score"])
-    labels = _respondent_labels(len(scores), respondent_ids)
+    labels = _respondent_label_values(len(scores), respondent_ids)
     for label, score in zip(labels, scores, strict=True):
         writer.writerow([label, _csv_number(score)])
-    return buf.getvalue()
 
 
 def _score_response_times(
@@ -835,7 +842,7 @@ def _emit_response_time_text(
     respondent_ids: list[str] | None = None,
 ) -> str:
     """Render timing results as a compact human-readable summary."""
-    labels = _respondent_labels(len(scores), respondent_ids)
+    labels = _respondent_label_values(len(scores), respondent_ids)
     valid_indices = np.flatnonzero(np.isfinite(scores))
     order = valid_indices[np.argsort(scores[valid_indices])]
     if direction == "high":
@@ -873,23 +880,22 @@ def _emit_response_time_json(
         "flags": flags.astype(bool).tolist(),
     }
     if respondent_ids is not None:
-        payload["respondent_ids"] = _respondent_labels(len(scores), respondent_ids)
+        payload["respondent_ids"] = _respondent_label_values(len(scores), respondent_ids)
     return json.dumps(payload, indent=2, allow_nan=False)
 
 
-def _emit_response_time_csv(
+def _write_response_time_csv(
+    handle: TextIO,
     scores: np.ndarray,
     flags: np.ndarray,
     respondent_ids: list[str] | None = None,
-) -> str:
-    """Render respondent-aligned timing scores and flags as CSV."""
-    buf = StringIO()
-    writer = csv.writer(buf)
+) -> None:
+    """Write respondent-aligned timing scores and flags directly to a CSV stream."""
+    writer = csv.writer(handle)
     writer.writerow(["respondent", "response_time_score", "response_time_flag"])
-    labels = _respondent_labels(len(scores), respondent_ids)
+    labels = _respondent_label_values(len(scores), respondent_ids)
     for label, score, flag in zip(labels, scores, flags, strict=True):
         writer.writerow([label, _csv_number(score), int(bool(flag))])
-    return buf.getvalue()
 
 
 def _run_command(args: argparse.Namespace) -> int:
@@ -899,7 +905,9 @@ def _run_command(args: argparse.Namespace) -> int:
         if args.format == "json":
             text = _emit_index_catalog_json(catalog)
         elif args.format == "csv":
-            text = _emit_index_catalog_csv(catalog)
+            with _output_stream(args.output) as handle:
+                _write_index_catalog_csv(handle, catalog)
+            return 0
         else:
             text = _emit_index_catalog_text(catalog)
         _write_output(text, args.output)
@@ -941,7 +949,9 @@ def _run_command(args: argparse.Namespace) -> int:
                 respondent_ids,
             )
         elif args.format == "csv":
-            text = _emit_response_time_csv(scores, flags, respondent_ids)
+            with _output_stream(args.output) as handle:
+                _write_response_time_csv(handle, scores, flags, respondent_ids)
+            return 0
         else:
             text = _emit_response_time_text(
                 scores,
@@ -969,7 +979,9 @@ def _run_command(args: argparse.Namespace) -> int:
         if args.format == "json":
             text = _emit_screen_json(result, respondent_ids)
         elif args.format == "csv":
-            text = _emit_screen_csv(result, respondent_ids)
+            with _output_stream(args.output) as handle:
+                _write_screen_csv(handle, result, respondent_ids)
+            return 0
         else:
             text = _emit_screen_text(result, args.top, respondent_ids)
         _write_output(text, args.output)
@@ -990,7 +1002,9 @@ def _run_command(args: argparse.Namespace) -> int:
     if args.format == "json":
         text = _emit_composite_json(scores, args.method, respondent_ids)
     elif args.format == "csv":
-        text = _emit_composite_csv(scores, respondent_ids)
+        with _output_stream(args.output) as handle:
+            _write_composite_csv(handle, scores, respondent_ids)
+        return 0
     else:
         text = _emit_composite_text(scores, args.method, args.top, respondent_ids)
     _write_output(text, args.output)

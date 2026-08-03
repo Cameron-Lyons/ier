@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.1] - 2026-08-02
+
+### Changed
+
+- CLI CSV output now writes rows directly to plain files, gzip files, or
+  standard output instead of retaining all rows and the complete serialized
+  document. A 100,000-respondent, five-index export reduces peak allocation
+  from 136.6 MiB to 0.3 MiB and median runtime from 1.93 to 1.81 seconds.
+
 ## [2.10.0] - 2026-08-02
 
 ### Added

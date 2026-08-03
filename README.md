@@ -96,7 +96,9 @@ Use an uncompressed `.npy` file rather than `.npy.gz` to preserve memory mapping
 
 Use `-` as the input path for a forward-only standard-input pipeline or as the
 output path for standard output. Files ending in `.gz` are read and written
-transparently using the Python standard library.
+transparently using the Python standard library. CSV results are written one row
+at a time, so output allocation stays bounded for plain, compressed, and
+standard-output destinations.
 
 `ier response-time` accepts a separate respondent-by-timing matrix and supports
 mean, median, standard-deviation, minimum, consistency, and Gaussian-mixture
@@ -135,6 +137,7 @@ Benchmarks:
 
 ```bash
 uv run python benchmarks/bench_screen.py
+uv run python benchmarks/bench_cli_csv.py
 uv run python benchmarks/bench_detection.py
 ```
 
