@@ -20,6 +20,7 @@ from ier.longstring import (
 from ier.mahad import _compute_mahalanobis_distance, mahad, mahad_summary
 from ier.psychsyn import (
     _compute_complete_person_scores,
+    _compute_person_scores,
     _resample_missing_correlations,
     compute_person_correlations,
     get_highly_correlated_pairs,
@@ -642,10 +643,75 @@ class TestPsychometricFunctions(unittest.TestCase):
             scores, diag = _compute_complete_person_scores(data, item_pairs)
             public_scores, public_diag = psychsyn(data, critval=0.8, diag=True)
 
-        np.testing.assert_allclose(scores, expected_scores, rtol=0.0, atol=1e-15)
+        np.testing.assert_allclose(scores, expected_scores, rtol=0.0, atol=2e-15)
         np.testing.assert_array_equal(diag, expected_diag)
-        np.testing.assert_allclose(public_scores, expected_scores, rtol=0.0, atol=1e-15)
+        np.testing.assert_allclose(public_scores, expected_scores, rtol=0.0, atol=2e-15)
         np.testing.assert_array_equal(public_diag, expected_diag)
+
+    def test_missing_psychsyn_batches_match_expanded_formula(self) -> None:
+        """Missing and seeded-resampling paths preserve the expanded formula."""
+        from ier._correlation import row_correlations
+
+        rng = np.random.default_rng(20260802)
+        latent = rng.normal(size=(71, 1))
+        data = latent + rng.normal(scale=0.2, size=(71, 10))
+        data[::7, 0] = np.nan
+        data[::11, 3] = np.nan
+        correlations = np.corrcoef(data, rowvar=False)
+        correlations[np.isnan(correlations)] = 0.0
+        item_pairs = get_highly_correlated_pairs(correlations, critval=0.0, anto=False)
+
+        response_i = data[:, item_pairs[:, 0]]
+        response_j = data[:, item_pairs[:, 1]]
+        person_corrs = compute_person_correlations(response_i, response_j)
+        person_corrs[np.isnan(response_i) | np.isnan(response_j)] = np.nan
+        expected_diag = np.sum(~np.isnan(person_corrs), axis=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            expected_scores = np.nanmean(person_corrs, axis=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            resampled = _resample_missing_correlations(
+                person_corrs,
+                np.random.default_rng(42),
+            )
+        expected_resampled_scores = np.mean(resampled, axis=1)
+        expected_resampled_diag = np.sum(~np.isnan(resampled), axis=1)
+
+        with (
+            patch("ier.psychsyn._PSYCHSYN_BATCH_ELEMENTS", len(item_pairs)),
+            patch(
+                "ier.psychsyn.compute_person_correlations",
+                side_effect=AssertionError("expanded pair contributions were constructed"),
+            ),
+            patch("ier.psychsyn.row_correlations", wraps=row_correlations) as contracted,
+        ):
+            scores, diag = _compute_person_scores(
+                data,
+                item_pairs,
+                resample_na=False,
+                rng=np.random.default_rng(42),
+            )
+            resampled_scores, resampled_diag = _compute_person_scores(
+                data,
+                item_pairs,
+                resample_na=True,
+                rng=np.random.default_rng(42),
+            )
+
+        self.assertGreater(contracted.call_count, 2)
+        self.assertTrue(
+            all(call.args[0].size <= len(item_pairs) for call in contracted.call_args_list)
+        )
+        np.testing.assert_allclose(scores, expected_scores, rtol=0.0, atol=2e-15, equal_nan=True)
+        np.testing.assert_array_equal(diag, expected_diag)
+        np.testing.assert_allclose(
+            resampled_scores,
+            expected_resampled_scores,
+            rtol=0.0,
+            atol=2e-15,
+        )
+        np.testing.assert_array_equal(resampled_diag, expected_resampled_diag)
 
     def test_resample_missing_correlations_edge_cases(self) -> None:
         """Test missing-correlation resampling covers all-missing and partial rows."""
@@ -731,6 +797,22 @@ class TestGetHighlyCorrelatedPairs(unittest.TestCase):
             corr_matrix, critval=0.99, anto=False
         )
         self.assertEqual(len(pairs), 0)
+
+    def test_zero_threshold_only_selects_strict_lower_triangle(self) -> None:
+        """Zero thresholds do not admit diagonal or mirrored item pairs."""
+        corr_matrix = np.array(
+            [
+                [1.0, 0.0, -0.2],
+                [0.0, 1.0, 0.3],
+                [-0.2, 0.3, 1.0],
+            ]
+        )
+
+        synonyms = get_highly_correlated_pairs(corr_matrix, critval=0.0, anto=False)
+        antonyms = get_highly_correlated_pairs(corr_matrix, critval=0.0, anto=True)
+
+        np.testing.assert_array_equal(synonyms, [[1, 0], [2, 1]])
+        np.testing.assert_array_equal(antonyms, [[1, 0], [2, 0]])
 
 
 class TestComputePersonCorrelations(unittest.TestCase):

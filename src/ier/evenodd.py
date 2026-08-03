@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from ier._correlation import row_correlations
 from ier._validation import MatrixLike, validate_matrix_input
 
 
@@ -16,72 +17,7 @@ def calculate_correlations(even_cols: np.ndarray, odd_cols: np.ndarray) -> np.nd
     Returns:
     - Array of correlation coefficients for each individual
     """
-    if even_cols.shape[0] != odd_cols.shape[0]:
-        raise ValueError("even_cols and odd_cols must have the same number of rows")
-
-    num_individuals = even_cols.shape[0]
-    min_cols = min(even_cols.shape[1], odd_cols.shape[1])
-
-    if min_cols < 2:
-        return np.full(num_individuals, np.nan)
-
-    even_vals = even_cols[:, :min_cols]
-    odd_vals = odd_cols[:, :min_cols]
-    has_missing = bool(np.isnan(even_vals).any() or np.isnan(odd_vals).any())
-
-    enough_values: np.ndarray | None = None
-    with np.errstate(invalid="ignore", divide="ignore"):
-        if has_missing:
-            valid_mask = ~(np.isnan(even_vals) | np.isnan(odd_vals))
-            valid_counts = valid_mask.sum(axis=1)
-            nonempty = valid_counts > 0
-            even_mean = np.divide(
-                np.sum(even_vals, axis=1, where=valid_mask),
-                valid_counts,
-                out=np.zeros(num_individuals),
-                where=nonempty,
-            )
-            odd_mean = np.divide(
-                np.sum(odd_vals, axis=1, where=valid_mask),
-                valid_counts,
-                out=np.zeros(num_individuals),
-                where=nonempty,
-            )
-            even_centered = np.zeros(even_vals.shape, dtype=float)
-            odd_centered = np.zeros(odd_vals.shape, dtype=float)
-            np.subtract(
-                even_vals,
-                even_mean[:, np.newaxis],
-                out=even_centered,
-                where=valid_mask,
-            )
-            np.subtract(
-                odd_vals,
-                odd_mean[:, np.newaxis],
-                out=odd_centered,
-                where=valid_mask,
-            )
-            enough_values = valid_counts >= 2
-        else:
-            even_centered = even_vals - np.mean(even_vals, axis=1, keepdims=True)
-            odd_centered = odd_vals - np.mean(odd_vals, axis=1, keepdims=True)
-
-        covariance = np.einsum("ij,ij->i", even_centered, odd_centered)
-        denominator = np.einsum("ij,ij->i", even_centered, even_centered)
-        denominator *= np.einsum("ij,ij->i", odd_centered, odd_centered)
-        np.sqrt(denominator, out=denominator)
-        correlations: np.ndarray = np.divide(
-            covariance,
-            denominator,
-            out=np.zeros(num_individuals),
-            where=denominator > 0,
-        )
-
-    np.clip(correlations, -1.0, 1.0, out=correlations)
-    if enough_values is not None:
-        correlations[~enough_values] = np.nan
-
-    return correlations
+    return row_correlations(even_cols, odd_cols)
 
 
 def evenodd(

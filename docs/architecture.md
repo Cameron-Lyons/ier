@@ -147,6 +147,10 @@ evaluate the equivalent count form of conditional entropy.
 Even–odd consistency reduces factor correlations directly into respondent-level
 sums and valid-factor counts. Correlation kernels use centered row workspaces and
 contraction reductions, so peak allocation does not grow with the factor count.
+Psychometric synonym and antonym scoring reuse the same row-correlation kernel
+in bounded respondent batches. Missing responses therefore do not trigger a
+complete respondent-by-pair contribution matrix, and seeded resampling is also
+reduced in bounded chunks.
 
 ## Optional dependencies
 
@@ -161,6 +165,7 @@ Plotting remains optional and reports a centralized install hint from
 - Detection-rate simulation: `benchmarks/bench_detection.py`.
 - Throughput microbench: `benchmarks/bench_screen.py`.
 - Multi-factor even–odd throughput and memory: `benchmarks/bench_evenodd.py`.
+- Psychometric synonym missing-data throughput and memory: `benchmarks/bench_psychsyn.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
 - Response-time mixture EM and end-to-end scoring: `benchmarks/bench_response_time.py`.

@@ -13,6 +13,7 @@ from typing import Any, Literal, overload
 
 import numpy as np
 
+from ier._correlation import row_correlations
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -33,10 +34,10 @@ def get_highly_correlated_pairs(
     Returns:
     - Array of item pair indices (i, j) that meet the threshold
     """
-    if anto:
-        return np.argwhere(np.tril(item_correlations, -1) <= critval)
-    else:
-        return np.argwhere(np.tril(item_correlations, -1) >= critval)
+    row_indices, column_indices = np.tril_indices(item_correlations.shape[0], k=-1)
+    pair_correlations = item_correlations[row_indices, column_indices]
+    selected = pair_correlations <= critval if anto else pair_correlations >= critval
+    return np.stack((row_indices[selected], column_indices[selected]), axis=1)
 
 
 def compute_person_correlations(response_i: np.ndarray, response_j: np.ndarray) -> np.ndarray:
@@ -181,22 +182,12 @@ def psychsyn(
         else:
             return empty_scores
 
-    if np.isfinite(x_array).all():
-        scores, diag_values = _compute_complete_person_scores(x_array, item_pairs)
-    else:
-        response_i = x_array[:, item_pairs[:, 0]]
-        response_j = x_array[:, item_pairs[:, 1]]
-
-        person_corrs = compute_person_correlations(response_i, response_j)
-
-        invalid_pairs = np.isnan(response_i) | np.isnan(response_j)
-        person_corrs[invalid_pairs] = np.nan
-
-        if resample_na:
-            person_corrs = _resample_missing_correlations(person_corrs, rng)
-
-        scores = np.nanmean(person_corrs, axis=1)
-        diag_values = np.sum(~np.isnan(person_corrs), axis=1)
+    scores, diag_values = _compute_person_scores(
+        x_array,
+        item_pairs,
+        resample_na=resample_na,
+        rng=rng,
+    )
 
     if np.any(np.isnan(scores)) and len(item_pairs) > 0:
         scores = np.nan_to_num(scores, nan=0.0)
@@ -222,10 +213,54 @@ def _compute_complete_person_scores(
         stop = min(start + batch_rows, len(x))
         response_i = x[start:stop, item_pairs[:, 0]]
         response_j = x[start:stop, item_pairs[:, 1]]
-        person_corrs = compute_person_correlations(response_i, response_j)
-        scores[start:stop] = np.mean(person_corrs, axis=1)
+        scores[start:stop] = row_correlations(response_i, response_j)
 
     diag_values = np.full(len(x), n_pairs, dtype=int)
+    return scores, diag_values
+
+
+def _compute_person_scores(
+    x: np.ndarray,
+    item_pairs: np.ndarray,
+    *,
+    resample_na: bool,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Score selected pairs in bounded batches, including missing-response inputs."""
+    if np.isfinite(x).all():
+        return _compute_complete_person_scores(x, item_pairs)
+
+    n_rows = len(x)
+    n_pairs = len(item_pairs)
+    batch_rows = max(1, _PSYCHSYN_BATCH_ELEMENTS // n_pairs)
+    scores = np.full(n_rows, np.nan)
+    diag_values = np.zeros(n_rows, dtype=int)
+
+    for start in range(0, n_rows, batch_rows):
+        stop = min(start + batch_rows, n_rows)
+        response_i = x[start:stop, item_pairs[:, 0]]
+        response_j = x[start:stop, item_pairs[:, 1]]
+        finite_rows = np.isfinite(response_i).all(axis=1)
+        finite_rows &= np.isfinite(response_j).all(axis=1)
+
+        batch_scores = row_correlations(response_i, response_j)
+        batch_scores[~finite_rows] = np.nan
+        scores[start:stop] = batch_scores
+        diag_values[start:stop] = finite_rows * n_pairs
+
+    missing_rows = np.isnan(scores)
+    if not resample_na or not np.any(missing_rows):
+        return scores, diag_values
+
+    overall_mean = 0.0 if np.all(missing_rows) else float(np.abs(np.mean(scores[~missing_rows])))
+
+    missing_indices = np.flatnonzero(missing_rows)
+    for start in range(0, len(missing_indices), batch_rows):
+        row_indices = missing_indices[start : start + batch_rows]
+        random_signs = rng.choice([-1, 1], size=(len(row_indices), n_pairs))
+        scores[row_indices] = np.mean(random_signs, axis=1) * overall_mean
+
+    diag_values[missing_rows] = n_pairs
     return scores, diag_values
 
 
