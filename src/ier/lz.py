@@ -21,6 +21,8 @@ from ier._statistics import logistic_transform
 from ier._validation import MatrixLike, validate_matrix_input
 
 _LZ_BATCH_ELEMENTS = 10_240
+_LZ_MISSING_BATCH_ELEMENTS = 65_536
+_LZ_CALIBRATION_BLOCK_ELEMENTS = 131_072
 
 
 def lz(
@@ -183,36 +185,70 @@ def _estimate_discrimination(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
     if not has_missing:
         return _estimate_discrimination_complete(x, total_score)
 
-    if np.std(total_score) == 0:
+    if not na_rm:
         return a
 
-    for j in range(n_items):
-        if na_rm:
-            valid_mask = ~np.isnan(x[:, j])
-            item_resp = x[valid_mask, j]
-            scores = total_score[valid_mask]
-        else:
-            item_resp = x[:, j]
-            scores = total_score
+    return _estimate_discrimination_missing(x, total_score)
 
-        if len(np.unique(item_resp)) < 2:
-            continue
 
-        if np.std(scores) == 0:
-            continue
+def _estimate_discrimination_missing(
+    x: np.ndarray,
+    total_score: np.ndarray,
+) -> np.ndarray:
+    """Estimate missing-aware item correlations in bounded column blocks."""
+    n_items = x.shape[1]
+    discrimination = np.ones(n_items)
 
-        with np.errstate(divide="ignore", invalid="ignore"):
-            corr_matrix = np.corrcoef(item_resp, scores)
-            r_pb = corr_matrix[0, 1]
+    if np.std(total_score) == 0:
+        return discrimination
 
-        if np.isnan(r_pb):
-            continue
+    squared_scores = total_score * total_score
+    block_columns = max(1, _LZ_CALIBRATION_BLOCK_ELEMENTS // len(x))
+    for start in range(0, n_items, block_columns):
+        stop = min(start + block_columns, n_items)
+        block = x[:, start:stop]
+        valid = ~np.isnan(block)
+        counts = np.sum(valid, axis=0, dtype=np.intp)
 
-        r_pb = np.clip(r_pb, -0.99, 0.99)
-        a[j] = r_pb * 1.7 / np.sqrt(1 - r_pb**2)
-        a[j] = np.clip(a[j], 0.2, 3.0)
+        values = np.zeros(block.shape, dtype=float)
+        np.copyto(values, block, where=valid)
+        item_sums = np.sum(values, axis=0)
+        item_sum_squares = np.einsum("ij,ij->j", values, values)
+        score_sums = total_score @ valid
+        score_sum_squares = squared_scores @ valid
+        cross_products = total_score @ values
 
-    return a
+        nonempty = counts > 0
+        inverse_counts = np.divide(
+            1.0,
+            counts,
+            out=np.zeros(stop - start),
+            where=nonempty,
+        )
+        item_sum_squares -= item_sums * item_sums * inverse_counts
+        score_sum_squares -= score_sums * score_sums * inverse_counts
+        np.maximum(item_sum_squares, 0.0, out=item_sum_squares)
+        np.maximum(score_sum_squares, 0.0, out=score_sum_squares)
+
+        covariances = cross_products - item_sums * score_sums * inverse_counts
+        denominators = item_sum_squares * score_sum_squares
+        np.sqrt(denominators, out=denominators)
+        correlations = np.divide(
+            covariances,
+            denominators,
+            out=np.zeros(stop - start),
+            where=denominators > 0.0,
+        )
+        usable = (counts >= 2) & (denominators > 0.0) & np.isfinite(correlations)
+        np.clip(correlations, -0.99, 0.99, out=correlations)
+
+        block_discrimination = discrimination[start:stop]
+        block_discrimination[usable] = (
+            correlations[usable] * 1.7 / np.sqrt(1.0 - correlations[usable] ** 2)
+        )
+
+    np.clip(discrimination, 0.2, 3.0, out=discrimination)
+    return discrimination
 
 
 def _estimate_discrimination_complete(
@@ -251,31 +287,99 @@ def _estimate_theta(x: np.ndarray, a: np.ndarray, b: np.ndarray, na_rm: bool = T
     if not np.isnan(x).any():
         return _estimate_theta_complete(x, a, b)
 
-    n_persons = x.shape[0]
-    theta = np.zeros(n_persons)
+    return _estimate_theta_missing(x, a, b, na_rm=na_rm)
 
-    for i in range(n_persons):
-        if na_rm:
-            valid_mask = ~np.isnan(x[i, :])
-            responses = x[i, valid_mask]
-            a_valid = a[valid_mask]
-            b_valid = b[valid_mask]
-        else:
-            responses = x[i, :]
-            a_valid = a
-            b_valid = b
 
-        if len(responses) == 0:
-            theta[i] = np.nan
-            continue
+def _estimate_theta_missing(
+    x: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    *,
+    na_rm: bool,
+) -> np.ndarray:
+    """Estimate abilities for missing-response rows in bounded masked batches."""
+    theta = np.empty(len(x))
+    batch_rows = max(1, _LZ_MISSING_BATCH_ELEMENTS // x.shape[1])
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        responses = x[start:stop]
+        valid = ~np.isnan(responses)
+        if not na_rm:
+            valid &= np.all(valid, axis=1)[:, np.newaxis]
+        theta[start:stop] = _ml_theta_masked_batch(responses, valid, a, b)
+    return theta
 
-        if np.all(responses == 1):
-            theta[i] = 3.0
-        elif np.all(responses == 0):
-            theta[i] = -3.0
-        else:
-            theta[i] = _ml_theta(responses, a_valid, b_valid)
 
+def _ml_theta_masked_batch(
+    responses: np.ndarray,
+    valid: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+) -> np.ndarray:
+    """Apply safeguarded Newton iterations to a masked response batch."""
+    counts = np.asarray(np.sum(valid, axis=1, dtype=np.intp), dtype=np.intp)
+    response_sums: np.ndarray = np.sum(responses, axis=1, where=valid)
+    available = counts > 0
+    theta = np.full(len(responses), np.nan)
+    all_correct = available & (response_sums == counts)
+    all_incorrect = available & (response_sums == 0)
+    theta[all_correct] = 3.0
+    theta[all_incorrect] = -3.0
+
+    interior = available & ~(all_correct | all_incorrect)
+    active_responses = responses[interior]
+    active_valid = valid[interior]
+    if len(active_responses) == 0:
+        return theta
+
+    active_counts = counts[interior]
+    proportion = np.clip(response_sums[interior] / active_counts, 0.01, 0.99)
+    estimates = np.clip(np.log(proportion / (1.0 - proportion)), -4.0, 4.0)
+    lower = np.full(len(active_responses), -4.0)
+    upper = np.full(len(active_responses), 4.0)
+    active = np.ones(len(active_responses), dtype=bool)
+    a_squared = a**2
+
+    for _ in range(64):
+        linear_predictor = a * (estimates[:, None] - b)
+        probabilities = logistic_transform(linear_predictor)
+
+        score = np.sum(
+            a * (active_responses - probabilities),
+            axis=1,
+            where=active_valid,
+        )
+        score_converged = active & (np.abs(score) <= 1e-12)
+        active[score_converged] = False
+        if not np.any(active):
+            break
+
+        positive = active & (score > 0.0)
+        negative = active & ~positive
+        lower[positive] = estimates[positive]
+        upper[negative] = estimates[negative]
+
+        information = np.sum(
+            a_squared * probabilities * (1.0 - probabilities),
+            axis=1,
+            where=active_valid,
+        )
+        candidates = estimates + np.divide(
+            score,
+            information,
+            out=np.full(len(active_responses), np.nan),
+            where=information > 0.0,
+        )
+        invalid = ~np.isfinite(candidates) | (candidates <= lower) | (candidates >= upper)
+        candidates[invalid] = (lower[invalid] + upper[invalid]) / 2.0
+
+        step_converged = active & (np.abs(candidates - estimates) <= 1e-12)
+        estimates[active] = candidates[active]
+        active[step_converged] = False
+        if not np.any(active):
+            break
+
+    theta[interior] = estimates
     return theta
 
 
@@ -383,31 +487,78 @@ def _compute_lz(
     if not np.isnan(x).any():
         return _compute_lz_complete(x, a, b, theta)
 
-    n_persons = x.shape[0]
-    lz_values = np.zeros(n_persons)
+    return _compute_lz_missing(x, a, b, theta, na_rm=na_rm)
 
-    for i in range(n_persons):
-        if np.isnan(theta[i]):
-            lz_values[i] = np.nan
-            continue
 
-        if na_rm:
-            valid_mask = ~np.isnan(x[i, :])
-            responses = x[i, valid_mask]
-            a_valid = a[valid_mask]
-            b_valid = b[valid_mask]
-        else:
-            responses = x[i, :]
-            a_valid = a
-            b_valid = b
+def _compute_lz_missing(
+    x: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    theta: np.ndarray,
+    *,
+    na_rm: bool,
+) -> np.ndarray:
+    """Compute missing-response lz scores in bounded masked batches."""
+    result = np.full(len(x), np.nan)
+    batch_rows = max(1, _LZ_MISSING_BATCH_ELEMENTS // x.shape[1])
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        responses = x[start:stop]
+        valid = ~np.isnan(responses)
+        if not na_rm:
+            valid &= np.all(valid, axis=1)[:, np.newaxis]
+        batch_theta = theta[start:stop]
+        available = np.any(valid, axis=1) & ~np.isnan(batch_theta)
+        if np.any(available):
+            batch_result = result[start:stop]
+            batch_result[available] = _compute_lz_masked_batch(
+                responses[available],
+                valid[available],
+                a,
+                b,
+                batch_theta[available],
+            )
+    return result
 
-        if len(responses) == 0:
-            lz_values[i] = np.nan
-            continue
 
-        lz_values[i] = _compute_lz_row(responses, a_valid, b_valid, theta[i])
+def _compute_lz_masked_batch(
+    responses: np.ndarray,
+    valid: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    theta: np.ndarray,
+) -> np.ndarray:
+    """Compute lz scores for one masked response batch."""
+    prob = logistic_transform(a * (theta[:, None] - b))
+    prob = np.clip(prob, 1e-10, 1 - 1e-10)
+    log_prob = np.log(prob)
+    log_one_minus_prob = np.log(1 - prob)
 
-    return lz_values
+    log_l = np.sum(
+        responses * log_prob + (1 - responses) * log_one_minus_prob,
+        axis=1,
+        where=valid,
+    )
+    expected_l = np.sum(
+        prob * log_prob + (1 - prob) * log_one_minus_prob,
+        axis=1,
+        where=valid,
+    )
+    log_odds = np.log(prob / (1 - prob))
+    var_l = np.sum(
+        prob * (1 - prob) * log_odds**2,
+        axis=1,
+        where=valid,
+    )
+    result = np.full(len(responses), np.nan)
+    result[np.isfinite(var_l) & (var_l <= 0.0)] = 0.0
+    np.divide(
+        log_l - expected_l,
+        np.sqrt(var_l),
+        out=result,
+        where=np.isfinite(var_l) & (var_l > 0.0),
+    )
+    return result
 
 
 def _compute_lz_complete(

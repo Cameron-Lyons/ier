@@ -741,6 +741,78 @@ def _reference_discrimination(x: np.ndarray, *, na_rm: bool) -> np.ndarray:
     return result
 
 
+def _reference_missing_theta(
+    x: np.ndarray,
+    discrimination: np.ndarray,
+    difficulty: np.ndarray,
+    *,
+    na_rm: bool,
+) -> np.ndarray:
+    """Evaluate the former scalar missing-response ability path."""
+    result = np.zeros(len(x))
+    for row_index, row in enumerate(x):
+        if na_rm:
+            valid = ~np.isnan(row)
+            responses = row[valid]
+            item_discrimination = discrimination[valid]
+            item_difficulty = difficulty[valid]
+        else:
+            responses = row
+            item_discrimination = discrimination
+            item_difficulty = difficulty
+
+        if len(responses) == 0:
+            result[row_index] = np.nan
+        elif np.all(responses == 1):
+            result[row_index] = 3.0
+        elif np.all(responses == 0):
+            result[row_index] = -3.0
+        else:
+            result[row_index] = _ml_theta(
+                responses,
+                item_discrimination,
+                item_difficulty,
+            )
+    return result
+
+
+def _reference_missing_lz(
+    x: np.ndarray,
+    discrimination: np.ndarray,
+    difficulty: np.ndarray,
+    theta: np.ndarray,
+    *,
+    na_rm: bool,
+) -> np.ndarray:
+    """Evaluate the former scalar missing-response likelihood path."""
+    result = np.zeros(len(x))
+    for row_index, (row, row_theta) in enumerate(zip(x, theta, strict=True)):
+        if np.isnan(row_theta):
+            result[row_index] = np.nan
+            continue
+
+        if na_rm:
+            valid = ~np.isnan(row)
+            responses = row[valid]
+            item_discrimination = discrimination[valid]
+            item_difficulty = difficulty[valid]
+        else:
+            responses = row
+            item_discrimination = discrimination
+            item_difficulty = difficulty
+
+        if len(responses) == 0:
+            result[row_index] = np.nan
+        else:
+            result[row_index] = _compute_lz_row(
+                responses,
+                item_discrimination,
+                item_difficulty,
+                row_theta,
+            )
+    return result
+
+
 class TestLz(unittest.TestCase):
     """Tests for standardized log-likelihood (lz) functions."""
 
@@ -806,8 +878,8 @@ class TestLz(unittest.TestCase):
         self.assertEqual(actual[0], 1.0)
         self.assertEqual(actual[1], 1.0)
 
-    def test_missing_discrimination_retains_itemwise_reference_path(self) -> None:
-        """Missing-response semantics remain on the established per-item fallback."""
+    def test_missing_discrimination_contraction_matches_itemwise_reference(self) -> None:
+        """Missing-aware column blocks preserve established item estimates."""
         rng = np.random.default_rng(43)
         data = rng.integers(0, 2, size=(101, 13)).astype(float)
         data[rng.random(data.shape) < 0.08] = np.nan
@@ -815,10 +887,144 @@ class TestLz(unittest.TestCase):
         for na_rm in (True, False):
             with self.subTest(na_rm=na_rm):
                 expected = _reference_discrimination(data, na_rm=na_rm)
-                with patch("ier.lz.np.corrcoef", wraps=np.corrcoef) as correlations:
+                with (
+                    patch("ier.lz._LZ_CALIBRATION_BLOCK_ELEMENTS", 101),
+                    patch(
+                        "ier.lz.np.corrcoef",
+                        side_effect=AssertionError("per-item correlations were constructed"),
+                    ),
+                ):
                     actual = _estimate_discrimination(data, na_rm=na_rm)
-                self.assertGreater(correlations.call_count, 0)
-                np.testing.assert_array_equal(actual, expected)
+                np.testing.assert_allclose(actual, expected, rtol=0.0, atol=2e-14)
+
+    def test_missing_batch_kernels_match_scalar_rows(self) -> None:
+        """Masked batches preserve ability and likelihood results for both policies."""
+        from ier.lz import _compute_lz_masked_batch, _ml_theta_masked_batch
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(0, 2, size=(257, 37)).astype(float)
+        data[rng.random(data.shape) < 0.08] = np.nan
+        data[0] = np.nan
+        data[1] = 0.0
+        data[1, ::5] = np.nan
+        data[2] = 1.0
+        data[2, ::7] = np.nan
+        data[3] = rng.integers(0, 2, size=data.shape[1])
+        discrimination = rng.uniform(0.2, 3.0, data.shape[1])
+        difficulty = rng.uniform(-3.0, 3.0, data.shape[1])
+
+        for na_rm in (True, False):
+            with self.subTest(na_rm=na_rm):
+                expected_theta = _reference_missing_theta(
+                    data,
+                    discrimination,
+                    difficulty,
+                    na_rm=na_rm,
+                )
+                expected_scores = _reference_missing_lz(
+                    data,
+                    discrimination,
+                    difficulty,
+                    expected_theta,
+                    na_rm=na_rm,
+                )
+
+                with (
+                    patch("ier.lz._LZ_MISSING_BATCH_ELEMENTS", 111),
+                    patch(
+                        "ier.lz._ml_theta",
+                        side_effect=AssertionError("scalar ability solver was called"),
+                    ),
+                    patch(
+                        "ier.lz._compute_lz_row",
+                        side_effect=AssertionError("scalar likelihood scorer was called"),
+                    ),
+                    patch(
+                        "ier.lz._ml_theta_masked_batch",
+                        wraps=_ml_theta_masked_batch,
+                    ) as theta_batches,
+                    patch(
+                        "ier.lz._compute_lz_masked_batch",
+                        wraps=_compute_lz_masked_batch,
+                    ) as score_batches,
+                ):
+                    actual_theta = _estimate_theta(
+                        data,
+                        discrimination,
+                        difficulty,
+                        na_rm=na_rm,
+                    )
+                    actual_scores = _compute_lz(
+                        data,
+                        discrimination,
+                        difficulty,
+                        actual_theta,
+                        na_rm=na_rm,
+                    )
+
+                self.assertGreater(theta_batches.call_count, 1)
+                self.assertGreater(score_batches.call_count, 1)
+                self.assertTrue(
+                    all(call.args[0].size <= 111 for call in theta_batches.call_args_list)
+                )
+                self.assertTrue(
+                    all(call.args[0].size <= 111 for call in score_batches.call_args_list)
+                )
+                np.testing.assert_allclose(
+                    actual_theta,
+                    expected_theta,
+                    rtol=0.0,
+                    atol=2e-15,
+                    equal_nan=True,
+                )
+                np.testing.assert_allclose(
+                    actual_scores,
+                    expected_scores,
+                    rtol=0.0,
+                    atol=5e-14,
+                    equal_nan=True,
+                )
+
+    def test_strict_missing_policy_keeps_scores_unavailable(self) -> None:
+        """Strict handling preserves unavailable public scores after batching."""
+        data = np.asarray(
+            [
+                [1.0, 0.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [1.0, 1.0, np.nan, 0.0],
+            ]
+        )
+
+        self.assertTrue(np.isnan(lz(data, na_rm=False)).all())
+
+    def test_missing_batch_preserves_infinite_custom_theta(self) -> None:
+        """Infinite custom abilities retain the scalar likelihood semantics."""
+        data = np.asarray(
+            [
+                [1.0, np.nan, 1.0, 0.0],
+                [0.0, 1.0, np.nan, 1.0],
+            ]
+        )
+        discrimination = np.asarray([0.5, 1.0, 1.5, 2.0])
+        difficulty = np.asarray([-2.0, -0.5, 0.5, 2.0])
+        theta = np.asarray([np.inf, -np.inf])
+        expected = _reference_missing_lz(
+            data,
+            discrimination,
+            difficulty,
+            theta,
+            na_rm=True,
+        )
+
+        actual = _compute_lz(
+            data,
+            discrimination,
+            difficulty,
+            theta,
+            na_rm=True,
+        )
+
+        np.testing.assert_allclose(actual, expected, rtol=1e-15, atol=0.0)
 
     def test_constant_total_scores_keep_default_discrimination(self) -> None:
         """Undefined correlations retain the established default of one."""
