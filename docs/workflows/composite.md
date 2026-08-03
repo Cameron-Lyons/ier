@@ -151,6 +151,19 @@ scenarios from retained scores takes 1.4 ms and 0.7 MiB peak temporary allocatio
 instead of 39.7 ms and 12.9 MiB for five full runs, a 27.9x speedup without
 another dependency.
 
+Component scores exported with `ier composite --include-components --format npz`
+can be reloaded for a later session:
+
+```python
+from ier import composite_scores, load_score_archive
+
+saved = load_score_archive("composite.npz")
+reweighted = composite_scores(saved["scores"], weights={"irv": 2.0})
+```
+
+Aggregate-only composite archives intentionally fail this load because they do
+not contain the raw registered-index vectors needed for a new combination.
+
 ## Composite completeness
 
 By default, composite methods retain their established missing-value behavior:

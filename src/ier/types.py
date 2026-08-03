@@ -15,6 +15,7 @@ IndexErrorMap: TypeAlias = dict[str, str]
 IndexThresholdMap: TypeAlias = dict[str, float | None]
 IndexPercentileMap: TypeAlias = dict[str, float | None]
 IndexThresholdSourceMap: TypeAlias = dict[str, Literal["fixed", "percentile", "presence"]]
+ScoreArchiveResultType: TypeAlias = Literal["screen", "composite"]
 
 CompositeMethod: TypeAlias = Literal["mean", "sum", "max", "best_subset"]
 InfrequencyMissingPolicy: TypeAlias = Literal["pass", "fail", "omit", "propagate"]
@@ -66,6 +67,17 @@ class ScreenResult(TypedDict):
     errors: IndexErrorMap
     n_respondents: int
     summary: dict[str, ScreenIndexSummary]
+
+
+class ScoreArchive(TypedDict):
+    """Reusable registered-index scores loaded from a versioned NPZ archive."""
+
+    schema_version: int
+    result_type: ScoreArchiveResultType
+    n_respondents: int
+    scores: IndexScoreMap
+    respondent_ids: list[str] | None
+    errors: IndexErrorMap
 
 
 class CompositeSummary(TypedDict):
