@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.43] - 2026-08-03
+
+### Performance
+
+- Dependency-free chi-square quantile arrays now evaluate regularized-gamma
+  tails and safeguarded Newton updates in bounded 8,192-probability batches,
+  retaining the scalar solver as a fallback for exceptional points. On a
+  20,000-respondent, 80-item Mahalanobis Q-Q benchmark, median time improved
+  from 7.5199 to 0.0452 seconds, a 166.4x speedup, while peak traced allocation
+  remained 6.4 MiB. The direct quantile kernel improved from 7.2647 to 0.0392
+  seconds, a 185.4x speedup, with maximum relative difference of 1.31e-14.
+  Boundary probabilities, arbitrary array shapes, degrees of freedom from 1 to
+  10,000, extreme tails, and monotonicity are preserved without adding a
+  dependency.
+
 ## [2.19.42] - 2026-08-03
 
 ### Performance

@@ -52,6 +52,10 @@ profile under the default low-direction percentile rule.
 `individual_reliability(..., random_seed=...)` uses an isolated reproducible
 random stream. It does not reset or advance NumPy's process-wide random state.
 
+`mahad_qqplot()` generates dependency-free theoretical chi-square coordinates
+in bounded vector batches. Plotting remains optional; with `plot=False`, large
+Q-Q datasets require only the NumPy base installation.
+
 The registry's `longstring` index uses `longstring_scores()` for numeric response
 matrices. The standalone `longstring()` helper analyzes text strings only and
 rejects numeric or multidimensional arrays. Numeric longest-run and repeating-
