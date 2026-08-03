@@ -1005,6 +1005,35 @@ class TestCli(unittest.TestCase):
         np.testing.assert_allclose(payload["scores"]["missing_rate"], [0.0, 1 / 3, 2 / 3])
         self.assertEqual(payload["consensus_flags"], [False, False, True])
 
+    def test_screen_missing_rate_required_item_subset(self) -> None:
+        missing = self.root / "missing-rate-subset.csv"
+        missing.write_text("i1,i2,i3\n1,2,3\n1,,3\n,,3\n", encoding="utf-8")
+        out = self.root / "missing-rate-subset.json"
+
+        code = main(
+            [
+                "screen",
+                str(missing),
+                "--indices",
+                "missing_rate",
+                "--missing-item-indices",
+                "0,2",
+                "--threshold",
+                "missing_rate=0.5",
+                "--min-flags",
+                "1",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        np.testing.assert_allclose(payload["scores"]["missing_rate"], [0.0, 0.0, 0.5])
+        self.assertEqual(payload["consensus_flags"], [False, False, True])
+
     def test_screen_json_output(self) -> None:
         out = self.root / "screen.json"
         code = main(

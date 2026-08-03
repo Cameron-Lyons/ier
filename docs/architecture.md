@@ -106,6 +106,13 @@ not identical across indices: IRV can use `nanstd`, Mahalanobis may drop
 incomplete rows, Markov may require complete sequences depending on `na_rm`.
 When comparing to R packages, align NA policy first.
 
+The opt-in `missing_rate` index separates observed missingness from survey
+applicability. A fixed `missing_item_indices` subset works through registry and
+command-line scoring. Python callers can additionally provide a Boolean
+respondent-by-item applicability mask; its false cells do not contribute to
+either the missing count or denominator. A zero denominator yields `NaN`, which
+the shared flagging policy leaves unflagged.
+
 ## Composite scores
 
 `composite()` z-combines selected indices with direction multipliers so that

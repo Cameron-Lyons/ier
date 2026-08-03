@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from ier.acquiescence import acquiescence
 from ier.evenodd import evenodd
@@ -56,6 +57,8 @@ class IndexOptions:
     infrequency_expected_responses: list[float] | None = None
     infrequency_proportion: bool = False
     mad_scale_min: float | None = None
+    missing_item_indices: list[int] | None = None
+    missing_applicable_mask: ArrayLike | None = None
 
 
 def resolve_index_options(options: IndexOptions | None = None) -> IndexOptions:
@@ -212,6 +215,14 @@ def _infrequency_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
     )
 
 
+def _missing_rate_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
+    return missing_rate(
+        x,
+        item_indices=options.missing_item_indices,
+        applicable_mask=options.missing_applicable_mask,
+    )
+
+
 INDEX_REGISTRY: dict[str, IndexSpec] = {
     "irv": IndexSpec(
         name="irv",
@@ -276,7 +287,7 @@ INDEX_REGISTRY: dict[str, IndexSpec] = {
     ),
     "missing_rate": IndexSpec(
         name="missing_rate",
-        scorer=lambda x, options: missing_rate(x),
+        scorer=_missing_rate_scores,
         flag_direction="high",
     ),
     "u3_poly": IndexSpec(

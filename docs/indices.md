@@ -32,7 +32,7 @@ defaults, and options that must be configured before an index can run.
 | `psychant` | Psychometric antonym consistency | low | no | yes | `psychant_critval` |
 | `person_total` | Agreement with the sample item profile | low* | yes | yes | — |
 | `markov` | Transition entropy | low | yes | yes | — |
-| `missing_rate` | Missing-response proportion | high | no | yes | optional item subset via direct API |
+| `missing_rate` | Missing-response proportion | high | no | yes | optional item subset / applicability mask |
 | `u3_poly` | Polytomous person-fit / Guttman-like | high | yes | no | `scale_min` / `scale_max` |
 | `midpoint` | Midpoint responding | high | yes | no | `scale_min` / `scale_max`, `midpoint_tolerance` |
 | `acquiescence` | Agreeing / yea-saying | high | yes | no | scale bounds; optional item lists |
@@ -68,9 +68,13 @@ inconsistency. The standalone `semantic_syn_flag()` and `semantic_ant_flag()`
 helpers flag unusually low consistency scores.
 
 `missing_rate` is opt-in because planned skip logic and matrix preprocessing can
-create legitimate omissions. Use the standalone function's `item_indices` option
-to restrict the calculation to required items, or select it explicitly in
-`screen()` / `composite()` when all matrix columns share a missingness policy.
+create legitimate omissions. Use `IndexOptions.missing_item_indices` to restrict
+registry scoring to a fixed required-item subset, or pass the same subset as
+`item_indices` to the standalone helper. For respondent-specific skip logic,
+provide a Boolean `missing_applicable_mask` through `IndexOptions` or
+`applicable_mask` directly. False cells are excluded from both the numerator and
+denominator; rows without applicable selected items return `NaN` and are not
+flagged. The CLI exposes fixed subsets through `--missing-item-indices`.
 
 ## Response-time indices (standalone — not in the registry)
 
