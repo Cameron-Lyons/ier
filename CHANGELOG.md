@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.15] - 2026-08-03
+
+### Added
+
+- A reproducible Mahalanobis throughput and peak-allocation benchmark with
+  configurable matrix size, repetitions, warmup, and random seed.
+
+### Changed
+
+- Mahalanobis covariance and quadratic-form evaluation now use bounded respondent
+  blocks, and all-zero covariance matrices use an exact zero pseudo-inverse. On a
+  100,000-respondent, 80-item benchmark, median time falls from 23.6 to 18.3 ms
+  and peak temporary allocation from 123.1 to 7.6 MiB without adding a dependency.
+
 ## [2.19.14] - 2026-08-03
 
 ### Added
