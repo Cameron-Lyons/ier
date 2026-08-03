@@ -16,6 +16,21 @@ class SupportsArray(Protocol):
 MatrixLike: TypeAlias = Sequence[Sequence[float | int]] | np.ndarray | SupportsArray | ArrayLike
 
 
+def validate_score_array(values: ArrayLike, *, name: str = "scores") -> np.ndarray:
+    """Validate and return one non-empty one-dimensional reusable score vector."""
+    try:
+        score_arr = np.asarray(values, dtype=float)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be a one-dimensional numeric array") from error
+    if score_arr.ndim != 1:
+        raise ValueError(f"{name} must be one-dimensional")
+    if len(score_arr) == 0:
+        raise ValueError(f"{name} cannot be empty")
+    if np.isinf(score_arr).any():
+        raise ValueError(f"{name} must contain only finite values or NaN")
+    return score_arr
+
+
 def validate_score_vectors(
     scores: Mapping[str, ArrayLike],
 ) -> tuple[dict[str, np.ndarray], int]:
@@ -28,18 +43,7 @@ def validate_score_vectors(
     validated: dict[str, np.ndarray] = {}
     n_respondents: int | None = None
     for name, values in scores.items():
-        try:
-            score_arr = np.asarray(values, dtype=float)
-        except (TypeError, ValueError) as error:
-            raise ValueError(
-                f"scores for {name} must be a one-dimensional numeric array"
-            ) from error
-        if score_arr.ndim != 1:
-            raise ValueError(f"scores for {name} must be one-dimensional")
-        if len(score_arr) == 0:
-            raise ValueError(f"scores for {name} cannot be empty")
-        if np.isinf(score_arr).any():
-            raise ValueError(f"scores for {name} must contain only finite values or NaN")
+        score_arr = validate_score_array(values, name=f"scores for {name}")
         if n_respondents is None:
             n_respondents = len(score_arr)
         elif len(score_arr) != n_respondents:

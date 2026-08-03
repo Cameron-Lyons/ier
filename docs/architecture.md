@@ -9,7 +9,8 @@ flags respondents. It is aimed at contributors and methods-curious users.
 CLI / examples
       │
 screen() / composite()     ← public orchestration
-screen_scores() / composite_scores()  ← reusable decision layer
+screen_scores() / composite_scores() / response_time_score_flags()
+                                    ← reusable decision layer
       │
 IndexOptions + registry    ← shared config + index catalog
       │
@@ -42,8 +43,10 @@ _validation / _flagging    ← shared input checks and threshold helpers
 - **Reusable decisions.** `screen_scores()` reapplies direction-aware flagging,
   completeness, consensus, and summaries to retained registered score vectors.
   `composite_scores()` reuses raw composite-enabled vectors for alternative
-  weights, standardization, completeness, and reductions. Both support
-  sensitivity analysis without rerunning scorers.
+  weights, standardization, completeness, and reductions.
+  `response_time_score_flags()` reapplies low- or high-tail cutoffs to retained
+  direct timing scores or mixture probabilities. All three support sensitivity
+  analysis without rerunning scorers.
 
 ## Command-line boundaries
 
@@ -172,6 +175,9 @@ composite registry so they are not mixed into item-response pipelines by
 accident. Gaussian-mixture fitting reuses responsibility and scratch buffers
 throughout EM. Its expectation step follows a fast probability-space path for
 ordinary observations and normalizes only underflowed rows in log space.
+Retained summary vectors and mixture probabilities pass through the same shared
+single-vector validation and threshold boundary, so cutoff sensitivity analysis
+does not recalculate row summaries or refit EM.
 
 Markov transition entropy counts categorical pairs in bounded row batches for
 up to 64 observed states. Higher-cardinality inputs use only each row's observed
@@ -240,7 +246,8 @@ Plotting remains optional and reports a centralized install hint from
 - Row-wise response reduction throughput and memory: `benchmarks/bench_row_reductions.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
-- Response-time mixture EM and end-to-end scoring: `benchmarks/bench_response_time.py`.
+- Response-time mixture EM, scoring, and reusable cutoff sensitivity:
+  `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - Reusable composite sensitivity analysis: `benchmarks/bench_composite.py`.
 - Validated score-archive saving and loading: `benchmarks/bench_archive.py`.

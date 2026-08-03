@@ -45,6 +45,7 @@ from .response_time import response_time as response_time
 from .response_time import response_time_consistency as response_time_consistency
 from .response_time import response_time_flag as response_time_flag
 from .response_time import response_time_mixture as response_time_mixture
+from .response_time import response_time_score_flags as response_time_score_flags
 from .screen import screen as screen
 from .screen import screen_scores as screen_scores
 from .semantic import semantic_ant as semantic_ant
@@ -62,6 +63,7 @@ from .types import IndexMetadata as IndexMetadata
 from .types import IndexScoreMap as IndexScoreMap
 from .types import InfrequencyMissingPolicy as InfrequencyMissingPolicy
 from .types import IntArray as IntArray
+from .types import ResponseTimeFlagDirection as ResponseTimeFlagDirection
 from .types import ScoreArchive as ScoreArchive
 from .types import ScoreArchiveResultType as ScoreArchiveResultType
 from .types import ScreenIndexSummary as ScreenIndexSummary
@@ -137,7 +139,9 @@ __all__ = [
     "response_time",
     "response_time_consistency",
     "response_time_flag",
+    "ResponseTimeFlagDirection",
     "response_time_mixture",
+    "response_time_score_flags",
     "screen",
     "screen_scores",
     "save_score_archive",

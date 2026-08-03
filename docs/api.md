@@ -4,6 +4,7 @@
     options:
       members:
         - IndexOptions
+        - ResponseTimeFlagDirection
         - ScoreArchive
         - __version__
         - index_catalog
@@ -47,6 +48,7 @@
         - response_time_consistency
         - response_time_flag
         - response_time_mixture
+        - response_time_score_flags
         - plot_distributions
         - plot_flag_counts
         - plot_flagged_heatmap

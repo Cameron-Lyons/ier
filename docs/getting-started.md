@@ -137,6 +137,17 @@ ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
 ```
 
+Retain a timing score vector when comparing decision cutoffs:
+
+```python
+from ier import response_time, response_time_score_flags
+
+median_times = response_time(timings, metric="median")
+strict_flags = response_time_score_flags(median_times, cutoff_percentile=1)
+```
+
+Use `direction="high"` when reflagging fast-component mixture probabilities.
+
 Scoring commands also accept forward-only standard input and gzip-compressed
 files without extra packages:
 

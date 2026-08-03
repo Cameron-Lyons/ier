@@ -12,6 +12,7 @@ from ier.response_time import (
     response_time_consistency,
     response_time_flag,
     response_time_mixture,
+    response_time_score_flags,
 )
 
 
@@ -37,6 +38,72 @@ class TestResponseTime(unittest.TestCase):
         flags = response_time_flag(times, threshold=0.5)
         self.assertTrue(flags[1])
         self.assertFalse(flags[0])
+
+    def test_retained_score_flags_match_full_recalculation(self) -> None:
+        times = np.asarray(
+            [
+                [2.0, 3.0, 4.0],
+                [0.1, 0.2, 0.3],
+                [2.5, 2.5, 2.5],
+                [1.0, 1.5, 2.0],
+                [5.0, 6.0, 7.0],
+            ]
+        )
+        scores = response_time(times, metric="median")
+        original = scores.copy()
+
+        for percentile in [0.0, 5.0, 25.0, 50.0, 100.0]:
+            with self.subTest(percentile=percentile):
+                np.testing.assert_array_equal(
+                    response_time_score_flags(scores, cutoff_percentile=percentile),
+                    response_time_flag(times, cutoff_percentile=percentile),
+                )
+        np.testing.assert_array_equal(
+            response_time_score_flags(scores, threshold=1.5),
+            response_time_flag(times, threshold=1.5),
+        )
+        np.testing.assert_array_equal(scores, original)
+
+    def test_retained_score_flags_support_both_suspicious_tails(self) -> None:
+        scores = np.asarray([1.0, 2.0, 2.0, 3.0, np.nan])
+
+        np.testing.assert_array_equal(
+            response_time_score_flags(scores, threshold=2.0),
+            [True, True, True, False, False],
+        )
+        np.testing.assert_array_equal(
+            response_time_score_flags(scores, threshold=2.0, direction="high"),
+            [False, True, True, True, False],
+        )
+
+        ranked = np.arange(1.0, 101.0)
+        self.assertEqual(int(response_time_score_flags(ranked).sum()), 5)
+        self.assertEqual(
+            int(response_time_score_flags(ranked, direction="high").sum()),
+            5,
+        )
+
+    def test_retained_score_flag_validation(self) -> None:
+        invalid_scores = [
+            ([], "cannot be empty"),
+            ([[1.0, 2.0]], "one-dimensional"),
+            ([1.0, np.inf], "finite values or NaN"),
+            (["bad"], "numeric array"),
+        ]
+        for scores, message in invalid_scores:
+            with self.subTest(scores=scores), self.assertRaisesRegex(ValueError, message):
+                response_time_score_flags(scores)
+
+        for direction in ["sideways", []]:
+            with self.subTest(direction=direction), self.assertRaisesRegex(ValueError, "direction"):
+                response_time_score_flags(
+                    [1.0, 2.0],
+                    direction=direction,  # type: ignore[arg-type]
+                )
+        with self.assertRaisesRegex(ValueError, "percentile"):
+            response_time_score_flags([1.0, 2.0], cutoff_percentile=101.0)
+        with self.assertRaisesRegex(ValueError, "threshold"):
+            response_time_score_flags([1.0, 2.0], threshold=np.inf)
 
     def test_consistency(self) -> None:
         """Test response time consistency (CV)."""
