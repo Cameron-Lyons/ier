@@ -85,36 +85,63 @@ def guttman(
 def _count_guttman_errors(x_sorted: np.ndarray) -> np.ndarray:
     """Count increasing response pairs without materializing every item pair."""
     valid = ~np.isnan(x_sorted)
-    categories = np.unique(x_sorted[valid])
-    n_people = x_sorted.shape[0]
-
-    if len(categories) <= _MAX_CATEGORIES and n_people * len(categories) <= _MAX_CATEGORY_CELLS:
-        return _count_categorical_errors(x_sorted, valid, categories)
+    categorical = _encode_categorical_values(x_sorted, valid)
+    if categorical is not None:
+        encoded, n_categories = categorical
+        return _count_categorical_errors(encoded, n_categories)
     return _count_pairwise_errors(x_sorted)
 
 
-def _count_categorical_errors(
+def _encode_categorical_values(
     x_sorted: np.ndarray,
     valid: np.ndarray,
-    categories: np.ndarray,
+) -> tuple[np.ndarray, int] | None:
+    """Encode small categorical scales, preferring bounded integer ranges."""
+    values = x_sorted[valid]
+    encoded = np.full(x_sorted.shape, -1, dtype=np.int16)
+    if values.size == 0:
+        return encoded, 0
+
+    minimum = float(np.min(values))
+    maximum = float(np.max(values))
+    span = maximum - minimum
+    if span < _MAX_CATEGORIES and np.all(values == np.floor(values)):
+        raw_ids = (values - minimum).astype(np.intp)
+        present = np.bincount(raw_ids, minlength=int(span) + 1) > 0
+        n_categories = int(np.sum(present))
+        if x_sorted.shape[0] * n_categories > _MAX_CATEGORY_CELLS:
+            return None
+        mapping = np.cumsum(present, dtype=np.int16) - 1
+        encoded[valid] = mapping[raw_ids]
+        return encoded, n_categories
+
+    categories = np.unique(values)
+    if (
+        len(categories) > _MAX_CATEGORIES
+        or x_sorted.shape[0] * len(categories) > _MAX_CATEGORY_CELLS
+    ):
+        return None
+    encoded[valid] = np.searchsorted(categories, values)
+    return encoded, len(categories)
+
+
+def _count_categorical_errors(
+    encoded: np.ndarray,
+    n_categories: int,
 ) -> np.ndarray:
-    """Count increasing pairs by tracking prior counts for each response category."""
-    n_people, n_items = x_sorted.shape
-    seen = np.zeros((n_people, len(categories)), dtype=np.int32)
-    errors = np.zeros(n_people, dtype=np.int64)
-    rows = np.arange(n_people)
+    """Count increasing pairs by grouping positions on a small response scale."""
+    errors = np.zeros(encoded.shape[0], dtype=np.int64)
+    lower_categories = np.zeros(encoded.shape, dtype=bool)
 
-    for column in range(n_items):
-        valid_rows = rows[valid[:, column]]
-        if valid_rows.size == 0:
-            continue
-
-        category_ids = np.searchsorted(categories, x_sorted[valid_rows, column])
-        positive = category_ids > 0
-        if np.any(positive):
-            prefix_counts = np.cumsum(seen[valid_rows], axis=1)
-            errors[valid_rows[positive]] += prefix_counts[positive, category_ids[positive] - 1]
-        seen[valid_rows, category_ids] += 1
+    for category in range(1, n_categories):
+        lower_categories |= encoded == category - 1
+        prior_lower = np.cumsum(lower_categories, axis=1, dtype=np.int32)
+        errors += np.einsum(
+            "ij,ij->i",
+            prior_lower,
+            encoded == category,
+            dtype=np.int64,
+        )
 
     return errors.astype(float)
 

@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.3] - 2026-08-02
+
+### Changed
+
+- Guttman scoring now directly encodes bounded integer response scales and counts
+  grouped category positions in vectorized passes; the 10,000-respondent,
+  80-item categorical benchmark runs roughly four times as fast.
+
 ## [2.4.2] - 2026-08-02
 
 ### Changed
