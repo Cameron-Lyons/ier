@@ -665,12 +665,12 @@ class TestMarkov(unittest.TestCase):
         with self.assertRaises(ValueError):
             markov(data, na_rm=False)
 
-    def test_na_rm_false_uses_vectorized_path(self) -> None:
-        """Test complete data with na_rm=False uses vectorized transition entropy."""
+    def test_complete_data_matches_for_both_missing_value_policies(self) -> None:
+        """Test complete data returns the same scores for either missing-value policy."""
         data = [[1, 2, 1, 2], [1, 2, 3, 1]]
-        vectorized = markov(data, na_rm=False)
-        rowwise = markov(data, na_rm=True)
-        np.testing.assert_allclose(vectorized, rowwise)
+        default_scores = markov(data, na_rm=True)
+        strict_scores = markov(data, na_rm=False)
+        np.testing.assert_allclose(default_scores, strict_scores)
 
     def test_rows_with_too_few_nonmissing_values_return_nan(self) -> None:
         """Test rows reduced below one transition return NaN."""

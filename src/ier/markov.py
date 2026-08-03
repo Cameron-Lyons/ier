@@ -49,10 +49,12 @@ def markov(
     """
     x_array = validate_matrix_input(x, min_columns=3, check_type=False)
 
-    if not na_rm and np.isnan(x_array).any():
+    missing = np.isnan(x_array)
+    has_missing = bool(missing.any())
+    if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
 
-    all_valid = x_array[~np.isnan(x_array)]
+    all_valid = x_array[~missing]
     if len(all_valid) == 0:
         return np.full(x_array.shape[0], np.nan)
 
@@ -60,7 +62,7 @@ def markov(
     k = len(categories)
 
     n_rows = x_array.shape[0]
-    if not na_rm:
+    if not has_missing:
         encoded = np.searchsorted(categories, x_array)
         from_ids = encoded[:, :-1]
         to_ids = encoded[:, 1:]
