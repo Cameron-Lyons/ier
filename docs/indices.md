@@ -190,10 +190,16 @@ flags in your analysis code if needed.
 | `fit_response_time_mixture` | Reusable reference-cohort mixture calibration | — |
 | `response_time_mixture_scores` | Apply fixed mixture calibration | high |
 | `response_time_score_flags` | Reflag retained direct or mixture scores | low or high |
+| `flag_consensus` | Combine aligned flags after separate scoring | configurable count |
 
 Median summaries and mixture preprocessing remove missing observations within
 bounded equal-length row groups before median selection. This keeps large timing
 matrices allocation-bounded while preserving each respondent's observation order.
+
+`flag_consensus()` can then combine those timing flags with registered screen
+flags while using optional score vectors to count per-respondent availability.
+It does not accept or score either source matrix.
+
 Fitted mixture models copy their small parameter vectors into read-only storage;
 later cohorts can reuse the same calibration without repeating EM.
 

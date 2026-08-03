@@ -408,6 +408,7 @@ respondents. Call them directly or use the dedicated CLI command:
 
 ```python
 from ier import (
+    flag_consensus,
     fit_response_time_mixture,
     load_response_time_archive,
     response_time,
@@ -415,6 +416,7 @@ from ier import (
     response_time_mixture_scores,
     response_time_score_flags,
     save_response_time_archive,
+    screen,
 )
 
 median_rt = response_time(times, metric="median")
@@ -434,6 +436,13 @@ revised_flags = response_time_score_flags(
     threshold=1.0,
     direction=saved["flag_direction"],
 )
+screened = screen(responses, indices=["irv", "longstring"])
+combined = flag_consensus(
+    {**screened["flags"], "response_time": revised_flags},
+    scores={**screened["scores"], "response_time": saved["scores"]},
+    min_flags=2,
+    min_valid_signals=3,
+)
 save_response_time_archive(
     "revised-timing.npz",
     saved["scores"],
@@ -445,6 +454,11 @@ save_response_time_archive(
     threshold_source="fixed",
 )
 ```
+
+The response and timing matrices remain separate. Only aligned, already scored
+respondent vectors enter `flag_consensus()`, and every vector must use the same
+respondent order. Optional score vectors use `NaN` as unavailable so
+`min_valid_signals` can withhold decisions based on too little observed evidence.
 
 ```bash
 ier response-time timings.csv --metric median --percentile 5

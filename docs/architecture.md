@@ -9,7 +9,7 @@ flags respondents. It is aimed at contributors and methods-curious users.
 CLI / examples
       │
 screen() / composite()     ← public orchestration
-screen_scores() / composite_scores() / response_time_score_flags()
+screen_scores() / composite_scores() / response_time_score_flags() / flag_consensus()
                                     ← reusable decision layer
       │
 IndexOptions + registry    ← shared config + index catalog
@@ -45,8 +45,10 @@ _validation / _flagging    ← shared input checks and threshold helpers
   `composite_scores()` reuses raw composite-enabled vectors for alternative
   weights, standardization, completeness, and reductions.
   `response_time_score_flags()` reapplies low- or high-tail cutoffs to retained
-  direct timing scores or mixture probabilities. All three support sensitivity
-  analysis without rerunning scorers.
+  direct timing scores or mixture probabilities. `flag_consensus()` combines
+  aligned Boolean signals after their separate domain-specific scoring and uses
+  optional score vectors to enforce availability. These layers support
+  sensitivity analysis without rerunning scorers.
 - **Archive-backed decisions.** Screening reflagging, composite recombination,
   and response-time reflagging load validated retained vectors before applying
   new decisions. They share cutoff, combination, probability, and output paths

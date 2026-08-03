@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.73] - 2026-08-03
+
+### Added
+
+- `flag_consensus()` combines aligned Boolean signals from separately scored
+  domains, including registered item-response indices and response-time metrics.
+  Optional score vectors identify per-respondent availability, omitted score
+  vectors remain fully available, and impossible flags on unavailable scores are
+  rejected. The typed result reports flag counts, valid-signal counts,
+  eligibility, and final consensus without mutating inputs. `screen()` and
+  `screen_scores()` share the same one-signal-at-a-time reducer, avoiding a
+  respondent-by-signal matrix. On the maintained 500,000-respondent, 10-signal
+  benchmark, bounded consensus takes 5.6 ms and 8.6 MiB traced peak versus
+  7.7 ms and 18.1 MiB for a stacked reference. No dependency is added.
+
 ## [2.19.72] - 2026-08-03
 
 ### Added

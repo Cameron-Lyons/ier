@@ -142,13 +142,24 @@ ier response-time later-times.csv --mixture-model timing-model.npz --threshold 0
 Retain a timing score vector when comparing decision cutoffs:
 
 ```python
-from ier import response_time, response_time_score_flags
+from ier import flag_consensus, response_time, response_time_score_flags, screen
 
 median_times = response_time(timings, metric="median")
 strict_flags = response_time_score_flags(median_times, cutoff_percentile=1)
+screened = screen(responses, indices=["irv", "longstring"])
+combined = flag_consensus(
+    {**screened["flags"], "response_time": strict_flags},
+    scores={**screened["scores"], "response_time": median_times},
+    min_flags=2,
+    min_valid_signals=3,
+)
 ```
 
 Use `direction="high"` when reflagging fast-component mixture probabilities.
+The response and timing matrices remain separate; only their aligned, already
+computed respondent vectors enter `flag_consensus()`. Supplied score vectors use
+`NaN` as unavailable, and `min_valid_signals` can withhold decisions based on too
+few observed signals. Vectors must share respondent order.
 
 Scoring commands also accept forward-only standard input and gzip-compressed
 files without extra packages:

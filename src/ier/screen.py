@@ -21,8 +21,18 @@ from ier._registry import (
     validate_min_valid_indices,
     validate_worker_count,
 )
-from ier._validation import MatrixLike, validate_matrix_input, validate_score_vectors
-from ier.types import IndexThresholdSourceMap, ScreenIndexSummary, ScreenResult
+from ier._validation import (
+    MatrixLike,
+    validate_matrix_input,
+    validate_score_array,
+    validate_score_vectors,
+)
+from ier.types import (
+    FlagConsensusResult,
+    IndexThresholdSourceMap,
+    ScreenIndexSummary,
+    ScreenResult,
+)
 
 
 def _validate_min_flags(min_flags: int) -> int:
@@ -30,6 +40,80 @@ def _validate_min_flags(min_flags: int) -> int:
     if isinstance(min_flags, bool) or not isinstance(min_flags, int) or min_flags < 1:
         raise ValueError("min_flags must be a positive integer")
     return min_flags
+
+
+def _validate_min_valid_signals(
+    min_valid_signals: int | None,
+    n_signals: int,
+) -> int | None:
+    """Return a validated optional cross-signal completeness requirement."""
+    if min_valid_signals is None:
+        return None
+    if (
+        isinstance(min_valid_signals, bool)
+        or not isinstance(min_valid_signals, int)
+        or min_valid_signals < 1
+    ):
+        raise ValueError("min_valid_signals must be a positive integer")
+    if min_valid_signals > n_signals:
+        raise ValueError("min_valid_signals cannot exceed the number of flag signals")
+    return min_valid_signals
+
+
+def _validate_flag_vectors(
+    flags: Mapping[str, ArrayLike],
+) -> tuple[dict[str, np.ndarray], int]:
+    """Validate a non-empty, named, respondent-aligned Boolean mapping."""
+    if not isinstance(flags, Mapping):
+        raise TypeError("flags must be a mapping of signal names to Boolean arrays")
+    if not flags:
+        raise ValueError("flags must contain at least one signal")
+
+    validated: dict[str, np.ndarray] = {}
+    n_respondents: int | None = None
+    for name, values in flags.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("flag signal names must be nonblank strings")
+        try:
+            flag_arr = np.asarray(values)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"flags for {name} must be a Boolean array") from error
+        if flag_arr.ndim != 1 or flag_arr.dtype.kind != "b":
+            raise ValueError(f"flags for {name} must be a one-dimensional Boolean array")
+        if len(flag_arr) == 0:
+            raise ValueError(f"flags for {name} cannot be empty")
+        if n_respondents is None:
+            n_respondents = len(flag_arr)
+        elif len(flag_arr) != n_respondents:
+            raise ValueError("all flag arrays must have the same respondent count")
+        validated[name] = flag_arr
+
+    assert n_respondents is not None
+    return validated, n_respondents
+
+
+def _validate_consensus_scores(
+    scores: Mapping[str, ArrayLike] | None,
+    flags: Mapping[str, np.ndarray],
+    n_respondents: int,
+) -> dict[str, np.ndarray]:
+    """Validate optional score vectors used to identify unavailable signals."""
+    if scores is None:
+        return {}
+    if not isinstance(scores, Mapping):
+        raise TypeError("scores must be a mapping of selected signal names to score arrays")
+
+    validated: dict[str, np.ndarray] = {}
+    for name, values in scores.items():
+        if name not in flags:
+            raise ValueError(f"score availability name is not a selected flag signal: {name}")
+        score_arr = validate_score_array(values, name=f"scores for {name}")
+        if len(score_arr) != n_respondents:
+            raise ValueError("all score and flag arrays must have the same respondent count")
+        if np.any(flags[name] & np.isnan(score_arr)):
+            raise ValueError(f"flags for {name} must be false where scores are unavailable")
+        validated[name] = score_arr
+    return validated
 
 
 def _validate_screen_scores(
@@ -96,21 +180,28 @@ def _resolve_screen_percentiles(
     return resolved
 
 
-def _reduce_screen_results(
-    scores: Mapping[str, np.ndarray],
+def _reduce_flag_results(
     flags: Mapping[str, np.ndarray],
     n_respondents: int,
+    *,
+    scores: Mapping[str, np.ndarray],
+    summarize: bool,
 ) -> tuple[np.ndarray, np.ndarray, dict[str, ScreenIndexSummary]]:
-    """Accumulate respondent counts and per-index summaries without stacking."""
+    """Accumulate bounded respondent counts and optional score summaries."""
     flag_counts = np.zeros(n_respondents, dtype=np.int_)
-    valid_index_counts = np.zeros(n_respondents, dtype=np.int_)
+    valid_signal_counts = np.zeros(n_respondents, dtype=np.int_)
     summary: dict[str, ScreenIndexSummary] = {}
 
-    for name, score_arr in scores.items():
-        flag_arr = flags[name]
+    for name, flag_arr in flags.items():
         flag_counts += flag_arr
+        score_arr = scores.get(name)
+        if score_arr is None:
+            valid_signal_counts += 1
+            continue
         valid_mask = ~np.isnan(score_arr)
-        valid_index_counts += valid_mask
+        valid_signal_counts += valid_mask
+        if not summarize:
+            continue
         valid = score_arr[valid_mask]
         n_valid = len(valid)
         n_flagged = int(np.count_nonzero(flag_arr))
@@ -138,7 +229,96 @@ def _reduce_screen_results(
                 "flag_rate": flag_rate,
             }
 
-    return flag_counts, valid_index_counts, summary
+    return flag_counts, valid_signal_counts, summary
+
+
+def _reduce_screen_results(
+    scores: Mapping[str, np.ndarray],
+    flags: Mapping[str, np.ndarray],
+    n_respondents: int,
+) -> tuple[np.ndarray, np.ndarray, dict[str, ScreenIndexSummary]]:
+    """Accumulate respondent counts and per-index summaries without stacking."""
+    return _reduce_flag_results(
+        flags,
+        n_respondents,
+        scores=scores,
+        summarize=True,
+    )
+
+
+def flag_consensus(
+    flags: Mapping[str, ArrayLike],
+    *,
+    scores: Mapping[str, ArrayLike] | None = None,
+    min_flags: int = 2,
+    min_valid_signals: int | None = None,
+) -> FlagConsensusResult:
+    """
+    Combine aligned Boolean detection signals into one bounded consensus result.
+
+    This decision-only layer can combine flags produced from different, already
+    scored domains, such as registered item-response indices and response-time
+    metrics. It never scores or mutates an input. Every flag vector must be a
+    non-empty, one-dimensional Boolean array with the same respondent order.
+
+    Optional score vectors identify availability: finite values are available
+    and ``NaN`` values are unavailable. Scores may cover any subset of signals;
+    omitted signals are treated as available for every respondent. A flag cannot
+    be true where its supplied score is unavailable. Counts are accumulated one
+    signal at a time without constructing a respondent-by-signal matrix.
+
+    Parameters:
+    - flags: Ordered mapping of unique signal names to aligned Boolean vectors.
+    - scores: Optional subset mapping of signal names to aligned numeric scores.
+    - min_flags: Minimum flag count required for consensus.
+    - min_valid_signals: Optional minimum available-signal count required before
+                         a respondent is eligible for consensus.
+
+    Returns:
+    - Flag counts, valid-signal counts, eligibility, and consensus decisions.
+
+    Example:
+        >>> from ier import flag_consensus
+        >>> combined = flag_consensus(
+        ...     {**screened["flags"], "response_time": timing_flags},
+        ...     scores={**screened["scores"], "response_time": timing_scores},
+        ...     min_flags=2,
+        ...     min_valid_signals=3,
+        ... )
+    """
+    validated_flags, n_respondents = _validate_flag_vectors(flags)
+    validated_scores = _validate_consensus_scores(
+        scores,
+        validated_flags,
+        n_respondents,
+    )
+    min_flags = _validate_min_flags(min_flags)
+    min_valid_signals = _validate_min_valid_signals(
+        min_valid_signals,
+        len(validated_flags),
+    )
+    flag_counts, valid_signal_counts, _ = _reduce_flag_results(
+        validated_flags,
+        n_respondents,
+        scores=validated_scores,
+        summarize=False,
+    )
+    consensus_eligible = (
+        np.ones(n_respondents, dtype=np.bool_)
+        if min_valid_signals is None
+        else valid_signal_counts >= min_valid_signals
+    )
+    consensus = (flag_counts >= min_flags) & consensus_eligible
+    return {
+        "flag_counts": flag_counts,
+        "valid_signal_counts": valid_signal_counts,
+        "consensus_eligible": consensus_eligible,
+        "consensus_flags": consensus,
+        "min_flags": min_flags,
+        "min_valid_signals": min_valid_signals,
+        "n_signals": len(validated_flags),
+        "n_respondents": n_respondents,
+    }
 
 
 def _build_screen_result(
