@@ -14,7 +14,6 @@ from unittest.mock import patch
 import numpy as np
 
 from ier.cli import (
-    _emit_composite_csv,
     _emit_composite_json,
     _load_input,
     _load_matrix,
@@ -23,6 +22,7 @@ from ier.cli import (
     _parse_name_list,
     _parse_pair_list,
     _parse_thresholds,
+    _write_composite_csv,
     main,
 )
 
@@ -312,6 +312,91 @@ class TestCli(unittest.TestCase):
         self.assertEqual(payload["respondent_ids"], ["fast", "steady", "typical"])
         self.assertEqual(payload["scores"], [0.5, 1.0, 3.0])
         self.assertEqual(payload["flags"], [True, True, False])
+
+    def test_csv_commands_stream_to_plain_gzip_and_standard_output(self) -> None:
+        screen_out = self.root / "screen.csv"
+        composite_out = self.root / "composite.csv.gz"
+        indices_out = self.root / "indices.csv"
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            self.assertEqual(
+                main(
+                    [
+                        "screen",
+                        str(self.csv_path),
+                        "--indices",
+                        "irv",
+                        "longstring",
+                        "--format",
+                        "csv",
+                        "--output",
+                        str(screen_out),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                main(
+                    [
+                        "composite",
+                        str(self.csv_path),
+                        "--indices",
+                        "irv",
+                        "longstring",
+                        "--format",
+                        "csv",
+                        "--output",
+                        str(composite_out),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                main(
+                    [
+                        "response-time",
+                        str(self.csv_path),
+                        "--format",
+                        "csv",
+                        "--output",
+                        "-",
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                main(["indices", "--format", "csv", "--output", str(indices_out)]),
+                0,
+            )
+
+        self.assertFalse(stdout.closed)
+        self.assertEqual(len(stdout.getvalue().splitlines()), 4)
+        self.assertTrue(stdout.getvalue().startswith("respondent,response_time_score"))
+        self.assertTrue(screen_out.read_text(encoding="utf-8").startswith("respondent,flag_count"))
+        self.assertTrue(indices_out.read_text(encoding="utf-8").startswith("index,flag_direction"))
+        with gzip.open(composite_out, mode="rt", encoding="utf-8") as handle:
+            self.assertTrue(handle.read().startswith("respondent,composite_score"))
+
+    def test_screen_csv_writer_emits_rows_individually(self) -> None:
+        out = self.root / "screen.csv"
+        with patch("ier.cli.csv.DictWriter.writerows", side_effect=AssertionError("buffered")):
+            code = main(
+                [
+                    "screen",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(out),
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(out.read_text(encoding="utf-8").splitlines()), 4)
 
     def test_matrix_loader_converts_rows_incrementally(self) -> None:
         converted_cells = 0
@@ -817,10 +902,14 @@ class TestCli(unittest.TestCase):
         self.assertEqual(json.loads(text)["scores"], [1.0, None, None, None])
 
     def test_composite_csv_uses_empty_cells_for_all_non_finite_values(self) -> None:
-        text = _emit_composite_csv(np.array([1.0, np.nan, np.inf, -np.inf], dtype=float))
+        output = StringIO()
+        _write_composite_csv(
+            output,
+            np.array([1.0, np.nan, np.inf, -np.inf], dtype=float),
+        )
 
         self.assertEqual(
-            list(csv.reader(StringIO(text))),
+            list(csv.reader(StringIO(output.getvalue()))),
             [
                 ["respondent", "composite_score"],
                 ["0", "1.0"],
