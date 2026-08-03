@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.56] - 2026-08-03
+
+### Performance
+
+- Missing-response rate scoring now reduces bounded respondent batches before
+  selecting required columns or applying respondent-specific applicability
+  masks. On a 200,000-respondent, 80-item benchmark, peak traced allocation
+  fell from 16.8 to 2.0 MiB for all items, from 70.3 to 4.0 MiB for a 40-item
+  subset, and from 81.2 to 4.4 MiB for the same subset with a skip-logic mask.
+  Median runtime improved from 8.6 to 5.2 ms, 23.5 to 9.7 ms, and 30.7 to
+  18.2 ms respectively. Rates, subset semantics, zero-denominator behavior,
+  source immutability, and the NumPy-only dependency set remain unchanged.
+
 ## [2.19.55] - 2026-08-03
 
 ### Added
