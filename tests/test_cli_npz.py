@@ -325,6 +325,23 @@ class TestCliNpz(unittest.TestCase):
         self.assertIn("ending in .npz", stderr.getvalue())
         self.assertNotIn("No such file", stderr.getvalue())
 
+        missing_components = self.root / "missing-components.npz"
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "composite-recombine",
+                    str(missing_components),
+                    "--format",
+                    "npz",
+                    "--output",
+                    str(self.root / "recombined.bin"),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("ending in .npz", stderr.getvalue())
+        self.assertNotIn("No such file", stderr.getvalue())
+
         missing_scores = self.root / "missing-scores.npz"
         stderr = StringIO()
         with patch("sys.stderr", stderr):
@@ -416,6 +433,83 @@ class TestCliNpz(unittest.TestCase):
             self.assertEqual(raw["threshold_sources"].tolist(), ["fixed", "fixed"])
             self.assertEqual(raw["flag_counts"].tolist(), [0, 2, 2])
             self.assertEqual(raw["consensus_flags"].tolist(), [False, True, True])
+
+    def test_composite_recombine_atomically_replaces_reusable_source_archive(self) -> None:
+        archive = self.root / "components.npz"
+        components = {
+            "irv": np.asarray([0.9, 0.5, 0.1]),
+            "longstring": np.asarray([2.0, 4.0, 8.0]),
+        }
+        save_score_archive(
+            archive,
+            components,
+            result_type="composite",
+            respondent_ids=["case-a", "case-b", "case-c"],
+            errors={"mad": "missing item configuration"},
+        )
+
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            rejected = main(
+                [
+                    "composite-recombine",
+                    str(archive),
+                    "--format",
+                    "npz",
+                    "--output",
+                    str(archive),
+                ]
+            )
+        self.assertEqual(rejected, 1)
+        self.assertIn("requires --include-components", stderr.getvalue())
+        retained = load_score_archive(archive)
+        for name, values in components.items():
+            np.testing.assert_array_equal(retained["scores"][name], values)
+
+        code = main(
+            [
+                "composite-recombine",
+                str(archive),
+                "--indices",
+                "longstring",
+                "irv",
+                "--method",
+                "sum",
+                "--no-standardize",
+                "--weight",
+                "longstring=2",
+                "--min-valid-indices",
+                "2",
+                "--percentile",
+                "50",
+                "--include-components",
+                "--include-probability",
+                "--format",
+                "npz",
+                "--output",
+                str(archive),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        loaded = load_score_archive(archive)
+        self.assertEqual(loaded["result_type"], "composite")
+        self.assertEqual(loaded["respondent_ids"], ["case-a", "case-b", "case-c"])
+        self.assertEqual(loaded["errors"], {"mad": "missing item configuration"})
+        self.assertEqual(list(loaded["scores"]), ["longstring", "irv"])
+        np.testing.assert_array_equal(loaded["scores"]["longstring"], components["longstring"])
+        np.testing.assert_array_equal(loaded["scores"]["irv"], components["irv"])
+        with np.load(archive, allow_pickle=False) as raw:
+            self.assertEqual(raw["method"].item(), "sum")
+            self.assertFalse(raw["standardized"].item())
+            self.assertEqual(raw["weight_names"].tolist(), ["longstring"])
+            self.assertEqual(raw["weights"].tolist(), [2.0])
+            self.assertEqual(raw["valid_index_counts"].tolist(), [2, 2, 2])
+            np.testing.assert_allclose(raw["scores"], [3.1, 7.5, 15.9])
+            self.assertEqual(raw["threshold_source"].item(), "percentile")
+            self.assertEqual(raw["percentile"].item(), 50.0)
+            self.assertEqual(raw["flags"].tolist(), [False, False, True])
+            np.testing.assert_allclose(raw["probabilities"], 1.0 / (1.0 + np.exp(-raw["scores"])))
 
     def test_writer_rejects_object_arrays(self) -> None:
         out = self.root / "unsafe.npz"

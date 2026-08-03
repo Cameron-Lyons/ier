@@ -17,6 +17,7 @@ from ier import (
     composite,
     composite_flag,
     composite_probability,
+    composite_scores,
     composite_summary,
     save_response_time_archive,
     save_score_archive,
@@ -221,6 +222,183 @@ class TestCli(unittest.TestCase):
                         ]
                     )
 
+                self.assertEqual(code, 1)
+                self.assertIn(message, stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_composite_recombine_reuses_selected_scores_across_formats(self) -> None:
+        archive = self.root / "retained-components.npz"
+        component_scores = {
+            "irv": np.asarray([0.9, 0.5, 0.1, np.nan]),
+            "longstring": np.asarray([2.0, 4.0, 8.0, 4.0]),
+            "person_total": np.asarray([0.8, 0.4, 0.2, 0.1]),
+        }
+        save_score_archive(
+            archive,
+            component_scores,
+            result_type="composite",
+            respondent_ids=["case-a", "case-b", "case-c", "case-d"],
+            errors={"mad": "missing item configuration"},
+        )
+        json_out = self.root / "recombined.json"
+        csv_out = self.root / "recombined.csv"
+        stdout = StringIO()
+        stderr = StringIO()
+        combination_options = [
+            "--indices",
+            "longstring",
+            "irv",
+            "--method",
+            "sum",
+            "--no-standardize",
+            "--weight",
+            "longstring=2",
+            "--weight",
+            "irv=0.5",
+            "--min-valid-indices",
+            "2",
+            "--threshold",
+            "7.75",
+            "--include-components",
+            "--include-probability",
+        ]
+
+        with (
+            patch("ier.cli._load_input", side_effect=AssertionError("rescored")),
+            patch("sys.stderr", stderr),
+        ):
+            json_code = main(
+                [
+                    "composite-recombine",
+                    str(archive),
+                    *combination_options,
+                    "--format",
+                    "json",
+                    "--output",
+                    str(json_out),
+                ]
+            )
+            csv_code = main(
+                [
+                    "composite-recombine",
+                    str(archive),
+                    *combination_options,
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(csv_out),
+                ]
+            )
+            with patch("sys.stdout", stdout):
+                text_code = main(
+                    [
+                        "composite-recombine",
+                        str(archive),
+                        *combination_options,
+                        "--top",
+                        "2",
+                    ]
+                )
+
+        expected = composite_scores(
+            {"longstring": component_scores["longstring"], "irv": component_scores["irv"]},
+            method="sum",
+            standardize=False,
+            weights={"longstring": 2.0, "irv": 0.5},
+            min_valid_indices=2,
+        )
+        self.assertEqual(json_code, 0)
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["method"], "sum")
+        self.assertFalse(payload["standardized"])
+        self.assertEqual(payload["indices_used"], ["longstring", "irv"])
+        self.assertEqual(payload["respondent_ids"], ["case-a", "case-b", "case-c", "case-d"])
+        self.assertEqual(payload["errors"], {"mad": "missing item configuration"})
+        self.assertEqual(payload["weights"], {"longstring": 2.0, "irv": 0.5})
+        np.testing.assert_allclose(payload["scores"][:3], expected[:3])
+        self.assertIsNone(payload["scores"][3])
+        self.assertEqual(payload["valid_index_counts"], [2, 2, 2, 1])
+        self.assertEqual(list(payload["component_scores"]), ["longstring", "irv"])
+        self.assertEqual(payload["threshold"], 7.75)
+        self.assertEqual(payload["threshold_source"], "fixed")
+        self.assertEqual(payload["flags"], [False, True, True, False])
+        self.assertEqual(payload["probability_scale"], "uncalibrated_logistic")
+        self.assertIsNone(payload["probabilities"][3])
+
+        self.assertEqual(csv_code, 0)
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        self.assertEqual(
+            [row["respondent"] for row in rows], ["case-a", "case-b", "case-c", "case-d"]
+        )
+        self.assertEqual([row["composite_flag"] for row in rows], ["0", "1", "1", "0"])
+        self.assertEqual(rows[3]["composite_score"], "")
+        self.assertEqual(rows[3]["valid_index_count"], "1")
+        self.assertEqual(
+            list(rows[0]),
+            [
+                "respondent",
+                "composite_score",
+                "composite_probability",
+                "composite_flag",
+                "valid_index_count",
+                "longstring_score",
+                "irv_score",
+            ],
+        )
+
+        self.assertEqual(text_code, 0)
+        self.assertIn("method: sum", stdout.getvalue())
+        self.assertIn("standardized: false", stdout.getvalue())
+        self.assertIn("indices: longstring, irv", stdout.getvalue())
+        self.assertIn("threshold: 7.75 (fixed)", stdout.getvalue())
+        self.assertIn("warning: index 'mad' was skipped", stderr.getvalue())
+
+    def test_composite_recombine_accepts_screen_archive_and_reports_invalid_selection(
+        self,
+    ) -> None:
+        archive = self.root / "screen-components.npz"
+        save_score_archive(
+            archive,
+            {"irv": [0.9, 0.5, 0.1], "longstring": [2.0, 4.0, 8.0]},
+            respondent_ids=["a", "b", "c"],
+        )
+        out = self.root / "screen-components.json"
+        self.assertEqual(
+            main(
+                [
+                    "composite-recombine",
+                    str(archive),
+                    "--no-standardize",
+                    "--method",
+                    "max",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(out),
+                ]
+            ),
+            0,
+        )
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["respondent_ids"], ["a", "b", "c"])
+        np.testing.assert_allclose(payload["scores"], [2.0, 4.0, 8.0])
+
+        invalid_cases = [
+            (["missing"], "does not contain selected index: missing"),
+            (["irv", "irv"], "must not contain duplicates"),
+        ]
+        for indices, message in invalid_cases:
+            with self.subTest(indices=indices):
+                stderr = StringIO()
+                with patch("sys.stderr", stderr):
+                    code = main(
+                        [
+                            "composite-recombine",
+                            str(archive),
+                            "--indices",
+                            *indices,
+                        ]
+                    )
                 self.assertEqual(code, 1)
                 self.assertIn(message, stderr.getvalue())
                 self.assertNotIn("Traceback", stderr.getvalue())

@@ -10,13 +10,22 @@ from __future__ import annotations
 import argparse
 import gc
 import statistics
+import tempfile
 import time
 import tracemalloc
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import IndexOptions, composite, composite_scores, composite_summary
+from ier import (
+    IndexOptions,
+    composite,
+    composite_scores,
+    composite_summary,
+    load_score_archive,
+    save_score_archive,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -98,8 +107,44 @@ def main() -> None:
         ]
         reused_timings.append(time.perf_counter() - started)
 
-    for direct, reused in zip(direct_results, reused_results, strict=True):
+    with tempfile.TemporaryDirectory() as directory:
+        archive_path = Path(directory) / "components.npz"
+        save_score_archive(
+            archive_path,
+            initial["indices"],
+            result_type="composite",
+        )
+        load_score_archive(archive_path)
+        archived_timings: list[float] = []
+        for _ in range(args.repeats):
+            started = time.perf_counter()
+            archived_results = [
+                composite_scores(
+                    load_score_archive(archive_path)["scores"],
+                    weights=weights,
+                )
+                for weights in weight_scenarios
+            ]
+            archived_timings.append(time.perf_counter() - started)
+
+        archived_peak = _peak_mib(
+            lambda: [
+                composite_scores(
+                    load_score_archive(archive_path)["scores"],
+                    weights=weights,
+                )
+                for weights in weight_scenarios
+            ]
+        )
+
+    for direct, reused, archived in zip(
+        direct_results,
+        reused_results,
+        archived_results,
+        strict=True,
+    ):
         np.testing.assert_allclose(reused, direct, rtol=1e-14, atol=1e-14, equal_nan=True)
+        np.testing.assert_allclose(archived, direct, rtol=1e-14, atol=1e-14, equal_nan=True)
 
     full_peak = _peak_mib(
         lambda: [_direct_composite(data, options, weights) for weights in weight_scenarios]
@@ -112,10 +157,15 @@ def main() -> None:
 
     full_median = statistics.median(full_timings)
     reused_median = statistics.median(reused_timings)
+    archived_median = statistics.median(archived_timings)
     print(f"shape={data.shape} indices={len(names)} scenarios={args.sensitivity_scenarios}")
     print(
         f"composite sensitivity: full={full_median:.4f}s reused={reused_median:.4f}s "
         f"speedup={full_median / reused_median:.1f}x peak={full_peak:.1f}/{reused_peak:.1f} MiB"
+    )
+    print(
+        f"archived sensitivity: median={archived_median:.4f}s "
+        f"speedup={full_median / archived_median:.1f}x peak={archived_peak:.1f} MiB"
     )
 
 

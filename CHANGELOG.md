@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.33] - 2026-08-03
+
+### Added
+
+- `ier composite-recombine ARCHIVE` rebuilds composite scores from validated
+  retained components without reading the original response matrix or rerunning
+  any index. Ordered component selection, mean/sum/max reductions, weights,
+  standardization, completeness, fixed or percentile decisions, uncalibrated
+  probabilities, and optional component output work across text, JSON, CSV, and
+  NPZ while preserving archived identifiers and soft-failure diagnostics.
+
+### Changed
+
+- Original and archive-backed composite workflows now share argument controls,
+  decision derivation, probability calculation, and output dispatch, keeping
+  every format aligned. In-place NPZ replacement requires component inclusion
+  so a reusable source cannot be silently replaced by an aggregate-only archive.
+- On a 10,000-by-80 benchmark, five separately loaded archive-backed weight
+  scenarios take 3.2 ms and 1.2 MiB peak traced allocation versus 39.6 ms and
+  12.9 MiB for five full recomputations, a 12.4x speedup without another
+  dependency.
+
 ## [2.19.32] - 2026-08-03
 
 ### Added

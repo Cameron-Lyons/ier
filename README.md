@@ -12,7 +12,7 @@ For a comprehensive methods review, see
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
 - Validated, pickle-free score and response-time archive persistence
-- Archive-backed screening and timing sensitivity commands without rescoring
+- Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format
@@ -130,6 +130,8 @@ ier composite data.csv --indices irv longstring --weight irv=2 --weight longstri
 ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --indices irv longstring --include-components --format json
 ier composite data.csv --format csv --output scores.csv
+ier composite-recombine composite.npz --weight irv=2 --method mean --format json
+ier composite-recombine composite.npz --indices irv longstring --no-standardize
 ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
 ier screen responses.csv.gz --format json --output screening.json.gz
@@ -216,6 +218,22 @@ Omitting `--indices` reuses every stored vector; an explicit list selects and
 orders the vectors used for consensus. Respondent identifiers and archived soft
 failures are carried forward. An NPZ output may replace the source archive
 because the validated input is loaded before atomic output begins.
+
+Detailed composite archives and compatible score archives can also be
+recombined without the original matrix:
+
+```bash
+ier composite-recombine composite.npz --weight irv=2 --weight longstring=0.5 \
+  --min-valid-indices 2 --percentile 95 --format json
+ier composite-recombine composite.npz --indices irv longstring --method max \
+  --no-standardize --include-components --format npz --output revised.npz
+```
+
+The command reuses the existing direction-aware `composite_scores()` layer and
+the ordinary composite serializers. It preserves identifiers and archived soft
+failures, supports optional component and uncalibrated probability output, and
+never reruns an index. Replacing the source NPZ requires `--include-components`
+so the output remains reusable.
 
 Response-time results have matching `save_response_time_archive()` and
 `load_response_time_archive()` boundaries. The writer preserves prepared scores,
