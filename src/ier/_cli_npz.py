@@ -113,6 +113,7 @@ def _write_composite_npz(
     method: str,
     respondent_ids: list[str] | None = None,
     weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
 ) -> None:
     """Write composite results as a versioned NumPy archive."""
     payload = _metadata("composite", len(scores))
@@ -125,6 +126,8 @@ def _write_composite_npz(
     if weights:
         payload["weight_names"] = np.asarray(list(weights), dtype=np.str_)
         payload["weights"] = np.asarray(list(weights.values()), dtype=np.float64)
+    if min_valid_indices is not None:
+        payload["min_valid_indices"] = np.asarray(min_valid_indices, dtype=np.int64)
     _add_respondent_ids(payload, len(scores), respondent_ids)
     _write_npz_archive(path, payload)
 

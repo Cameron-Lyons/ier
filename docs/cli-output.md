@@ -69,7 +69,9 @@ vector. Summary values use `summary_columns`, `summary_statistics`, and
 `composite` archives include the `method` scalar and respondent-aligned `scores`
 float vector. When `--weight` is supplied, aligned `weight_names` and `weights`
 vectors record the explicit overrides; selected indices not listed there use
-weight 1. JSON composite output uses an equivalent optional `weights` object.
+weight 1. When `--min-valid-indices` is supplied, `min_valid_indices` records the
+integer completeness requirement. JSON composite output uses equivalent
+optional `weights` and `min_valid_indices` fields.
 
 ### Response-time schema
 

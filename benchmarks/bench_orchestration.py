@@ -51,12 +51,20 @@ def main() -> None:
         action="store_true",
         help="Apply deterministic nonuniform composite weights",
     )
+    parser.add_argument(
+        "--min-valid-indices",
+        type=int,
+        default=None,
+        help="Mask respondents with fewer than this many available scores",
+    )
     args = parser.parse_args()
 
     if args.respondents < 1 or args.indices < 1 or args.repeats < 1:
         parser.error("respondents, indices, and repeats must be positive")
     if not 0.0 <= args.missing_rate <= 1.0:
         parser.error("missing-rate must be between 0 and 1")
+    if args.min_valid_indices is not None and not 1 <= args.min_valid_indices <= args.indices:
+        parser.error("min-valid-indices must be between 1 and the index count")
 
     rng = np.random.default_rng(args.seed)
     scores: dict[str, np.ndarray] = {}
@@ -80,6 +88,7 @@ def main() -> None:
             args.method,
             args.standardize,
             weights,
+            min_valid_indices=args.min_valid_indices,
         ),
         args.repeats,
     )
@@ -90,7 +99,8 @@ def main() -> None:
 
     print(
         f"respondents={args.respondents} indices={args.indices} "
-        f"method={args.method} standardize={args.standardize} weighted={args.weighted}"
+        f"method={args.method} standardize={args.standardize} weighted={args.weighted} "
+        f"min_valid_indices={args.min_valid_indices}"
     )
     print(f"composite: median={composite_seconds:.4f}s peak={composite_peak:.1f} MiB")
     print(f"screen flags: median={screen_seconds:.4f}s peak={screen_peak:.1f} MiB")

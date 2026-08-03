@@ -149,6 +149,8 @@ class TestComposite(unittest.TestCase):
         self.assertIn("indices_used", summary)
         self.assertIn("mean", summary)
         self.assertIn("std", summary)
+        self.assertIsNone(summary["min_valid_indices"])
+        self.assertEqual(summary["valid_index_counts"].shape, (3,))
 
     def test_invalid_index_raises(self) -> None:
         """Test that invalid index raises ValueError."""
@@ -316,6 +318,148 @@ class TestComposite(unittest.TestCase):
             ),
             equal_nan=True,
         )
+
+    def test_minimum_valid_indices_filter_every_reduction_method(self) -> None:
+        scores = {
+            "first": np.array([1.0, np.nan, 3.0, np.nan]),
+            "second": np.array([5.0, 7.0, np.nan, np.nan]),
+        }
+        expected = {
+            "mean": np.array([3.0, np.nan, np.nan, np.nan]),
+            "sum": np.array([6.0, np.nan, np.nan, np.nan]),
+            "max": np.array([5.0, np.nan, np.nan, np.nan]),
+        }
+
+        for method in ("mean", "sum", "max"):
+            with self.subTest(method=method):
+                counts = np.empty(4, dtype=np.int_)
+                actual = _combine_scores(
+                    scores,
+                    {},
+                    cast("Any", method),
+                    False,
+                    min_valid_indices=2,
+                    valid_counts_out=counts,
+                )
+                np.testing.assert_allclose(actual, expected[method], equal_nan=True)
+                np.testing.assert_array_equal(counts, [2, 1, 1, 0])
+
+        default_sum = _combine_scores(scores, {}, "sum", False)
+        filtered_sum = _combine_scores(scores, {}, "sum", False, min_valid_indices=1)
+        self.assertEqual(default_sum[-1], 0.0)
+        self.assertTrue(np.isnan(filtered_sum[-1]))
+
+        invalid_count_outputs = [
+            np.empty((4, 1), dtype=np.int_),
+            np.empty(4, dtype=float),
+        ]
+        for invalid in invalid_count_outputs:
+            with (
+                self.subTest(shape=invalid.shape, dtype=invalid.dtype),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "respondent-length integer array",
+                ),
+            ):
+                _combine_scores(scores, {}, "mean", False, valid_counts_out=invalid)
+
+    def test_weighted_completeness_uses_component_count_not_weight_sum(self) -> None:
+        scores = {
+            "first": np.array([1.0, 2.0, np.nan]),
+            "second": np.array([5.0, np.nan, np.nan]),
+        }
+        weights = {"first": 100.0, "second": 0.5}
+
+        result = _combine_scores(
+            scores,
+            {},
+            "mean",
+            False,
+            weights,
+            min_valid_indices=2,
+        )
+
+        np.testing.assert_allclose(result, [(100.0 + 2.5) / 100.5, np.nan, np.nan], equal_nan=True)
+
+    @patch("ier.composite.score_registered_indices")
+    def test_completeness_propagates_and_summary_reports_counts(self, score_mock: Any) -> None:
+        def score_indices(
+            *_args: Any, **kwargs: Any
+        ) -> tuple[dict[str, np.ndarray], dict[str, str]]:
+            irv = np.array([1.0, np.nan, 3.0, np.nan])
+            if not kwargs.get("apply_composite_direction", False):
+                irv *= -1.0
+            return {
+                "irv": irv,
+                "longstring": np.array([5.0, 7.0, np.nan, np.nan]),
+            }, {}
+
+        score_mock.side_effect = score_indices
+        data = np.ones((4, 3), dtype=float)
+        kwargs = {
+            "indices": ["irv", "longstring"],
+            "standardize": False,
+            "min_valid_indices": 2,
+        }
+
+        scores = composite(data, **cast("Any", kwargs))
+        flag_scores, flags = composite_flag(data, threshold=2.0, **cast("Any", kwargs))
+        summary = composite_summary(data, **cast("Any", kwargs))
+        probabilities = composite_probability(
+            data,
+            indices=["irv", "longstring"],
+            min_valid_indices=2,
+        )
+
+        expected = np.array([3.0, np.nan, np.nan, np.nan])
+        np.testing.assert_allclose(scores, expected, equal_nan=True)
+        np.testing.assert_allclose(flag_scores, expected, equal_nan=True)
+        np.testing.assert_array_equal(flags, [True, False, False, False])
+        np.testing.assert_allclose(summary["composite"], expected, equal_nan=True)
+        np.testing.assert_array_equal(summary["valid_index_counts"], [2, 1, 1, 0])
+        self.assertEqual(summary["min_valid_indices"], 2)
+        self.assertEqual(summary["n_valid"], 1)
+        self.assertTrue(np.isfinite(probabilities[0]))
+        self.assertTrue(np.isnan(probabilities[1:]).all())
+
+    @patch("ier.composite.score_registered_indices")
+    def test_soft_failed_indices_do_not_relax_requested_minimum(
+        self,
+        score_mock: Any,
+    ) -> None:
+        score_mock.return_value = (
+            {"irv": np.array([1.0, 2.0])},
+            {"longstring": "unavailable"},
+        )
+
+        scores, diagnostics = composite(
+            np.ones((2, 3)),
+            indices=["irv", "longstring"],
+            standardize=False,
+            min_valid_indices=2,
+            return_diagnostics=True,
+        )
+
+        self.assertTrue(np.isnan(scores).all())
+        self.assertEqual(diagnostics, {"longstring": "unavailable"})
+
+    def test_minimum_valid_indices_validation(self) -> None:
+        data = [[1, 2, 3], [3, 2, 1]]
+        cases = [
+            (0, "positive integer"),
+            (-1, "positive integer"),
+            (True, "positive integer"),
+            (cast("Any", 1.5), "positive integer"),
+            (3, "cannot exceed"),
+        ]
+
+        for minimum, message in cases:
+            with self.subTest(minimum=minimum), self.assertRaisesRegex(ValueError, message):
+                composite(
+                    data,
+                    indices=["irv", "longstring"],
+                    min_valid_indices=minimum,
+                )
 
     def test_constant_standardization_preserves_missing_values(self) -> None:
         scores = {

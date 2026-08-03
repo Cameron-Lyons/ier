@@ -17,6 +17,11 @@ weighted_scores = composite(
     indices=["irv", "longstring", "person_total"],
     weights={"irv": 2.0, "person_total": 0.5},
 )
+coverage_filtered = composite(
+    data,
+    indices=["irv", "longstring", "person_total"],
+    min_valid_indices=2,
+)
 ranks = composite_probability(data, indices=["irv", "longstring"], options=opts)
 
 # Available on composite(), composite_flag(), composite_summary(), and
@@ -36,7 +41,7 @@ Practical guidance:
 
 1. Prefer multi-index agreement over any single cutoff.
 2. Review flagged cases substantively (open text, completion time, attention checks).
-3. Report which indices, combination method, and weights you used.
+3. Report which indices, combination method, weights, and completeness rule you used.
 4. Use `method="best_subset"` when you want the Curran/Meade-Craig style mix of
    consistency, pattern, and (optionally) MAD signals.
 
@@ -83,6 +88,22 @@ Multiplying every weight by the same constant leaves weighted means unchanged.
 `composite_summary()` includes the full resolved weight mapping, including
 default weight 1 values.
 
+## Composite completeness
+
+By default, composite methods retain their established missing-value behavior:
+means renormalize over available components, maxima ignore missing components,
+and sums return zero when every component is missing. Set
+`min_valid_indices=N` when a composite should only be reported from at least
+`N` available component scores. Respondents below the minimum receive `NaN`
+before flagging or logistic transformation.
+
+The minimum counts components, not their weights. A single heavily weighted
+index therefore cannot satisfy a two-index requirement. A selected index that
+soft-fails for the whole matrix is unavailable for every respondent and does
+not lower the requested minimum. `composite_summary()` returns both the resolved
+`min_valid_indices` value and a respondent-aligned `valid_index_counts` array so
+coverage decisions can be audited.
+
 By default, one invalid configured index is returned in diagnostics while other
 indices continue. Pass `strict=True` to `composite()`, `composite_flag()`,
 `composite_summary()`, or `composite_probability()` when every selected index
@@ -100,6 +121,7 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 ```bash
 ier composite data.csv --indices irv longstring --method mean
 ier composite data.csv --indices irv longstring --weight irv=2 --weight longstring=0.5
+ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --indices irv mad --strict
 ier composite data.csv --indices irv longstring --workers 4
 ier composite data.csv --format json --output composite.json
@@ -120,5 +142,6 @@ as `null`. CSV output represents those scores as empty cells so numeric columns
 remain compatible with spreadsheet and statistics tools.
 NPZ output preserves the numeric score vector, combination method, and optional
 respondent IDs. Text, JSON, and NPZ outputs also record explicitly supplied
-weight overrides; unlisted selected indices use weight 1. See the
+weight overrides; unlisted selected indices use weight 1. When supplied, the
+minimum valid-index rule is recorded alongside those fields. See the
 [versioned archive schema](../cli-output.md).

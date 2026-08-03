@@ -315,6 +315,13 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="INDEX=VALUE",
         help="Positive index weight override; repeat for multiple indices",
     )
+    composite_parser.add_argument(
+        "--min-valid-indices",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Require at least N available component scores per respondent",
+    )
     _add_shared_options(composite_parser)
 
     response_time_parser = sub.add_parser(
@@ -528,6 +535,7 @@ def _run_command(args: argparse.Namespace) -> int:
         method=args.method,
         options=options,
         weights=weights,
+        min_valid_indices=args.min_valid_indices,
         strict=args.strict,
         workers=args.workers,
     )
@@ -545,6 +553,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 args.method,
                 respondent_ids,
                 weights,
+                args.min_valid_indices,
             ),
         )
         return 0
@@ -559,6 +568,7 @@ def _run_command(args: argparse.Namespace) -> int:
             args.method,
             respondent_ids,
             weights,
+            args.min_valid_indices,
         )
         return 0
     else:
@@ -568,6 +578,7 @@ def _run_command(args: argparse.Namespace) -> int:
             args.top,
             respondent_ids,
             weights,
+            args.min_valid_indices,
         )
     _write_output(text, args.output)
     return 0
