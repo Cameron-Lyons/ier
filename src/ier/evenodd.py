@@ -1,7 +1,5 @@
 """This module contains the evenodd function for calculating even-odd consistency scores."""
 
-import warnings
-
 import numpy as np
 
 from ier._validation import MatrixLike, validate_matrix_input
@@ -24,35 +22,64 @@ def calculate_correlations(even_cols: np.ndarray, odd_cols: np.ndarray) -> np.nd
     num_individuals = even_cols.shape[0]
     min_cols = min(even_cols.shape[1], odd_cols.shape[1])
 
-    if min_cols == 0:
+    if min_cols < 2:
         return np.full(num_individuals, np.nan)
 
     even_vals = even_cols[:, :min_cols]
     odd_vals = odd_cols[:, :min_cols]
+    has_missing = bool(np.isnan(even_vals).any() or np.isnan(odd_vals).any())
 
-    valid_mask = ~(np.isnan(even_vals) | np.isnan(odd_vals))
-    valid_counts = valid_mask.sum(axis=1)
-
-    even_vals_masked = np.where(valid_mask, even_vals, np.nan)
-    odd_vals_masked = np.where(valid_mask, odd_vals, np.nan)
-
+    enough_values: np.ndarray | None = None
     with np.errstate(invalid="ignore", divide="ignore"):
-        even_mean = np.nansum(even_vals_masked, axis=1) / valid_counts
-        odd_mean = np.nansum(odd_vals_masked, axis=1) / valid_counts
+        if has_missing:
+            valid_mask = ~(np.isnan(even_vals) | np.isnan(odd_vals))
+            valid_counts = valid_mask.sum(axis=1)
+            nonempty = valid_counts > 0
+            even_mean = np.divide(
+                np.sum(even_vals, axis=1, where=valid_mask),
+                valid_counts,
+                out=np.zeros(num_individuals),
+                where=nonempty,
+            )
+            odd_mean = np.divide(
+                np.sum(odd_vals, axis=1, where=valid_mask),
+                valid_counts,
+                out=np.zeros(num_individuals),
+                where=nonempty,
+            )
+            even_centered = np.zeros(even_vals.shape, dtype=float)
+            odd_centered = np.zeros(odd_vals.shape, dtype=float)
+            np.subtract(
+                even_vals,
+                even_mean[:, np.newaxis],
+                out=even_centered,
+                where=valid_mask,
+            )
+            np.subtract(
+                odd_vals,
+                odd_mean[:, np.newaxis],
+                out=odd_centered,
+                where=valid_mask,
+            )
+            enough_values = valid_counts >= 2
+        else:
+            even_centered = even_vals - np.mean(even_vals, axis=1, keepdims=True)
+            odd_centered = odd_vals - np.mean(odd_vals, axis=1, keepdims=True)
 
-        even_centered = np.where(valid_mask, even_vals - even_mean[:, np.newaxis], 0.0)
-        odd_centered = np.where(valid_mask, odd_vals - odd_mean[:, np.newaxis], 0.0)
+        covariance = np.einsum("ij,ij->i", even_centered, odd_centered)
+        denominator = np.einsum("ij,ij->i", even_centered, even_centered)
+        denominator *= np.einsum("ij,ij->i", odd_centered, odd_centered)
+        np.sqrt(denominator, out=denominator)
+        correlations: np.ndarray = np.divide(
+            covariance,
+            denominator,
+            out=np.zeros(num_individuals),
+            where=denominator > 0,
+        )
 
-        cov = (even_centered * odd_centered).sum(axis=1)
-        even_std = np.sqrt((even_centered**2).sum(axis=1))
-        odd_std = np.sqrt((odd_centered**2).sum(axis=1))
-
-        correlations = cov / (even_std * odd_std)
-
-    correlations = np.clip(correlations, -1.0, 1.0)
-    correlations = np.where(
-        valid_counts < 2, np.nan, np.where(np.isnan(correlations), 0.0, correlations)
-    )
+    np.clip(correlations, -1.0, 1.0, out=correlations)
+    if enough_values is not None:
+        correlations[~enough_values] = np.nan
 
     return correlations
 
@@ -101,8 +128,9 @@ def evenodd(
             f"sum of factors ({expected_cols}) must equal number of columns ({x_array.shape[1]})"
         )
 
-    all_correlations = []
-    diag_vals = np.zeros(num_individuals, dtype=int)
+    correlation_sum = np.zeros(num_individuals)
+    diag_vals = np.zeros(num_individuals, dtype=np.intp)
+    has_scored_factor = False
 
     start_col = 0
     for factor_size in factors:
@@ -116,19 +144,20 @@ def evenodd(
         odd_cols = x_array[:, start_col + 1 : end_col : 2]
 
         corrs = calculate_correlations(even_cols, odd_cols)
-
-        if len(corrs) > 0:
-            all_correlations.append(corrs)
-            diag_vals += (~np.isnan(corrs)).astype(int)
+        valid = ~np.isnan(corrs)
+        np.add(correlation_sum, corrs, out=correlation_sum, where=valid)
+        np.add(diag_vals, valid, out=diag_vals, casting="unsafe")
+        has_scored_factor = True
 
         start_col = end_col
 
-    if all_correlations:
-        stacked_corrs = np.column_stack(all_correlations)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            avg_correlations = np.nanmean(stacked_corrs, axis=1)
-        avg_correlations = np.nan_to_num(avg_correlations, nan=0.0)
+    if has_scored_factor:
+        avg_correlations = np.divide(
+            correlation_sum,
+            diag_vals,
+            out=np.zeros(num_individuals),
+            where=diag_vals > 0,
+        )
     else:
         avg_correlations = np.full(num_individuals, np.nan)
 

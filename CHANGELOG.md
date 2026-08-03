@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.4] - 2026-08-02
+
+### Changed
+
+- Multi-factor even–odd consistency now accumulates respondent sums and valid
+  counts as each factor is scored instead of retaining and stacking every
+  correlation vector. Its row-correlation kernel also avoids masked data copies
+  and elementwise product temporaries, while compatible floating NumPy inputs
+  are reused during validation. On the 100,000-respondent, 80-item, 20-factor
+  benchmark, median time falls from 138.8 to 84.9 ms and peak temporary
+  allocation from 112.2 to 7.8 MiB, without adding a dependency.
+
 ## [2.19.3] - 2026-08-02
 
 ### Changed

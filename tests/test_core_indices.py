@@ -403,6 +403,39 @@ class TestEvenOddFunction(unittest.TestCase):
         scores: npt.NDArray[np.float64] = evenodd(data, factors)
         self.assertEqual(len(scores), 2)
 
+    def test_factor_correlations_accumulate_without_stacking(self) -> None:
+        """Streaming reduction matches a matrix reference with missing values."""
+        rng = np.random.default_rng(42)
+        data = rng.integers(1, 6, size=(100, 16)).astype(float)
+        data[rng.random(data.shape) < 0.1] = np.nan
+        factors = [4, 4, 4, 4]
+        factor_correlations = []
+        start = 0
+        for factor_size in factors:
+            stop = start + factor_size
+            factor_correlations.append(
+                calculate_correlations(data[:, start:stop:2], data[:, start + 1 : stop : 2])
+            )
+            start = stop
+        matrix = np.column_stack(factor_correlations)
+        valid = ~np.isnan(matrix)
+        expected_counts = np.sum(valid, axis=1)
+        expected_scores = np.divide(
+            np.sum(matrix, axis=1, where=valid),
+            expected_counts,
+            out=np.zeros(len(data)),
+            where=expected_counts > 0,
+        )
+
+        with patch(
+            "ier.evenodd.np.column_stack",
+            side_effect=AssertionError("factor correlation matrix was constructed"),
+        ):
+            scores, counts = evenodd(data, factors, diag=True)
+
+        np.testing.assert_allclose(scores, expected_scores, rtol=0, atol=1e-15)
+        np.testing.assert_array_equal(counts, expected_counts)
+
     def test_single_item_factors(self) -> None:
         """Test even-odd with single-item factors."""
         data: npt.NDArray[np.float64] = np.array([[1, 2, 3, 4, 5], [2, 3, 4, 5, 6]])
