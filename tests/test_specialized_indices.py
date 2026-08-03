@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import numpy as np
 
+from ier import MarkovSummary, markov_summary
 from ier.guttman import guttman, guttman_flag
 from ier.infrequency import infrequency, infrequency_flag
 from ier.longstring import _longest_repeating_pattern, longstring_pattern
@@ -24,7 +25,6 @@ from ier.markov import (
     _transition_entropy_row,
     markov,
     markov_flag,
-    markov_summary,
 )
 from ier.onset import onset, onset_flag
 from ier.person_total import person_total
@@ -1680,7 +1680,11 @@ class TestMarkov(unittest.TestCase):
     def test_summary_function(self) -> None:
         """Test Markov summary."""
         data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
-        summary = markov_summary(data)
+        summary: MarkovSummary = markov_summary(data)
+        self.assertEqual(
+            set(summary),
+            {"mean", "std", "min", "max", "median", "n_total", "n_valid", "n_missing"},
+        )
         self.assertIn("mean", summary)
         self.assertIn("n_total", summary)
 

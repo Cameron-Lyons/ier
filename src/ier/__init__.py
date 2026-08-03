@@ -34,6 +34,7 @@ from .mad import mad as mad
 from .mad import mad_flag as mad_flag
 from .mahad import mahad as mahad
 from .mahad import mahad_qqplot as mahad_qqplot
+from .mahad import mahad_summary as mahad_summary
 from .markov import markov as markov
 from .markov import markov_flag as markov_flag
 from .markov import markov_summary as markov_summary
@@ -44,6 +45,7 @@ from .onset import onset_flag as onset_flag
 from .person_total import person_total as person_total
 from .psychsyn import psychant as psychant
 from .psychsyn import psychsyn as psychsyn
+from .psychsyn import psychsyn_summary as psychsyn_summary
 from .reliability import individual_reliability as individual_reliability
 from .reliability import individual_reliability_flag as individual_reliability_flag
 from .response_time import ResponseTimeMixtureModel as ResponseTimeMixtureModel
@@ -72,6 +74,9 @@ from .types import IndexScoreMap as IndexScoreMap
 from .types import InfrequencyMissingPolicy as InfrequencyMissingPolicy
 from .types import InspectableArchive as InspectableArchive
 from .types import IntArray as IntArray
+from .types import MahadSummary as MahadSummary
+from .types import MarkovSummary as MarkovSummary
+from .types import PsychsynSummary as PsychsynSummary
 from .types import ResponseTimeArchive as ResponseTimeArchive
 from .types import ResponseTimeFlagDirection as ResponseTimeFlagDirection
 from .types import ResponseTimeMetric as ResponseTimeMetric
@@ -139,9 +144,12 @@ __all__ = [
     "mad_flag",
     "mahad",
     "mahad_qqplot",
+    "mahad_summary",
+    "MahadSummary",
     "markov",
     "markov_flag",
     "markov_summary",
+    "MarkovSummary",
     "midpoint_responding",
     "missing_rate",
     "missing_rate_flag",
@@ -153,6 +161,8 @@ __all__ = [
     "plot_flagged_heatmap",
     "psychant",
     "psychsyn",
+    "psychsyn_summary",
+    "PsychsynSummary",
     "response_pattern",
     "fit_response_time_mixture",
     "response_time",

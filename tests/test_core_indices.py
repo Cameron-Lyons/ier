@@ -2,12 +2,13 @@
 
 import unittest
 from collections.abc import Iterator
-from typing import Any, cast
+from typing import cast
 from unittest.mock import patch
 
 import numpy as np
 import numpy.typing as npt
 
+from ier import MahadSummary, PsychsynSummary, mahad_summary, psychsyn_summary
 from ier.evenodd import calculate_correlations, evenodd
 from ier.irv import irv
 from ier.longstring import (
@@ -18,7 +19,7 @@ from ier.longstring import (
     longstring,
     longstring_scores,
 )
-from ier.mahad import _compute_mahalanobis_distance, mahad, mahad_summary
+from ier.mahad import _compute_mahalanobis_distance, mahad
 from ier.psychsyn import (
     _compute_complete_person_scores,
     _compute_person_scores,
@@ -31,7 +32,6 @@ from ier.psychsyn import (
     psychant,
     psychsyn,
     psychsyn_critval,
-    psychsyn_summary,
 )
 
 
@@ -425,7 +425,21 @@ class TestMahadFunction(unittest.TestCase):
 
     def test_mahad_summary(self) -> None:
         """Test MAHAD summary returns expected statistics dictionary."""
-        summary: dict[str, Any] = mahad_summary(self.data)
+        summary: MahadSummary = mahad_summary(self.data)
+        self.assertEqual(
+            set(summary),
+            {
+                "mean",
+                "std",
+                "min",
+                "max",
+                "median",
+                "outliers",
+                "total",
+                "valid_count",
+                "missing_count",
+            },
+        )
         self.assertIn("mean", summary)
         self.assertIn("std", summary)
         self.assertIn("outliers", summary)
@@ -935,7 +949,21 @@ class TestPsychometricFunctions(unittest.TestCase):
 
     def test_psychsyn_summary(self) -> None:
         """Test psychsyn summary returns expected statistics dictionary."""
-        summary: dict[str, Any] = psychsyn_summary(self.data)
+        summary: PsychsynSummary = psychsyn_summary(self.data)
+        self.assertEqual(
+            set(summary),
+            {
+                "mean_score",
+                "std_score",
+                "min_score",
+                "max_score",
+                "median_score",
+                "item_pairs",
+                "total_individuals",
+                "valid_individuals",
+                "missing_individuals",
+            },
+        )
         self.assertIn("mean_score", summary)
         self.assertIn("std_score", summary)
         self.assertIn("item_pairs", summary)

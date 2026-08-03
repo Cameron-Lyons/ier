@@ -118,6 +118,47 @@ class ResponseTimeMixtureModelArchive(TypedDict):
 InspectableArchive: TypeAlias = ResultArchive | ResponseTimeMixtureModelArchive
 
 
+class MahadSummary(TypedDict):
+    """Summary statistics and outlier counts from ``mahad_summary()``."""
+
+    mean: float
+    std: float
+    min: float
+    max: float
+    median: float
+    outliers: int
+    total: int
+    valid_count: int
+    missing_count: int
+
+
+class MarkovSummary(TypedDict):
+    """Summary statistics and coverage counts from ``markov_summary()``."""
+
+    mean: float
+    std: float
+    min: float
+    max: float
+    median: float
+    n_total: int
+    n_valid: int
+    n_missing: int
+
+
+class PsychsynSummary(TypedDict):
+    """Summary statistics and pair coverage from ``psychsyn_summary()``."""
+
+    mean_score: float
+    std_score: float
+    min_score: float
+    max_score: float
+    median_score: float
+    item_pairs: int
+    total_individuals: int
+    valid_individuals: int
+    missing_individuals: int
+
+
 class CompositeSummary(TypedDict):
     """Return value for composite_summary()."""
 

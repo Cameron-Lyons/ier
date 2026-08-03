@@ -11,14 +11,13 @@ References:
   Psychological Methods, 17(3), 437-455.
 """
 
-from typing import Any
-
 import numpy as np
 
 from ier._flagging import threshold_flags
 from ier._row_statistics import compressed_row_groups
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
+from ier.types import MarkovSummary
 
 _MAX_DENSE_STATES = 64
 _TRANSITION_BATCH_WORKSPACE_BYTES = 64 * 1024 * 1024
@@ -282,7 +281,7 @@ def markov_flag(
 def markov_summary(
     x: MatrixLike,
     na_rm: bool = True,
-) -> dict[str, Any]:
+) -> MarkovSummary:
     """
     Calculate summary statistics for Markov chain entropy scores.
 
@@ -299,15 +298,17 @@ def markov_summary(
     """
     scores = markov(x, na_rm=na_rm)
 
-    summary = calculate_summary_stats(scores)
-    summary.update(
-        {
-            "n_total": len(scores),
-            "n_valid": int(np.sum(~np.isnan(scores))),
-            "n_missing": int(np.sum(np.isnan(scores))),
-        }
-    )
-    return summary
+    stats = calculate_summary_stats(scores)
+    return {
+        "mean": stats["mean"],
+        "std": stats["std"],
+        "min": stats["min"],
+        "max": stats["max"],
+        "median": stats["median"],
+        "n_total": len(scores),
+        "n_valid": int(np.sum(~np.isnan(scores))),
+        "n_missing": int(np.sum(np.isnan(scores))),
+    }
 
 
 def _transition_entropy(trans: np.ndarray) -> float:

@@ -12,8 +12,6 @@ The Mahalanobis distance is thus unitless and scale-invariant, and takes into ac
 correlations of the data set.
 """
 
-from typing import Any
-
 import numpy as np
 
 from ier._optional_imports import require_matplotlib_pyplot
@@ -21,6 +19,7 @@ from ier._row_statistics import row_slices
 from ier._statistics import chi_square_quantile, chi_square_quantiles, normal_quantile
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
+from ier.types import MahadSummary
 
 
 def mahad(
@@ -279,7 +278,7 @@ def mahad_qqplot(
     return theoretical, observed_sq
 
 
-def mahad_summary(x: MatrixLike, confidence: float = 0.95, na_rm: bool = False) -> dict[str, Any]:
+def mahad_summary(x: MatrixLike, confidence: float = 0.95, na_rm: bool = False) -> MahadSummary:
     """
     Calculate summary statistics for Mahalanobis distances.
 
@@ -302,12 +301,14 @@ def mahad_summary(x: MatrixLike, confidence: float = 0.95, na_rm: bool = False) 
 
     valid_count = int(np.sum(~np.isnan(distances)))
     stats = calculate_summary_stats(distances)
-    stats.update(
-        {
-            "outliers": int(np.sum(flags)) if valid_count > 0 else 0,
-            "total": len(distances),
-            "valid_count": valid_count,
-            "missing_count": int(np.sum(np.isnan(distances))),
-        }
-    )
-    return stats
+    return {
+        "mean": stats["mean"],
+        "std": stats["std"],
+        "min": stats["min"],
+        "max": stats["max"],
+        "median": stats["median"],
+        "outliers": int(np.sum(flags)) if valid_count > 0 else 0,
+        "total": len(distances),
+        "valid_count": valid_count,
+        "missing_count": int(np.sum(np.isnan(distances))),
+    }

@@ -1,14 +1,12 @@
 """Shared summary statistics utilities for careless detection functions."""
 
-from typing import Any
-
 import numpy as np
 
 
 def calculate_summary_stats(
     values: np.ndarray,
     suffix: str = "",
-) -> dict[str, Any]:
+) -> dict[str, float]:
     """
     Calculate common summary statistics for an array of values.
 
