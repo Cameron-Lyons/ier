@@ -15,6 +15,7 @@ def test_missing_aware_reductions_match_numpy() -> None:
     original = data.copy()
 
     expected_mean = np.nanmean(data, axis=1)
+    expected_median = np.nanmedian(data, axis=1)
     expected_std = np.nanstd(data, axis=1)
     means, deviations = row_statistics.row_mean_std(data, ignore_nan=True)
 
@@ -23,6 +24,12 @@ def test_missing_aware_reductions_match_numpy() -> None:
     np.testing.assert_allclose(
         row_statistics.row_mean(data, ignore_nan=True),
         expected_mean,
+        rtol=0.0,
+        atol=1e-15,
+    )
+    np.testing.assert_allclose(
+        row_statistics.row_median(data, ignore_nan=True),
+        expected_median,
         rtol=0.0,
         atol=1e-15,
     )
@@ -48,6 +55,10 @@ def test_complete_reductions_match_numpy() -> None:
         np.mean(data, axis=1),
     )
     np.testing.assert_array_equal(
+        row_statistics.row_median(data, ignore_nan=False),
+        np.median(data, axis=1),
+    )
+    np.testing.assert_array_equal(
         row_statistics.row_std(data, ignore_nan=False),
         np.std(data, axis=1),
     )
@@ -58,11 +69,13 @@ def test_strict_reductions_propagate_missing_values() -> None:
     data = np.array([[1.0, 2.0, 3.0], [1.0, np.nan, 3.0]])
 
     means, deviations = row_statistics.row_mean_std(data, ignore_nan=False)
+    medians = row_statistics.row_median(data, ignore_nan=False)
 
     np.testing.assert_allclose(means[0], 2.0)
     np.testing.assert_allclose(deviations[0], np.std(data[0]))
     assert np.isnan(means[1])
     assert np.isnan(deviations[1])
+    assert np.isnan(medians[1])
 
 
 def test_all_missing_rows_are_unavailable_without_warning() -> None:
@@ -70,11 +83,14 @@ def test_all_missing_rows_are_unavailable_without_warning() -> None:
     data = np.array([[np.nan, np.nan, np.nan], [1.0, np.nan, 5.0]])
 
     means, deviations = row_statistics.row_mean_std(data, ignore_nan=True)
+    medians = row_statistics.row_median(data, ignore_nan=True)
 
     assert np.isnan(means[0])
     assert np.isnan(deviations[0])
+    assert np.isnan(medians[0])
     np.testing.assert_allclose(means[1], 3.0)
     np.testing.assert_allclose(deviations[1], 2.0)
+    np.testing.assert_allclose(medians[1], 3.0)
 
 
 def test_reductions_obey_shared_element_budget() -> None:
@@ -95,15 +111,24 @@ def test_reductions_obey_shared_element_budget() -> None:
             "_row_mean_std_block",
             wraps=row_statistics._row_mean_std_block,
         ) as mean_std_blocks,
+        patch.object(
+            row_statistics,
+            "_row_median_block",
+            wraps=row_statistics._row_median_block,
+        ) as median_blocks,
     ):
         means = row_statistics.row_mean(data, ignore_nan=True)
+        medians = row_statistics.row_median(data, ignore_nan=True)
         combined_means, deviations = row_statistics.row_mean_std(data, ignore_nan=True)
 
     assert mean_blocks.call_count > 1
     assert mean_std_blocks.call_count > 1
+    assert median_blocks.call_count > 1
     assert all(call.args[0].size <= 20 for call in mean_blocks.call_args_list)
     assert all(call.args[0].size <= 20 for call in mean_std_blocks.call_args_list)
+    assert all(call.args[0].size <= 20 for call in median_blocks.call_args_list)
     np.testing.assert_allclose(means, np.nanmean(data, axis=1), rtol=0.0, atol=1e-15)
+    np.testing.assert_allclose(medians, np.nanmedian(data, axis=1), rtol=0.0, atol=1e-15)
     np.testing.assert_allclose(combined_means, means, rtol=0.0, atol=1e-15)
     np.testing.assert_allclose(
         deviations,

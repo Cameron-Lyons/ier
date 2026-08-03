@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.8] - 2026-08-02
+
+### Changed
+
+- Response-time mean, median, standard-deviation, consistency, and mixture
+  preprocessing now use bounded row reductions instead of complete timing-matrix
+  workspaces. On a 100,000-respondent, 80-item benchmark with 10% missing times,
+  peak temporary allocation falls from 77.1 to 1.3 MiB for the mean, 206.8 to
+  9.6 MiB for the median, 77.1 to 4.0 MiB for the standard deviation, 77.9 to
+  4.0 MiB for consistency, and 206.8 to 9.6 MiB for mixture scoring. Consistency
+  time also falls from 40.7 to 27.3 ms, without adding a dependency.
+
+### Fixed
+
+- Entirely missing response-time rows now return unavailable mean, median,
+  standard-deviation, minimum, and consistency scores without emitting NumPy
+  empty-slice warnings.
+
 ## [2.19.7] - 2026-08-02
 
 ### Changed

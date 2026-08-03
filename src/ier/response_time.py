@@ -11,6 +11,7 @@ import warnings
 import numpy as np
 
 from ier._flagging import threshold_flags
+from ier._row_statistics import row_mean, row_mean_std, row_median, row_std
 from ier._validation import MatrixLike, validate_matrix_input
 
 _LOG_TWO_PI = math.log(2.0 * math.pi)
@@ -52,13 +53,15 @@ def response_time(
 
     result: np.ndarray
     if metric == "mean":
-        result = np.nanmean(times_array, axis=1)
+        result = row_mean(times_array, ignore_nan=True)
     elif metric == "median":
-        result = np.nanmedian(times_array, axis=1)
+        result = row_median(times_array, ignore_nan=True)
     elif metric == "sd":
-        result = np.nanstd(times_array, axis=1)
+        result = row_std(times_array, ignore_nan=True)
     elif metric == "min":
-        result = np.nanmin(times_array, axis=1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            result = np.nanmin(times_array, axis=1)
     else:
         raise ValueError(f"unknown metric: {metric}. Use 'mean', 'median', 'sd', or 'min'")
     return result
@@ -121,8 +124,7 @@ def response_time_consistency(
     """
     times_array = validate_matrix_input(times, min_columns=2)
 
-    means = np.nanmean(times_array, axis=1)
-    stds = np.nanstd(times_array, axis=1)
+    means, stds = row_mean_std(times_array, ignore_nan=True)
 
     with np.errstate(invalid="ignore", divide="ignore"):
         cv: np.ndarray = stds / means
@@ -168,9 +170,7 @@ def response_time_mixture(
 
     times_array = validate_matrix_input(times, min_columns=1)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        medians = np.nanmedian(times_array, axis=1)
+    medians = row_median(times_array, ignore_nan=True)
 
     valid_mask = np.isfinite(medians) & (medians > 0)
     if np.sum(valid_mask) < n_components:
