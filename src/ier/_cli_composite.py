@@ -50,3 +50,12 @@ def validate_composite_flags(
         np.isfinite(flag_percentile) and 0.0 <= flag_percentile <= 100.0
     ):
         raise ValueError("composite flag percentile must be between 0 and 100")
+
+
+def validate_composite_probabilities(
+    n_respondents: int,
+    probabilities: np.ndarray | None,
+) -> None:
+    """Validate optional respondent-aligned logistic composite values."""
+    if probabilities is not None and len(probabilities) != n_respondents:
+        raise ValueError("composite probability length must match composite score length")

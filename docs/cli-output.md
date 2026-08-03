@@ -89,6 +89,13 @@ also records the requested `percentile`. CSV adds `composite_flag`, while text
 reports the cutoff, source, flagged count, and row-level flag. These fields are
 absent when flagging is not requested.
 
+With `--include-probability`, NPZ and JSON add respondent-aligned
+`probabilities` plus `probability_scale="uncalibrated_logistic"`. CSV adds
+`composite_probability`, and text adds the value to each ranked row. The vector
+is transformed from the already-computed aggregate scores without rescoring
+indices. It is absent by default. Flag thresholds remain in the original
+composite-score units even when probability output is included.
+
 With `--include-components`, composite NPZ adds `index_names`,
 `valid_index_counts`, and one `score__NAME` float vector per successful index.
 JSON adds `indices_used`, `valid_index_counts`, and a `component_scores` object;

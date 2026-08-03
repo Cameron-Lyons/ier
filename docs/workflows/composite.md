@@ -144,6 +144,7 @@ ier composite data.csv --indices irv longstring --method mean
 ier composite data.csv --indices irv longstring --no-standardize
 ier composite data.csv --indices irv longstring --percentile 95 --format csv
 ier composite data.csv --indices irv longstring --threshold 1.5 --format json
+ier composite data.csv --indices irv longstring --include-probability --format csv
 ier composite data.csv --indices irv longstring --weight irv=2 --weight longstring=0.5
 ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --indices irv longstring --include-components --format json
@@ -181,6 +182,14 @@ of appearing as score columns. Component values are the raw public index
 outputs, before composite direction correction, standardization, or weighting.
 JSON arrays and CSV rows remain streamed, while NPZ stores one typed array per
 successful index.
+
+Add `--include-probability` when an export needs the same overflow-safe logistic
+transform exposed by `composite_probability()`. The command transforms the
+already-computed aggregate vector, so index scoring still runs once. JSON and
+NPZ include `probability_scale="uncalibrated_logistic"`, CSV adds
+`composite_probability`, and text adds a probability column. Omitting the
+option preserves every existing schema. These values are not calibrated, and
+`--threshold` / `--percentile` continue to operate in composite-score units.
 
 Add one of `--threshold VALUE` or `--percentile VALUE` when the export should
 include a composite decision for each respondent. A fixed threshold is inclusive

@@ -46,6 +46,7 @@ from ier._cli_output import (
 )
 from ier._flagging import resolve_threshold, threshold_flags
 from ier._registry import validate_worker_count
+from ier.composite import _logistic_transform
 
 
 def _parse_int_list(raw: str | None) -> list[int] | None:
@@ -353,6 +354,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include raw component scores and per-respondent availability counts",
     )
+    composite_parser.add_argument(
+        "--include-probability",
+        action="store_true",
+        help="Include uncalibrated logistic composite values alongside scores",
+    )
     _add_shared_options(composite_parser)
 
     response_time_parser = sub.add_parser(
@@ -611,6 +617,7 @@ def _run_command(args: argparse.Namespace) -> int:
             direction="high",
             inclusive=args.threshold is not None,
         )
+    probabilities = _logistic_transform(scores) if args.include_probability else None
 
     if args.format == "json":
         _write_json_output(
@@ -629,6 +636,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 flags=composite_flags,
                 flag_threshold=flag_threshold,
                 flag_percentile=flag_percentile,
+                probabilities=probabilities,
             ),
         )
         return 0
@@ -641,6 +649,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 component_scores,
                 valid_index_counts,
                 composite_flags,
+                probabilities,
             )
         return 0
     elif args.format == "npz":
@@ -658,6 +667,7 @@ def _run_command(args: argparse.Namespace) -> int:
             flags=composite_flags,
             flag_threshold=flag_threshold,
             flag_percentile=flag_percentile,
+            probabilities=probabilities,
         )
         return 0
     else:
@@ -675,6 +685,7 @@ def _run_command(args: argparse.Namespace) -> int:
             flags=composite_flags,
             flag_threshold=flag_threshold,
             flag_percentile=flag_percentile,
+            probabilities=probabilities,
         )
     _write_output(text, args.output)
     return 0

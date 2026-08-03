@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.0] - 2026-08-02
+
+### Added
+
+- `ier composite --include-probability` now exports the overflow-safe,
+  uncalibrated logistic transform alongside composite scores in text, JSON,
+  CSV, and NPZ. Scoring still runs once, flags remain defined in composite-score
+  units, structured formats identify the probability scale, and default schemas
+  are unchanged. At 100,000 respondents and five component indices,
+  probability-enabled CSV used 0.274 MiB peak output allocation, JSON used
+  0.536 MiB, and NPZ used 0.900 MiB, without adding a dependency.
+
 ## [2.18.0] - 2026-08-02
 
 ### Added

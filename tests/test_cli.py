@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ier import composite, composite_flag, composite_summary
+from ier import composite, composite_flag, composite_probability, composite_summary
 from ier._cli_input import _load_input, _load_matrix
 from ier._cli_output import _emit_composite_json, _emit_composite_text, _write_composite_csv
 from ier.cli import (
@@ -247,6 +247,98 @@ class TestCli(unittest.TestCase):
                 0,
             )
         self.assertIn("standardized: false", stdout.getvalue())
+
+    def test_composite_probability_is_opt_in_across_formats_without_rescoring(self) -> None:
+        matrix, _ = _load_input(self.csv_path, None, None)
+        indices = ["irv", "longstring"]
+        expected_scores = composite(matrix, indices=indices)
+        expected_probabilities = composite_probability(matrix, indices=indices)
+        self.assertIsInstance(expected_scores, np.ndarray)
+
+        json_out = self.root / "probability-composite.json"
+        with patch("ier.cli.composite", wraps=composite) as score_mock:
+            self.assertEqual(
+                main(
+                    [
+                        "composite",
+                        str(self.csv_path),
+                        "--indices",
+                        *indices,
+                        "--include-probability",
+                        "--threshold",
+                        "0",
+                        "--format",
+                        "json",
+                        "--output",
+                        str(json_out),
+                    ]
+                ),
+                0,
+            )
+        self.assertEqual(score_mock.call_count, 1)
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["probability_scale"], "uncalibrated_logistic")
+        np.testing.assert_allclose(payload["scores"], expected_scores)
+        np.testing.assert_allclose(payload["probabilities"], expected_probabilities)
+        self.assertEqual(payload["flags"], (expected_scores >= 0.0).tolist())
+
+        csv_out = self.root / "probability-composite.csv"
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    *indices,
+                    "--include-probability",
+                    "--include-components",
+                    "--threshold",
+                    "0",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(csv_out),
+                ]
+            ),
+            0,
+        )
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        self.assertEqual(
+            list(rows[0]),
+            [
+                "respondent",
+                "composite_score",
+                "composite_probability",
+                "composite_flag",
+                "valid_index_count",
+                "irv_score",
+                "longstring_score",
+            ],
+        )
+        np.testing.assert_allclose(
+            [float(row["composite_probability"]) for row in rows],
+            expected_probabilities,
+        )
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            self.assertEqual(
+                main(
+                    [
+                        "composite",
+                        str(self.csv_path),
+                        "--indices",
+                        *indices,
+                        "--include-probability",
+                        "--top",
+                        "3",
+                    ]
+                ),
+                0,
+            )
+        text = stdout.getvalue()
+        self.assertIn("probability: logistic (uncalibrated)", text)
+        self.assertIn("index, score, probability", text)
 
     def test_composite_fixed_threshold_flags_across_formats(self) -> None:
         matrix, _ = _load_input(self.csv_path, None, None)
@@ -1470,6 +1562,12 @@ class TestCli(unittest.TestCase):
                 StringIO(),
                 scores,
                 flags=np.array([True]),
+            )
+        with self.assertRaisesRegex(ValueError, "probability length"):
+            _emit_composite_json(
+                scores,
+                "mean",
+                probabilities=np.array([0.5]),
             )
 
     def test_composite_csv_uses_empty_cells_for_all_non_finite_values(self) -> None:

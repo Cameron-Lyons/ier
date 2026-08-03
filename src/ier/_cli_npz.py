@@ -8,7 +8,11 @@ from zipfile import ZIP_STORED, ZipFile
 
 import numpy as np
 
-from ier._cli_composite import validate_composite_components, validate_composite_flags
+from ier._cli_composite import (
+    validate_composite_components,
+    validate_composite_flags,
+    validate_composite_probabilities,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -131,10 +135,12 @@ def _write_composite_npz(
     flags: np.ndarray | None = None,
     flag_threshold: float | None = None,
     flag_percentile: float | None = None,
+    probabilities: np.ndarray | None = None,
 ) -> None:
     """Write composite results as a versioned NumPy archive."""
     validate_composite_components(len(scores), component_scores, valid_index_counts)
     validate_composite_flags(len(scores), flags, flag_threshold, flag_percentile)
+    validate_composite_probabilities(len(scores), probabilities)
 
     payload = _metadata("composite", len(scores))
     payload.update(
@@ -149,6 +155,9 @@ def _write_composite_npz(
         payload["weights"] = np.asarray(list(weights.values()), dtype=np.float64)
     if min_valid_indices is not None:
         payload["min_valid_indices"] = np.asarray(min_valid_indices, dtype=np.int64)
+    if probabilities is not None:
+        payload["probability_scale"] = np.asarray("uncalibrated_logistic", dtype=np.str_)
+        payload["probabilities"] = np.asarray(probabilities, dtype=np.float64)
     if flags is not None:
         assert flag_threshold is not None
         payload["threshold"] = np.asarray(flag_threshold, dtype=np.float64)

@@ -13,6 +13,7 @@ For a comprehensive methods review, see
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format
+- Opt-in uncalibrated logistic composite values in every CLI output format
 - Opt-in minimum valid-index requirements for defensible composite coverage
 - Configurable multi-index consensus decisions for respondent-level screening
 - Fixed or sample-relative per-index screening thresholds
@@ -108,6 +109,7 @@ ier composite data.csv --indices irv longstring
 ier composite data.csv --indices irv longstring --no-standardize
 ier composite data.csv --indices irv longstring --percentile 95 --format csv
 ier composite data.csv --indices irv longstring --threshold 1.5 --format json
+ier composite data.csv --indices irv longstring --include-probability --format csv
 ier composite data.csv --indices irv longstring --weight irv=2 --weight longstring=0.5
 ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --indices irv longstring --include-components --format json
@@ -153,6 +155,13 @@ Add either `--threshold VALUE` or `--percentile VALUE` to emit respondent-level
 composite flags without running the indices again. Fixed cutoffs flag scores at
 or above the value; percentile cutoffs flag only scores strictly above the
 sample cutoff. Omitting both options preserves score-only output.
+
+Pass `--include-probability` to add the overflow-safe logistic transform beside
+each composite score without scoring the indices again. JSON and NPZ label the
+scale as `uncalibrated_logistic`, CSV adds `composite_probability`, and text
+shows the value in ranked rows. These values remain sample-relative ranking
+aids, not calibrated probabilities. Fixed and percentile flag cutoffs continue
+to use the original composite-score units.
 
 Set `min_valid_indices=N` to return `NaN` when fewer than `N` selected index
 scores are available for a respondent. This opt-in rule applies after scoring

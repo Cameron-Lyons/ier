@@ -54,4 +54,7 @@ See Curran (2016) and Meade & Craig (2012) for broader methodological discussion
 
 Treat `composite()` / `composite_probability()` as **ranking tools** within a
 sample. Do not interpret logistic composite values as calibrated probabilities
-unless you validate them on labeled data from a similar context.
+unless you validate them on labeled data from a similar context. The CLI's
+`--include-probability` option adds this logistic value for export only;
+`--threshold` and `--percentile` continue to make decisions from the original
+composite scores.
