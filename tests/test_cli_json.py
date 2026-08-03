@@ -30,6 +30,8 @@ def _screen_result() -> ScreenResult:
         "scores": {"example": scores},
         "flags": {"example": flags},
         "thresholds": {"example": 2.0},
+        "threshold_sources": {"example": "fixed"},
+        "percentiles": {"example": None},
         "flag_counts": flags.astype(int),
         "valid_index_counts": np.array([1, 0, 1, 1, 1]),
         "consensus_eligible": np.array([True, False, True, True, True]),
@@ -61,6 +63,8 @@ class TestCliJson(unittest.TestCase):
         _write_screen_json(screen_output, result, identifiers)
         screen_payload = json.loads(screen_output.getvalue())
         self.assertEqual(screen_payload["n_respondents"], 5)
+        self.assertEqual(screen_payload["threshold_sources"], {"example": "fixed"})
+        self.assertEqual(screen_payload["percentiles"], {"example": None})
         self.assertEqual(screen_payload["flag_counts"], [0, 1, 0, 1, 1])
         self.assertEqual(screen_payload["valid_index_counts"], [1, 0, 1, 1, 1])
         self.assertEqual(screen_payload["consensus_eligible"], [True, False, True, True, True])

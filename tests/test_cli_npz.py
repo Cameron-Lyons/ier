@@ -103,6 +103,8 @@ class TestCliNpz(unittest.TestCase):
         )
         self.assertEqual(screen_result["summary_columns"].tolist(), ["mean", "std", "min", "max"])
         self.assertEqual(screen_result["summary_statistics"].shape, (2, 4))
+        self.assertEqual(screen_result["threshold_sources"].tolist(), ["percentile", "percentile"])
+        self.assertEqual(screen_result["percentiles"].tolist(), [95.0, 95.0])
         self.assertEqual(screen_result["score__irv"].shape, (3,))
         self.assertEqual(screen_result["flag__irv"].dtype, np.bool_)
         self.assertEqual(screen_result["valid_index_counts"].tolist(), [2, 2, 2])
@@ -227,6 +229,9 @@ class TestCliNpz(unittest.TestCase):
         with np.load(out, allow_pickle=False) as archive:
             self.assertEqual(archive["index_names"].tolist(), ["irv", "onset"])
             self.assertTrue(np.isnan(archive["thresholds"][1]))
+            self.assertEqual(archive["threshold_sources"].tolist(), ["percentile", "presence"])
+            self.assertEqual(archive["percentiles"][0], 95.0)
+            self.assertTrue(np.isnan(archive["percentiles"][1]))
             self.assertEqual(archive["error_names"].tolist(), ["mad"])
             self.assertIn("mad_positive_items", archive["error_messages"][0])
 

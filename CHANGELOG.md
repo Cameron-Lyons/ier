@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.18] - 2026-08-03
+
+### Added
+
+- Screening now accepts per-index tail-percentile overrides through the
+  `percentiles` mapping and repeatable `--index-percentile INDEX=VALUE` CLI option.
+- Screening results, text, JSON, and NPZ output now identify each cutoff as
+  `fixed`, `percentile`, or `presence` and retain the requested tail percentile.
+
+### Changed
+
+- Fixed and percentile overrides for the same index are rejected as ambiguous.
+  Presence-mode indices reject both numeric cutoff types, while the global
+  percentile remains the fallback for indices without an override.
+
 ## [2.19.17] - 2026-08-03
 
 ### Added

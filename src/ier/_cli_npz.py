@@ -103,6 +103,17 @@ def _write_screen_npz(
                 ],
                 dtype=np.float64,
             ),
+            "threshold_sources": np.asarray(
+                [result["threshold_sources"][name] for name in names],
+                dtype=np.str_,
+            ),
+            "percentiles": np.asarray(
+                [
+                    np.nan if result["percentiles"][name] is None else result["percentiles"][name]
+                    for name in names
+                ],
+                dtype=np.float64,
+            ),
             "flag_counts": np.asarray(result["flag_counts"], dtype=np.int64),
             "valid_index_counts": np.asarray(
                 result["valid_index_counts"],

@@ -124,6 +124,10 @@ def _parse_thresholds(raw: list[str] | None) -> dict[str, float] | None:
     return _parse_named_floats(raw, "threshold")
 
 
+def _parse_percentiles(raw: list[str] | None) -> dict[str, float] | None:
+    return _parse_named_floats(raw, "percentile")
+
+
 def _parse_weights(raw: list[str] | None) -> dict[str, float] | None:
     return _parse_named_floats(raw, "weight", positive=True)
 
@@ -303,6 +307,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="INDEX=VALUE",
         help="Fixed per-index cutoff; repeat for multiple indices",
+    )
+    screen_parser.add_argument(
+        "--index-percentile",
+        action="append",
+        default=None,
+        metavar="INDEX=VALUE",
+        help="Per-index tail percentile; repeat for multiple indices",
     )
     screen_parser.add_argument(
         "--min-flags",
@@ -566,6 +577,7 @@ def _run_command(args: argparse.Namespace) -> int:
             min_flags=args.min_flags,
             min_valid_indices=args.min_valid_indices,
             thresholds=_parse_thresholds(args.threshold),
+            percentiles=_parse_percentiles(args.index_percentile),
             strict=args.strict,
             workers=args.workers,
         )

@@ -13,6 +13,8 @@ IndexScoreMap: TypeAlias = dict[str, FloatArray]
 IndexFlagMap: TypeAlias = dict[str, BoolArray]
 IndexErrorMap: TypeAlias = dict[str, str]
 IndexThresholdMap: TypeAlias = dict[str, float | None]
+IndexPercentileMap: TypeAlias = dict[str, float | None]
+IndexThresholdSourceMap: TypeAlias = dict[str, Literal["fixed", "percentile", "presence"]]
 
 CompositeMethod: TypeAlias = Literal["mean", "sum", "max", "best_subset"]
 InfrequencyMissingPolicy: TypeAlias = Literal["pass", "fail", "omit", "propagate"]
@@ -48,6 +50,8 @@ class ScreenResult(TypedDict):
     scores: IndexScoreMap
     flags: IndexFlagMap
     thresholds: IndexThresholdMap
+    threshold_sources: IndexThresholdSourceMap
+    percentiles: IndexPercentileMap
     flag_counts: IntArray
     valid_index_counts: IntArray
     consensus_eligible: BoolArray

@@ -17,7 +17,7 @@ For a comprehensive methods review, see
 - Opt-in minimum valid-index requirements for defensible composite coverage
 - Configurable multi-index consensus decisions for respondent-level screening
 - Opt-in minimum valid-index requirements and eligibility reporting for screening consensus
-- Fixed or sample-relative per-index screening thresholds
+- Fixed or per-index sample-relative screening thresholds with cutoff provenance
 - Skip-logic-aware missing-response rates with required-item subsets and applicability masks
 - Configurable attention-check missing policies with count or proportion scoring
 - Programmatic and CLI index catalog with defaults and configuration requirements
@@ -104,6 +104,7 @@ large_result = screen(data, workers=4)
 ier screen data.csv --scale-min 1 --scale-max 5
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
+ier screen data.csv --index-percentile irv=90 --index-percentile longstring=99
 ier screen data.csv --indices irv longstring missing_rate --min-valid-indices 2
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --workers 4
@@ -162,6 +163,13 @@ Set `screen(..., min_valid_indices=N)` or CLI `--min-valid-indices N` to require
 at least `N` available index scores before a respondent is eligible for a
 consensus decision. Results always include per-respondent `valid_index_counts`
 and `consensus_eligible`; omitting the requirement preserves existing decisions.
+
+Use `screen(..., percentiles={"irv": 90, "longstring": 99})` or repeat CLI
+`--index-percentile INDEX=VALUE` to tune sample-relative sensitivity by signal.
+Values follow the global tail convention: high-direction indices resolve at
+`p`, while low-direction indices resolve at `100-p`. Results report each actual
+numeric cutoff, its fixed/percentile/presence source, and the requested tail
+percentile so exported decisions remain reproducible.
 
 All composite helpers accept optional positive finite `weights`. Weighting is
 applied after low-is-suspicious indices are direction-corrected and after

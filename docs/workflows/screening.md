@@ -23,6 +23,8 @@ print(result["errors"])
 | `scores` | Per-index score arrays |
 | `flags` | Per-index boolean flags |
 | `thresholds` | Actual per-index cutoffs (`None` for presence flagging) |
+| `threshold_sources` | `fixed`, `percentile`, or `presence` provenance per cutoff |
+| `percentiles` | Requested tail percentile per sample-relative cutoff; otherwise `None` |
 | `flag_counts` | Total flags per respondent |
 | `valid_index_counts` | Available index scores per respondent |
 | `consensus_eligible` | Whether each respondent meets the optional completeness rule |
@@ -188,10 +190,16 @@ flagging.
 - Most indices use percentile thresholds (`percentile=95` by default).
 - High-direction indices flag above the percentile; low-direction indices flag
   below `100 - percentile`.
+- Override individual tail settings with
+  `percentiles={"irv": 90, "longstring": 99}`. Values use the same directional
+  convention as the global setting, and unspecified indices retain the global
+  percentile.
 - Pass fixed cutoffs with `thresholds={"irv": 0.25, "longstring": 8}`. Fixed
   thresholds are inclusive: high-direction scores at or above the cutoff and
   low-direction scores at or below the cutoff are flagged. Other indices keep
   using the configured percentile.
+- An index cannot have both fixed and percentile overrides. Presence-mode indices
+  accept neither. Results retain every cutoff's source and requested percentile.
 - `onset` uses presence flagging: any detected changepoint is flagged.
 - `consensus_flags` marks respondents flagged by at least `min_flags` indices.
   Use `screen(..., min_flags=1)` for single-index workflows.
@@ -233,6 +241,7 @@ ier screen data.csv --scale-min 1 --scale-max 5 --indices irv longstring
 ier screen data.csv --min-flags 3
 ier screen data.csv --min-flags 2 --min-valid-indices 3
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
+ier screen data.csv --index-percentile irv=90 --index-percentile longstring=99
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
