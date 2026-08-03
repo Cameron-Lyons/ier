@@ -11,13 +11,14 @@ individuals respond to psychometrically similar (synonym) or opposite (antonym) 
 
 from collections.abc import Iterator
 from math import isqrt
-from typing import Any, Literal, overload
+from typing import Literal, overload
 
 import numpy as np
 
 from ier._correlation import row_correlations
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
+from ier.types import PsychsynSummary
 
 _PSYCHSYN_BATCH_ELEMENTS = 262_144
 _PSYCHSYN_CORRELATION_BLOCK_ELEMENTS = 262_144
@@ -690,7 +691,11 @@ def psychant(
     )
 
 
-def psychsyn_summary(x: MatrixLike, critval: float = 0.60, anto: bool = False) -> dict[str, Any]:
+def psychsyn_summary(
+    x: MatrixLike,
+    critval: float = 0.60,
+    anto: bool = False,
+) -> PsychsynSummary:
     """
     Calculate summary statistics for psychometric synonym/antonym analysis.
 
@@ -714,13 +719,15 @@ def psychsyn_summary(x: MatrixLike, critval: float = 0.60, anto: bool = False) -
     )
 
     valid_count = int(np.sum(~np.isnan(scores)))
-    summary = calculate_summary_stats(scores, suffix="_score")
-    summary.update(
-        {
-            "item_pairs": len(item_pairs),
-            "total_individuals": len(scores),
-            "valid_individuals": valid_count,
-            "missing_individuals": len(scores) - valid_count,
-        }
-    )
-    return summary
+    stats = calculate_summary_stats(scores, suffix="_score")
+    return {
+        "mean_score": stats["mean_score"],
+        "std_score": stats["std_score"],
+        "min_score": stats["min_score"],
+        "max_score": stats["max_score"],
+        "median_score": stats["median_score"],
+        "item_pairs": len(item_pairs),
+        "total_individuals": len(scores),
+        "valid_individuals": valid_count,
+        "missing_individuals": len(scores) - valid_count,
+    }

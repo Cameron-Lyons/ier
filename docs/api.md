@@ -5,6 +5,9 @@
       members:
         - IndexOptions
         - InspectableArchive
+        - MahadSummary
+        - MarkovSummary
+        - PsychsynSummary
         - ResponseTimeArchive
         - ResponseTimeMixtureModel
         - ResponseTimeMixtureModelArchive
@@ -34,10 +37,13 @@
         - longstring
         - longstring_pattern
         - mahad
+        - mahad_summary
         - psychsyn
+        - psychsyn_summary
         - psychant
         - person_total
         - markov
+        - markov_summary
         - missing_rate
         - missing_rate_flag
         - u3_poly

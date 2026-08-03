@@ -44,6 +44,7 @@ For a comprehensive methods review, see
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Configurable soft or strict per-index failures during screening and composite scoring
 - Opt-in soft-failure diagnostics from every composite Python helper
+- Typed root-level Mahalanobis, Markov, and psychometric-pair summary helpers
 - Composite CLI diagnostics preserved across human-readable and structured outputs
 - Opt-in raw component scores and availability counts in every composite CLI format
 - Full type annotations (`py.typed`)

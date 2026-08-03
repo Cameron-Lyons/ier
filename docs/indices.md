@@ -111,6 +111,15 @@ data. Configure registry scoring with `IndexOptions.infrequency_missing` and the
 CLI with `--infrequency-missing`. The standalone `infrequency_flag()` can flag
 either counts or proportions.
 
+## Summary helpers
+
+Import `mahad_summary()`, `markov_summary()`, and `psychsyn_summary()` directly
+from `ier` for compact distribution, coverage, and method-specific diagnostics.
+Their return contracts are exposed as `MahadSummary`, `MarkovSummary`, and
+`PsychsynSummary`, so editors and static type checkers can discover every field
+without falling back to an unstructured dictionary. Calculations and missing-data
+semantics match the corresponding scoring functions.
+
 ## Response-time indices (standalone — not in the registry)
 
 These helpers take **timing matrices** (durations), not item-response matrices.
