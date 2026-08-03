@@ -157,6 +157,7 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
         infrequency_item_indices=_parse_int_list(args.infrequency_item_indices),
         infrequency_expected_responses=_parse_float_list(args.infrequency_expected_responses),
         infrequency_proportion=args.infrequency_proportion,
+        missing_item_indices=_parse_int_list(args.missing_item_indices),
     )
 
 
@@ -258,6 +259,11 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         "--infrequency-proportion",
         action=argparse.BooleanOptionalAction,
         default=False,
+    )
+    parser.add_argument(
+        "--missing-item-indices",
+        default=None,
+        help="Comma-separated required item indices for missing-rate scoring",
     )
     _add_output_options(parser)
 

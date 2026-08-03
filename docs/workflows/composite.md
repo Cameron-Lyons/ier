@@ -60,6 +60,11 @@ Composite-enabled indices include:
 `person_total`, `markov`, `guttman`, `individual_reliability`, `evenodd`, `mad`,
 `lz`, `semantic_syn`, `semantic_ant`, `infrequency`, `missing_rate`
 
+Configure `missing_rate` with `IndexOptions(missing_item_indices=[...])` for a
+fixed required-item subset or `missing_applicable_mask=...` for respondent-specific
+skip logic. Respondents without applicable items contribute an unavailable
+component score, so `min_valid_indices` can enforce the desired composite coverage.
+
 Screening-only response-style indices (`u3_poly`, `midpoint`, `acquiescence`,
 `onset`) are excluded from composite combination because they measure different
 constructs and can dilute pattern/consistency signals.

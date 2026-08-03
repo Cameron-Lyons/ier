@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.14] - 2026-08-03
+
+### Added
+
+- Missing-response rates now accept respondent-specific Boolean applicability
+  masks. Non-applicable cells are excluded from the missing count and denominator;
+  rows without applicable selected items return unavailable scores and remain
+  unflagged.
+- Fixed required-item subsets now flow through `IndexOptions`, screening,
+  composite scoring, and the `--missing-item-indices` command-line option.
+
 ## [2.19.13] - 2026-08-03
 
 ### Added

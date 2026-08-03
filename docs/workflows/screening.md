@@ -96,12 +96,40 @@ and raise peak memory. Benchmark representative matrix sizes and worker counts.
 Missing-response rate is available as an opt-in registry index:
 
 ```python
-result = screen(data, indices=["missing_rate"], thresholds={"missing_rate": 0.2})
+options = IndexOptions(missing_item_indices=[0, 1, 4, 5])
+result = screen(
+    data,
+    indices=["missing_rate"],
+    options=options,
+    thresholds={"missing_rate": 0.2},
+)
 ```
 
 It is not a default because planned skip logic can create legitimate omissions.
-Call `missing_rate(data, item_indices=[...])` directly when only required items
-should contribute to the rate.
+Use `missing_item_indices` when the same item subset is required for every
+respondent. The option applies through `screen()` and all composite helpers;
+the direct equivalent is `missing_rate(data, item_indices=[...])`.
+
+For respondent-specific branching, supply a Boolean matrix matching the response
+matrix. True cells identify expected responses and false cells are excluded from
+both the missing count and denominator:
+
+```python
+import numpy as np
+
+applicable = np.array(
+    [
+        [True, True, False, False],
+        [True, True, True, True],
+    ]
+)
+options = IndexOptions(missing_applicable_mask=applicable)
+result = screen(data, indices=["missing_rate"], options=options, min_flags=1)
+```
+
+Rows without any applicable selected items receive `NaN` and are not flagged.
+`missing_rate_flag()` accepts the same `applicable_mask` argument for direct
+flagging.
 
 ## Flagging
 
@@ -155,6 +183,7 @@ ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
+ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier response-time timings.csv --metric median --threshold 1.0
 ier screen data.csv.gz --format json --output screening.json.gz

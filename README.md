@@ -17,6 +17,7 @@ For a comprehensive methods review, see
 - Opt-in minimum valid-index requirements for defensible composite coverage
 - Configurable multi-index consensus decisions for respondent-level screening
 - Fixed or sample-relative per-index screening thresholds
+- Skip-logic-aware missing-response rates with required-item subsets and applicability masks
 - Programmatic and CLI index catalog with defaults and configuration requirements
 - CLI preservation of named respondent identifier columns
 - CLI selection of named item columns from files containing metadata
@@ -102,6 +103,7 @@ ier screen data.csv --format json --output screen.json
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --workers 4
+ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --format npz --output screening.npz
@@ -130,6 +132,13 @@ remove a named header column from scoring and preserve its unique, nonblank valu
 in text, JSON, CSV, and NPZ output. Use `--item-columns q1,q2,...` to select and order
 the numeric item matrix while ignoring unselected metadata columns; repeat the
 option to build the selection in groups.
+
+Missing-response scoring is opt-in because planned omissions are often valid.
+Use `IndexOptions(missing_item_indices=[...])` or CLI
+`--missing-item-indices 0,1,...` for a fixed required-item subset. Python
+workflows can additionally provide a respondent-by-item Boolean
+`missing_applicable_mask`; false cells are excluded from the missing-rate
+denominator.
 
 `screen()` and all composite helpers accept `workers=N`; the corresponding CLI
 commands use `--workers N`. The default is sequential (`1`) for predictable
