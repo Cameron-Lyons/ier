@@ -64,12 +64,14 @@ _validation / _flagging    ← shared input checks and threshold helpers
   dtype. Loading recomputes every count and decision before
   accepting the archive, so persistence cannot bypass the public consensus
   contract or turn user-provided signal names into container paths.
-- **Archive merging.** Independently computed score archives can be joined in
-  input order before those decision layers run. Fully identified archives align
-  vectors to the first archive's respondent order; mixed identity state,
-  mismatched ID sets, duplicate scores, and conflicting failure metadata are
-  rejected. Already aligned vectors are retained without copying, while only
-  differently ordered vectors allocate reordered results.
+- **Archive merging.** Independently computed score or consensus archives can be
+  joined in input order before revised decision layers run. Fully identified
+  archives align vectors to the first archive's respondent order; mixed identity
+  state, mismatched ID sets, and duplicate scores or signals are rejected. Score
+  merges reconcile soft failures, while consensus merges retain optional
+  availability scores and replace stored aggregates with caller-selected rules.
+  Already aligned vectors are retained without copying; only differently ordered
+  vectors allocate reordered results.
 
 ## Command-line boundaries
 
@@ -92,8 +94,8 @@ The command-line path is split by responsibility:
   public validated save/load boundaries for reusable registered score vectors,
   response-time results, and cross-domain consensus, plus dedicated
   response-time mixture and psychometric-pair model schemas.
-  It also validates multi-archive identity and index contracts before returning
-  one merged score mapping for screen or composite reuse.
+  It also validates multi-archive identity, index, and signal contracts before
+  returning merged mappings for screen, composite, or consensus reuse.
   Its generic result loader reads the declared result type once and dispatches
   to the same complete specialized validators. Generic model inspection returns
   a typed parameter mapping, while the dedicated model loader returns the
@@ -373,5 +375,7 @@ Plotting remains optional and reports a centralized install hint from
   peak allocation, and artifact size: `benchmarks/bench_consensus_archive.py`.
 - Validated score-plus-timing archive reflagging, alignment, availability, and
   bounded consensus: `benchmarks/bench_archive_consensus.py`.
+- Validated multi-archive consensus loading, merging, exact reduction parity,
+  and traced peak allocation: `benchmarks/bench_consensus_archive_merge.py`.
 - Shared fixed and percentile flagging throughput and memory: `benchmarks/bench_flagging.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.

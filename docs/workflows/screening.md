@@ -481,6 +481,9 @@ ier response-time-reflag timing.npz --percentile 1 --format npz --output strict.
 ier archive-consensus screening.npz timing.npz --threshold longstring=8 \
   --index-percentile irv=99 --min-valid-signals 3 \
   --format npz --output consensus.npz
+ier consensus-merge pattern-consensus.npz timing-consensus.npz \
+  --min-flags 3 --min-valid-signals 4 \
+  --format npz --output merged-consensus.npz
 ier consensus-reflag consensus.npz --min-flags 3 \
   --min-valid-signals 4 --format json
 ```
@@ -508,6 +511,12 @@ scores, and aligns timing rows by respondent ID before bounded reduction. If IDs
 are absent from both inputs, equal counts are treated as shared row order; mixed
 or mismatched identity state is rejected. It supports text, JSON, CSV, and
 reusable NPZ output without loading either source matrix.
+Independent consensus archives can be combined with `consensus-merge`. Signal
+order follows the input archives, optional score subsets retain availability,
+and caller-selected agreement and coverage rules replace the stored aggregate
+decisions. Identified inputs align every vector to the first archive's ID order;
+mixed identity state, different counts or ID sets, and duplicate signals are
+rejected. Atomic NPZ output may replace an input after all sources validate.
 Persisted consensus signals can then be reduced again with
 `consensus-reflag`. Omitted settings retain their archived values;
 `--no-min-valid-signals` explicitly removes a stored coverage minimum. The

@@ -26,6 +26,7 @@
         - flag_consensus_archives
         - load_archive
         - load_flag_consensus_archive
+        - merge_flag_consensus_archives
         - load_psychsyn_model
         - load_score_archive
         - merge_score_archives

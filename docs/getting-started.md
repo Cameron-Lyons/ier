@@ -427,6 +427,31 @@ equal counts are treated as shared row order. Mixed or mismatched identity
 metadata is rejected. Text, JSON, CSV, and reusable NPZ outputs share the same
 aligned result.
 
+Merge two or more reusable consensus archives when signal batches were prepared
+independently:
+
+```python
+from ier import merge_flag_consensus_archives
+
+merged = merge_flag_consensus_archives(
+    ["patterns.npz", "timing-signals.npz"],
+    min_flags=3,
+    min_valid_signals=4,
+)
+```
+
+```bash
+ier consensus-merge patterns.npz timing-signals.npz \
+  --min-flags 3 --min-valid-signals 4 \
+  --format npz --output merged-consensus.npz
+```
+
+Signal order follows archive order, optional score subsets retain their
+availability meaning, and aggregate decisions are recomputed with the supplied
+rules. Fully identified inputs align to the first archive's ID order. Mixed or
+mismatched identity metadata and duplicate signal names are rejected. Text,
+JSON, CSV, and reusable NPZ outputs are supported; NPZ may replace an input.
+
 Reapply only the final consensus rule from the command line:
 
 ```bash

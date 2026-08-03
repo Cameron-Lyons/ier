@@ -2083,6 +2083,93 @@ class TestCli(unittest.TestCase):
         self.assertIn("respondent ID sets must match", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
+    def test_consensus_merge_aligns_and_writes_every_output_format(self) -> None:
+        first = self.root / "first.npz"
+        second = self.root / "second.npz"
+        json_out = self.root / "merged.json"
+        csv_out = self.root / "merged.csv"
+        save_flag_consensus_archive(
+            first,
+            {
+                "pattern": [True, False, True],
+                "consistency": [False, True, False],
+            },
+            scores={"pattern": [1.0, np.nan, 1.0]},
+            min_flags=1,
+            respondent_ids=["case-a", "case-b", "case-c"],
+        )
+        save_flag_consensus_archive(
+            second,
+            {
+                "speed": [True, True, False],
+                "timing": [False, True, True],
+            },
+            scores={"speed": [0.4, 0.5, 2.0]},
+            min_flags=2,
+            respondent_ids=["case-c", "case-a", "case-b"],
+        )
+        shared = [
+            "consensus-merge",
+            str(first),
+            str(second),
+            "--min-flags",
+            "3",
+            "--min-valid-signals",
+            "4",
+        ]
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            text_code = main([*shared, "--top", "2"])
+        json_code = main([*shared, "--format", "json", "--output", str(json_out)])
+        csv_code = main([*shared, "--format", "csv", "--output", str(csv_out)])
+        replace_code = main([*shared, "--format", "npz", "--output", str(first)])
+
+        self.assertEqual([text_code, json_code, csv_code, replace_code], [0, 0, 0, 0])
+        text = stdout.getvalue()
+        self.assertIn("signals: pattern, consistency, speed, timing", text)
+        self.assertIn("consensus flagged: 1/3", text)
+        self.assertIn("consensus eligible: 2/3", text)
+        self.assertIn("case-a\t3\t4\t1", text)
+
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual(
+            payload["signal_names"],
+            ["pattern", "consistency", "speed", "timing"],
+        )
+        self.assertEqual(payload["respondent_ids"], ["case-a", "case-b", "case-c"])
+        self.assertEqual(payload["scores"]["speed"], [0.5, 2.0, 0.4])
+        self.assertEqual(payload["flags"]["speed"], [True, False, True])
+        self.assertEqual(payload["flag_counts"], [3, 2, 2])
+        self.assertEqual(payload["valid_signal_counts"], [4, 3, 4])
+        self.assertEqual(payload["consensus_flags"], [True, False, False])
+
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        self.assertEqual([row["respondent"] for row in rows], ["case-a", "case-b", "case-c"])
+        self.assertEqual([row["speed_score"] for row in rows], ["0.5", "2.0", "0.4"])
+        self.assertEqual([row["consensus_flag"] for row in rows], ["1", "0", "0"])
+
+        archived = load_flag_consensus_archive(first)
+        self.assertEqual(
+            archived["signal_names"],
+            ["pattern", "consistency", "speed", "timing"],
+        )
+        np.testing.assert_array_equal(archived["consensus_flags"], [True, False, False])
+
+    def test_consensus_merge_reports_duplicate_signals_without_traceback(self) -> None:
+        first = self.root / "first.npz"
+        second = self.root / "second.npz"
+        save_flag_consensus_archive(first, {"pattern": [True, False]})
+        save_flag_consensus_archive(second, {"pattern": [False, True]})
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            code = main(["consensus-merge", str(first), str(second)])
+
+        self.assertEqual(code, 1)
+        self.assertIn("duplicate consensus signal", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_consensus_reflag_preserves_inputs_across_formats_and_in_place(self) -> None:
         archive = self.root / "consensus.npz"
         json_out = self.root / "reflagged.json"
