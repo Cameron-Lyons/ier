@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import warnings
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -25,6 +26,66 @@ if TYPE_CHECKING:
 _LOG_TWO_PI = math.log(2.0 * math.pi)
 _MIN_COMPONENT_MASS = 1e-10
 _MIN_VARIANCE = 1e-10
+
+
+def _readonly_model_vector(values: np.ndarray, name: str) -> np.ndarray:
+    """Return a validated, independently owned mixture-model vector."""
+    try:
+        vector = np.asarray(values, dtype=float)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be a numeric one-dimensional array") from error
+    if vector.ndim != 1:
+        raise ValueError(f"{name} must be a one-dimensional array")
+    if not np.all(np.isfinite(vector)):
+        raise ValueError(f"{name} must contain only finite values")
+    result = np.array(vector, dtype=float, copy=True)
+    result.setflags(write=False)
+    return result
+
+
+@dataclass(frozen=True, eq=False)
+class ResponseTimeMixtureModel:
+    """Reusable Gaussian-mixture calibration for response-time scoring.
+
+    Arrays are copied and made read-only during construction so a fitted model
+    can be shared safely across repeated scoring calls.
+    """
+
+    weights: np.ndarray
+    means: np.ndarray
+    variances: np.ndarray
+    log_transform: bool = True
+
+    def __post_init__(self) -> None:
+        weights = _readonly_model_vector(self.weights, "weights")
+        means = _readonly_model_vector(self.means, "means")
+        variances = _readonly_model_vector(self.variances, "variances")
+        if len(weights) < 2:
+            raise ValueError("a response-time mixture model requires at least two components")
+        if len(means) != len(weights) or len(variances) != len(weights):
+            raise ValueError("weights, means, and variances must have the same length")
+        if np.any(weights <= 0.0):
+            raise ValueError("weights must be positive")
+        if not math.isclose(float(np.sum(weights)), 1.0, rel_tol=1e-9, abs_tol=1e-12):
+            raise ValueError("weights must sum to one")
+        if np.any(variances <= 0.0):
+            raise ValueError("variances must be positive")
+        if not isinstance(self.log_transform, bool):
+            raise ValueError("log_transform must be a boolean")
+
+        object.__setattr__(self, "weights", weights)
+        object.__setattr__(self, "means", means)
+        object.__setattr__(self, "variances", variances)
+
+    @property
+    def n_components(self) -> int:
+        """Number of calibrated mixture components."""
+        return len(self.weights)
+
+    @property
+    def fast_component(self) -> int:
+        """Position of the component with the lowest calibrated mean."""
+        return int(np.argmin(self.means))
 
 
 def response_time(
@@ -183,6 +244,108 @@ def response_time_consistency(
     return cv
 
 
+def _validate_n_components(n_components: int) -> int:
+    """Return a validated Gaussian-mixture component count."""
+    if isinstance(n_components, bool) or not isinstance(n_components, int):
+        raise ValueError("n_components must be an integer")
+    if n_components < 2:
+        raise ValueError("n_components must be at least 2")
+    return n_components
+
+
+def _prepare_mixture_data(
+    times: MatrixLike,
+    *,
+    log_transform: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return medians, their validity mask, and prepared finite model values."""
+    if not isinstance(log_transform, bool):
+        raise ValueError("log_transform must be a boolean")
+    times_array = validate_matrix_input(times, min_columns=1)
+    medians = row_median(times_array, ignore_nan=True)
+    valid_mask = np.isfinite(medians) & (medians > 0)
+    data = medians[valid_mask].copy()
+    if log_transform:
+        np.log(data, out=data)
+    return medians, valid_mask, data
+
+
+def _restore_mixture_scores(
+    medians: np.ndarray,
+    valid_mask: np.ndarray,
+    scores: np.ndarray,
+) -> np.ndarray:
+    """Restore finite mixture scores to respondent order with unavailable NaNs."""
+    result = np.full(len(medians), np.nan)
+    result[valid_mask] = scores
+    return result
+
+
+def fit_response_time_mixture(
+    times: MatrixLike,
+    n_components: int = 2,
+    log_transform: bool = True,
+    random_seed: int | None = None,
+) -> ResponseTimeMixtureModel:
+    """Fit a reusable Gaussian-mixture calibration to response-time medians.
+
+    The returned model can score later cohorts with
+    :func:`response_time_mixture_scores` without repeating EM fitting. This is
+    useful for applying a fixed reference-cohort calibration and for high-volume
+    workflows that score multiple batches.
+
+    Parameters:
+    - times: Reference response-time matrix with respondents in rows.
+    - n_components: Number of Gaussian mixture components.
+    - log_transform: Whether to fit on log median response times.
+    - random_seed: Optional seed for reproducible EM initialization.
+
+    Returns:
+    - An immutable response-time mixture model.
+    """
+    n_components = _validate_n_components(n_components)
+    _, _, data = _prepare_mixture_data(times, log_transform=log_transform)
+    if len(data) < n_components:
+        raise ValueError(
+            f"insufficient valid observations ({len(data)}) for {n_components} components"
+        )
+    return _fit_gaussian_mixture_model(
+        data,
+        n_components,
+        np.random.default_rng(random_seed),
+        log_transform=log_transform,
+    )
+
+
+def response_time_mixture_scores(
+    times: MatrixLike,
+    model: ResponseTimeMixtureModel,
+) -> np.ndarray:
+    """Score response times against a fitted Gaussian-mixture calibration.
+
+    Per-person medians receive the posterior probability of membership in the
+    model's fastest component. Non-finite and non-positive medians remain
+    unavailable as ``NaN``. Unlike :func:`response_time_mixture`, this function
+    never refits the mixture and can score cohorts smaller than the component
+    count.
+
+    Parameters:
+    - times: Response-time matrix to score.
+    - model: Calibration returned by :func:`fit_response_time_mixture`.
+
+    Returns:
+    - Fast-component posterior probability for each respondent.
+    """
+    if not isinstance(model, ResponseTimeMixtureModel):
+        raise TypeError("model must be a ResponseTimeMixtureModel")
+    medians, valid_mask, data = _prepare_mixture_data(
+        times,
+        log_transform=model.log_transform,
+    )
+    scores = _score_gaussian_mixture_data(data, model)
+    return _restore_mixture_scores(medians, valid_mask, scores)
+
+
 def response_time_mixture(
     times: MatrixLike,
     n_components: int = 2,
@@ -195,7 +358,9 @@ def response_time_mixture(
 
     Computes per-person median response time, optionally log-transforms,
     then fits a k-component Gaussian mixture via EM. The component with
-    the lowest mean is identified as the "fast" (careless) component.
+    the lowest mean is identified as the "fast" (careless) component. Use
+    :func:`fit_response_time_mixture` and :func:`response_time_mixture_scores`
+    when one calibration should be reused across later cohorts or batches.
 
     Parameters:
     - times: A matrix of response times where rows are individuals and columns
@@ -216,33 +381,23 @@ def response_time_mixture(
         >>> times = [[5.0, 6.0, 4.0], [0.5, 0.6, 0.4], [4.5, 5.5, 5.0]]
         >>> probs = response_time_mixture(times, random_seed=42)
     """
-    if n_components < 2:
-        raise ValueError("n_components must be at least 2")
-
-    times_array = validate_matrix_input(times, min_columns=1)
-
-    medians = row_median(times_array, ignore_nan=True)
-
-    valid_mask = np.isfinite(medians) & (medians > 0)
-    if np.sum(valid_mask) < n_components:
+    n_components = _validate_n_components(n_components)
+    medians, valid_mask, data = _prepare_mixture_data(
+        times,
+        log_transform=log_transform,
+    )
+    if len(data) < n_components:
         raise ValueError(
-            f"insufficient valid observations ({int(np.sum(valid_mask))}) "
-            f"for {n_components} components"
+            f"insufficient valid observations ({len(data)}) for {n_components} components"
         )
-
-    data = medians[valid_mask].copy()
-
-    if log_transform:
-        data = np.log(data)
-
-    rng = np.random.default_rng(random_seed)
-
-    posteriors_valid = _em_gaussian_mixture(data, n_components, rng)
-
-    result = np.full(len(medians), np.nan)
-    result[valid_mask] = posteriors_valid
-
-    return result
+    model = _fit_gaussian_mixture_model(
+        data,
+        n_components,
+        np.random.default_rng(random_seed),
+        log_transform=log_transform,
+    )
+    scores = _score_gaussian_mixture_data(data, model)
+    return _restore_mixture_scores(medians, valid_mask, scores)
 
 
 def _em_gaussian_mixture(
@@ -253,6 +408,27 @@ def _em_gaussian_mixture(
     tol: float = 1e-6,
 ) -> np.ndarray:
     """Fit k-component Gaussian mixture via EM; return posterior P(fast component)."""
+    model = _fit_gaussian_mixture_model(
+        data,
+        k,
+        rng,
+        log_transform=False,
+        max_iter=max_iter,
+        tol=tol,
+    )
+    return _score_gaussian_mixture_data(data, model)
+
+
+def _fit_gaussian_mixture_model(
+    data: np.ndarray,
+    k: int,
+    rng: np.random.Generator,
+    *,
+    log_transform: bool,
+    max_iter: int = 100,
+    tol: float = 1e-6,
+) -> ResponseTimeMixtureModel:
+    """Fit Gaussian-mixture parameters to prepared one-dimensional data."""
     n = len(data)
 
     sorted_data = np.sort(data)
@@ -286,11 +462,32 @@ def _em_gaussian_mixture(
             break
         prev_ll = ll
 
-    _mixture_expectation(data, weights, means, variances, resp, scratch)
+    return ResponseTimeMixtureModel(
+        weights=weights,
+        means=means,
+        variances=variances,
+        log_transform=log_transform,
+    )
 
-    fast_component = int(np.argmin(means))
-    result: np.ndarray = resp[:, fast_component]
-    return result
+
+def _score_gaussian_mixture_data(
+    data: np.ndarray,
+    model: ResponseTimeMixtureModel,
+) -> np.ndarray:
+    """Return fast-component posteriors for prepared finite model values."""
+    if len(data) == 0:
+        return np.empty(0)
+    responsibilities = np.empty((len(data), model.n_components))
+    scratch = np.empty(len(data))
+    _mixture_expectation(
+        data,
+        model.weights,
+        model.means,
+        model.variances,
+        responsibilities,
+        scratch,
+    )
+    return responsibilities[:, model.fast_component].copy()
 
 
 def _mixture_expectation(

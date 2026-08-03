@@ -19,11 +19,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ier import (
+    fit_response_time_mixture,
     load_response_time_archive,
     response_time,
     response_time_consistency,
     response_time_flag,
     response_time_mixture,
+    response_time_mixture_scores,
     response_time_score_flags,
     save_response_time_archive,
 )
@@ -149,6 +151,24 @@ def main() -> None:
         warmup=args.warmup,
         probability=True,
     )
+    mixture_model = fit_response_time_mixture(
+        timings,
+        n_components=args.components,
+        random_seed=args.seed,
+    )
+    calibrated_scores = response_time_mixture_scores(timings, mixture_model)
+    direct_scores = response_time_mixture(
+        timings,
+        n_components=args.components,
+        random_seed=args.seed,
+    )
+    np.testing.assert_array_equal(calibrated_scores, direct_scores)
+    calibrated_seconds, calibrated_peak = _measure(
+        lambda: response_time_mixture_scores(timings, mixture_model),
+        repeats=args.repeats,
+        warmup=args.warmup,
+        probability=True,
+    )
     full_sensitivity_seconds, full_sensitivity_peak = _measure(
         full_sensitivity,
         repeats=args.repeats,
@@ -199,6 +219,11 @@ def main() -> None:
         print(f"{name}: median={seconds:.4f}s peak={peak:.1f} MiB")
     print(f"EM core: median={core_seconds:.4f}s peak={core_peak:.1f} MiB")
     print(f"public workflow: median={workflow_seconds:.4f}s peak={workflow_peak:.1f} MiB")
+    print(
+        f"calibrated scoring: median={calibrated_seconds:.4f}s "
+        f"peak={calibrated_peak:.1f} MiB "
+        f"speedup={workflow_seconds / calibrated_seconds:.1f}x"
+    )
     print(
         f"five full cutoff scenarios: median={full_sensitivity_seconds:.4f}s "
         f"peak={full_sensitivity_peak:.1f} MiB"

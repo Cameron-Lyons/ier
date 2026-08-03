@@ -202,6 +202,10 @@ composite registry so they are not mixed into item-response pipelines by
 accident. Gaussian-mixture fitting reuses responsibility and scratch buffers
 throughout EM. Its expectation step follows a fast probability-space path for
 ordinary observations and normalizes only underflowed rows in log space.
+`fit_response_time_mixture()` exposes the fitted weights, means, and variances as
+an immutable calibration, while `response_time_mixture_scores()` applies those
+parameters to later cohorts with one expectation step. Returned posterior vectors
+own their one-dimensional storage rather than retaining the responsibility matrix.
 Retained summary vectors and mixture probabilities pass through the same shared
 single-vector validation and threshold boundary, so cutoff sensitivity analysis
 does not recalculate row summaries or refit EM. The archive reflag CLI loads that
@@ -304,8 +308,8 @@ Plotting remains optional and reports a centralized install hint from
 - Longest-run and repeating-pattern throughput and memory: `benchmarks/bench_longstring.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
-- Response-time mixture EM, scoring, in-memory cutoff reuse, and archive-backed
-  CLI cutoff reuse:
+- Response-time mixture EM, reusable calibrated scoring, in-memory cutoff reuse,
+  and archive-backed CLI cutoff reuse:
   `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - In-memory and archive-backed composite sensitivity analysis:

@@ -124,11 +124,15 @@ flags in your analysis code if needed.
 | `response_time_consistency` | RT coefficient of variation | low (too uniform) |
 | `response_time_flag` | Percentile / threshold flagging | low |
 | `response_time_mixture` | Stable mixture P(fast component) | high |
+| `fit_response_time_mixture` | Reusable reference-cohort mixture calibration | — |
+| `response_time_mixture_scores` | Apply fixed mixture calibration | high |
 | `response_time_score_flags` | Reflag retained direct or mixture scores | low or high |
 
 Median summaries and mixture preprocessing remove missing observations within
 bounded equal-length row groups before median selection. This keeps large timing
 matrices allocation-bounded while preserving each respondent's observation order.
+Fitted mixture models copy their small parameter vectors into read-only storage;
+later cohorts can reuse the same calibration without repeating EM.
 
 ## Plot helpers
 

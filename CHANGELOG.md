@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.55] - 2026-08-03
+
+### Added
+
+- `fit_response_time_mixture()` now produces a reusable, read-only
+  `ResponseTimeMixtureModel`, and `response_time_mixture_scores()` applies that
+  fixed calibration to later cohorts without repeating EM. Existing
+  `response_time_mixture()` behavior is unchanged, scoring supports batches
+  smaller than the calibrated component count, returned posterior vectors no
+  longer retain the full responsibility matrix, and no dependency is added.
+
 ## [2.19.54] - 2026-08-03
 
 ### Added
