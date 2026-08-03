@@ -44,10 +44,9 @@ def resolve_threshold(
     if validated_threshold is not None:
         return validated_threshold
 
-    valid_scores = scores[~np.isnan(scores)]
-    return (
-        0.0 if len(valid_scores) == 0 else float(np.percentile(valid_scores, validated_percentile))
-    )
+    if np.isnan(scores).all():
+        return 0.0
+    return float(np.nanpercentile(scores, validated_percentile))
 
 
 def threshold_flags(
@@ -62,13 +61,6 @@ def threshold_flags(
         inclusive = threshold is not None
     cutoff = resolve_threshold(scores, threshold, percentile)
 
-    flags = np.zeros(len(scores), dtype=bool)
-    valid_mask = ~np.isnan(scores)
-    valid_values = scores[valid_mask]
-
     if direction == "high":
-        flags[valid_mask] = valid_values >= cutoff if inclusive else valid_values > cutoff
-    else:
-        flags[valid_mask] = valid_values <= cutoff if inclusive else valid_values < cutoff
-
-    return flags
+        return scores >= cutoff if inclusive else scores > cutoff
+    return scores <= cutoff if inclusive else scores < cutoff

@@ -73,6 +73,32 @@ class TestFlaggingValidation(unittest.TestCase):
             [True, False, False, False],
         )
 
+    def test_percentile_threshold_matches_filtered_reference(self) -> None:
+        rng = np.random.default_rng(20260803)
+        scores = rng.normal(size=257)
+        scores[rng.random(scores.size) < 0.2] = np.nan
+        valid_scores = scores[~np.isnan(scores)]
+
+        for percentile in [0.0, 1.0, 50.0, 95.0, 100.0]:
+            with self.subTest(percentile=percentile):
+                self.assertEqual(
+                    resolve_threshold(scores, threshold=None, percentile=percentile),
+                    float(np.percentile(valid_scores, percentile)),
+                )
+
+    def test_explicit_inclusive_override_is_preserved(self) -> None:
+        scores = np.array([1.0, 2.0, 3.0, np.nan])
+        np.testing.assert_array_equal(
+            threshold_flags(
+                scores,
+                threshold=2.0,
+                percentile=50.0,
+                direction="high",
+                inclusive=False,
+            ),
+            [False, False, True, False],
+        )
+
     def test_public_flaggers_follow_shared_cutoff_boundaries(self) -> None:
         scores = np.array([1.0, 2.0, 3.0, np.nan])
         high_calls = [
