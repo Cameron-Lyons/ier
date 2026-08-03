@@ -16,7 +16,6 @@ _GAMMA_EPSILON = 1e-14
 _GAMMA_MAX_ITERATIONS = 10_000
 _CONTINUED_FRACTION_FLOOR = 1e-300
 _QUANTILE_MAX_ITERATIONS = 128
-_SQRT_TWO_PI = math.sqrt(2.0 * math.pi)
 
 
 def normal_quantile(probability: float) -> float:
@@ -28,21 +27,6 @@ def normal_quantile(probability: float) -> float:
     if probability == 1.0:
         return math.inf
     return NormalDist().inv_cdf(probability)
-
-
-def normal_pdf(
-    values: np.ndarray,
-    *,
-    loc: float | np.ndarray = 0.0,
-    scale: float | np.ndarray = 1.0,
-) -> np.ndarray:
-    """Evaluate normal densities with NumPy broadcasting."""
-    scale_array = np.asarray(scale, dtype=float)
-    if np.any(scale_array <= 0.0):
-        raise ValueError("scale must be positive")
-    standardized = (values - loc) / scale_array
-    result: np.ndarray = np.exp(-0.5 * standardized**2) / (scale_array * _SQRT_TWO_PI)
-    return result
 
 
 def logistic_transform(values: np.ndarray) -> np.ndarray:

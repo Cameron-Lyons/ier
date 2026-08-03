@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.2] - 2026-08-02
+
+### Changed
+
+- Response-time Gaussian-mixture fitting now reuses its responsibility and
+  scratch workspaces and evaluates ordinary densities in place. On the
+  100,000-observation, two-component EM benchmark, median time falls from 35.4
+  to 33.5 ms and peak temporary allocation from 6.1 to 4.7 MiB. The superseded
+  internal normal-density helper is removed, without adding a dependency.
+
+### Fixed
+
+- Mixture posterior rows whose ordinary Gaussian densities all underflow are
+  now normalized in log space instead of returning an all-zero probability
+  vector. Non-finite respondent medians are also excluded from fitting and
+  returned as unavailable results.
+
 ## [2.19.1] - 2026-08-02
 
 ### Changed

@@ -9,7 +9,6 @@ from ier._statistics import (
     chi_square_quantile,
     chi_square_quantiles,
     logistic_transform,
-    normal_pdf,
     normal_quantile,
 )
 
@@ -61,19 +60,6 @@ class TestNormalDistribution(unittest.TestCase):
         for invalid in (-0.1, 1.1, math.nan, math.inf):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 normal_quantile(invalid)
-
-    def test_pdf_matches_reference_values_and_broadcasts(self) -> None:
-        values = np.array([-1.0, 0.0, 1.0])
-        actual = normal_pdf(values, loc=np.array([0.0, 0.0, 0.0]), scale=1.0)
-        expected = [0.24197072451914337, 0.3989422804014327, 0.24197072451914337]
-        np.testing.assert_allclose(actual, expected, rtol=1e-15)
-
-        shifted = normal_pdf(np.array([1.0, 3.0]), loc=1.0, scale=np.array([1.0, 2.0]))
-        np.testing.assert_allclose(shifted, [expected[1], expected[2] / 2.0], rtol=1e-15)
-
-    def test_pdf_rejects_non_positive_scale(self) -> None:
-        with self.assertRaises(ValueError):
-            normal_pdf(np.array([0.0]), scale=0.0)
 
 
 class TestChiSquareQuantile(unittest.TestCase):

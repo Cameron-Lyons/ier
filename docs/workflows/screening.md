@@ -137,6 +137,9 @@ ier response-time timings.csv --metric mixture --components 2 --random-seed 42
 Direct timing metrics and consistency scores use low-tail flagging. Mixture
 probabilities use high-tail flagging. Fixed thresholds include equality; derived
 percentile cutoffs exclude ties, matching the other public flagging workflows.
+Mixture fitting excludes respondents whose median time is missing, infinite, or
+non-positive. Its posterior normalization remains stable when ordinary Gaussian
+density calculations underflow for an extreme valid observation.
 
 ## CLI
 

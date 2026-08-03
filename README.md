@@ -235,6 +235,7 @@ Benchmarks:
 ```bash
 uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_lz.py
+uv run python benchmarks/bench_response_time.py
 uv run python benchmarks/bench_orchestration.py
 uv run python benchmarks/bench_cli_output.py
 uv run python benchmarks/bench_detection.py
