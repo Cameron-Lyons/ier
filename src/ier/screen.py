@@ -5,9 +5,11 @@ Provides a single entry point for computing all available IER indices,
 flagging suspected careless responders, and summarizing results.
 """
 
+from collections.abc import Mapping
+
 import numpy as np
 
-from ier._flagging import threshold_flags
+from ier._flagging import resolve_threshold, threshold_flags
 from ier._registry import (
     INDEX_REGISTRY,
     IndexOptions,
@@ -20,6 +22,33 @@ from ier._validation import MatrixLike, validate_matrix_input
 from ier.types import ScreenIndexSummary, ScreenResult
 
 
+def _resolve_screen_thresholds(
+    thresholds: Mapping[str, float] | None,
+    indices: list[str],
+) -> dict[str, float]:
+    if thresholds is None:
+        return {}
+
+    resolved: dict[str, float] = {}
+    for name, value in thresholds.items():
+        if name not in INDEX_REGISTRY:
+            raise ValueError(f"unknown threshold index: {name}")
+        if name not in indices:
+            raise ValueError(f"threshold index is not selected: {name}")
+        if INDEX_REGISTRY[name].flag_mode != "percentile":
+            raise ValueError(f"{name} uses presence flagging and does not accept a threshold")
+        if isinstance(value, bool):
+            raise ValueError(f"threshold for {name} must be a finite number")
+        try:
+            cutoff = float(value)
+        except (TypeError, ValueError) as err:
+            raise ValueError(f"threshold for {name} must be a finite number") from err
+        if not np.isfinite(cutoff):
+            raise ValueError(f"threshold for {name} must be a finite number")
+        resolved[name] = cutoff
+    return resolved
+
+
 def screen(
     x: MatrixLike,
     indices: list[str] | None = None,
@@ -27,11 +56,12 @@ def screen(
     options: IndexOptions | None = None,
     percentile: float = 95.0,
     min_flags: int = 2,
+    thresholds: Mapping[str, float] | None = None,
 ) -> ScreenResult:
     """
     Screen respondents across multiple IER detection indices.
 
-    Computes each requested index, flags outliers using percentile-based
+    Computes each requested index, flags outliers using fixed or percentile-based
     thresholds (or presence detection for onset), and returns structured results.
 
     Configure indices with a single ``IndexOptions`` via ``options=``.
@@ -52,11 +82,14 @@ def screen(
     - percentile: Percentile cutoff for flagging (default 95th).
     - min_flags: Minimum number of per-index flags required for a respondent-level
                  consensus flag (default 2).
+    - thresholds: Optional fixed per-index cutoffs. Scores at or beyond a fixed
+                  cutoff are flagged; indices without an override use percentiles.
 
     Returns:
     - Dictionary with:
         - "scores": dict mapping index name to score array
         - "flags": dict mapping index name to boolean flag array
+        - "thresholds": actual per-index cutoffs (None for presence flagging)
         - "flag_counts": array of total flags per respondent
         - "consensus_flags": respondent-level flags meeting ``min_flags``
         - "min_flags": configured consensus threshold
@@ -67,7 +100,7 @@ def screen(
         - "summary": dict mapping index name to summary statistics
 
     Raises:
-    - ValueError: If invalid index names are specified.
+    - ValueError: If index names, fixed thresholds, or consensus settings are invalid.
 
     Example:
         >>> from ier import IndexOptions, screen
@@ -79,6 +112,14 @@ def screen(
     """
     if isinstance(min_flags, bool) or not isinstance(min_flags, int) or min_flags < 1:
         raise ValueError("min_flags must be a positive integer")
+    if isinstance(percentile, bool):
+        raise ValueError("percentile must be a finite number between 0 and 100")
+    try:
+        percentile = float(percentile)
+    except (TypeError, ValueError) as err:
+        raise ValueError("percentile must be a finite number between 0 and 100") from err
+    if not np.isfinite(percentile) or not 0.0 <= percentile <= 100.0:
+        raise ValueError("percentile must be a finite number between 0 and 100")
 
     x_array = validate_matrix_input(x, check_type=False)
     n_respondents = x_array.shape[0]
@@ -88,27 +129,34 @@ def screen(
     else:
         validate_index_names(indices)
 
+    fixed_thresholds = _resolve_screen_thresholds(thresholds, indices)
     resolved = resolve_index_options(options)
     scores, errors = score_registered_indices(x_array, indices, resolved)
 
     flags: dict[str, np.ndarray] = {}
+    applied_thresholds: dict[str, float | None] = {}
     for name, score_arr in scores.items():
         spec = INDEX_REGISTRY[name]
         if spec.flag_mode == "present":
             flags[name] = ~np.isnan(score_arr)
+            applied_thresholds[name] = None
             continue
 
-        if spec.flag_direction == "high":
-            flags[name] = threshold_flags(
-                score_arr, threshold=None, percentile=percentile, direction="high"
-            )
-        else:
-            flags[name] = threshold_flags(
-                score_arr,
-                threshold=None,
-                percentile=100.0 - percentile,
-                direction="low",
-            )
+        flag_percentile = percentile if spec.flag_direction == "high" else 100.0 - percentile
+        explicit = name in fixed_thresholds
+        cutoff = resolve_threshold(
+            score_arr,
+            fixed_thresholds[name] if explicit else None,
+            flag_percentile,
+        )
+        flags[name] = threshold_flags(
+            score_arr,
+            threshold=cutoff,
+            percentile=flag_percentile,
+            direction=spec.flag_direction,
+            inclusive=explicit,
+        )
+        applied_thresholds[name] = cutoff
 
     flag_matrix = (
         np.column_stack(list(flags.values())) if flags else np.zeros((n_respondents, 0), dtype=bool)
@@ -139,6 +187,7 @@ def screen(
     return {
         "scores": scores,
         "flags": flags,
+        "thresholds": applied_thresholds,
         "flag_counts": flag_counts,
         "consensus_flags": consensus_flags,
         "min_flags": min_flags,

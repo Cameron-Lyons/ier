@@ -124,6 +124,28 @@ def _parse_pair_list(raw: str | None) -> list[tuple[int, int]] | None:
     return pairs or None
 
 
+def _parse_thresholds(raw: list[str] | None) -> dict[str, float] | None:
+    if raw is None:
+        return None
+
+    thresholds: dict[str, float] = {}
+    for entry in raw:
+        name, separator, value = entry.partition("=")
+        name = name.strip()
+        if not separator or not name or not value.strip():
+            raise ValueError(f"invalid threshold '{entry}'; expected INDEX=VALUE")
+        if name in thresholds:
+            raise ValueError(f"duplicate threshold for index: {name}")
+        try:
+            cutoff = float(value)
+        except ValueError as err:
+            raise ValueError(f"invalid threshold value for {name}: {value.strip()}") from err
+        if not np.isfinite(cutoff):
+            raise ValueError(f"threshold for {name} must be a finite number")
+        thresholds[name] = cutoff
+    return thresholds
+
+
 def _options_from_args(args: argparse.Namespace) -> IndexOptions:
     return IndexOptions(
         na_rm=args.na_rm,
@@ -241,6 +263,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     screen_parser.add_argument("--percentile", type=float, default=95.0)
     screen_parser.add_argument(
+        "--threshold",
+        action="append",
+        default=None,
+        metavar="INDEX=VALUE",
+        help="Fixed per-index cutoff; repeat for multiple indices",
+    )
+    screen_parser.add_argument(
         "--min-flags",
         type=int,
         default=2,
@@ -295,6 +324,11 @@ def _emit_screen_text(result: ScreenResult, top: int) -> str:
             f"consensus flagged: {int(np.sum(result['consensus_flags']))} "
             f"(min_flags={result['min_flags']})"
         ),
+        "flag thresholds: "
+        + ", ".join(
+            f"{name}={'presence' if cutoff is None else f'{cutoff:g}'}"
+            for name, cutoff in result["thresholds"].items()
+        ),
     ]
     if result["errors"]:
         lines.append("errors:")
@@ -324,6 +358,7 @@ def _emit_screen_json(result: ScreenResult) -> str:
         "n_indices": result["n_indices"],
         "indices_used": result["indices_used"],
         "errors": result["errors"],
+        "thresholds": result["thresholds"],
         "flag_counts": np.asarray(result["flag_counts"]).tolist(),
         "consensus_flags": np.asarray(result["consensus_flags"]).astype(bool).tolist(),
         "min_flags": result["min_flags"],
@@ -405,6 +440,7 @@ def _run_command(args: argparse.Namespace) -> int:
             options=options,
             percentile=args.percentile,
             min_flags=args.min_flags,
+            thresholds=_parse_thresholds(args.threshold),
         )
         if args.format == "json":
             text = _emit_screen_json(result)

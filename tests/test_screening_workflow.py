@@ -119,6 +119,7 @@ class TestScreen(unittest.TestCase):
         result = screen(self.data)
         self.assertIn("scores", result)
         self.assertIn("flags", result)
+        self.assertIn("thresholds", result)
         self.assertIn("flag_counts", result)
         self.assertIn("consensus_flags", result)
         self.assertIn("min_flags", result)
@@ -156,6 +157,68 @@ class TestScreen(unittest.TestCase):
             result["consensus_flags"],
             result["flag_counts"] >= 1,
         )
+
+    def test_fixed_thresholds_are_inclusive_and_direction_aware(self) -> None:
+        baseline = screen(self.data, indices=["irv", "longstring"])
+        thresholds = {
+            "irv": float(baseline["scores"]["irv"][1]),
+            "longstring": float(baseline["scores"]["longstring"][1]),
+        }
+
+        result = screen(
+            self.data,
+            indices=["irv", "longstring"],
+            thresholds=thresholds,
+        )
+
+        self.assertEqual(result["thresholds"], thresholds)
+        np.testing.assert_array_equal(
+            result["flags"]["irv"],
+            result["scores"]["irv"] <= thresholds["irv"],
+        )
+        np.testing.assert_array_equal(
+            result["flags"]["longstring"],
+            result["scores"]["longstring"] >= thresholds["longstring"],
+        )
+        self.assertTrue(result["flags"]["irv"][1])
+        self.assertTrue(result["flags"]["longstring"][1])
+
+    def test_percentile_thresholds_are_returned(self) -> None:
+        result = screen(self.data, indices=["irv", "longstring"])
+
+        self.assertAlmostEqual(
+            result["thresholds"]["irv"],
+            float(np.percentile(result["scores"]["irv"], 5)),
+        )
+        self.assertAlmostEqual(
+            result["thresholds"]["longstring"],
+            float(np.percentile(result["scores"]["longstring"], 95)),
+        )
+
+    def test_invalid_percentile_raises_with_fixed_thresholds(self) -> None:
+        for percentile in [-1, 101, float("nan"), True]:
+            with (
+                self.subTest(percentile=percentile),
+                self.assertRaisesRegex(ValueError, "percentile"),
+            ):
+                screen(
+                    self.data,
+                    indices=["irv"],
+                    thresholds={"irv": 0.5},
+                    percentile=percentile,
+                )
+
+    def test_invalid_fixed_thresholds_raise(self) -> None:
+        cases = [
+            ({"nonexistent": 1.0}, ["irv"], "unknown threshold index"),
+            ({"longstring": 1.0}, ["irv"], "not selected"),
+            ({"onset": 1.0}, ["onset"], "presence flagging"),
+            ({"irv": float("nan")}, ["irv"], "finite number"),
+            ({"irv": True}, ["irv"], "finite number"),
+        ]
+        for thresholds, indices, message in cases:
+            with self.subTest(thresholds=thresholds), self.assertRaisesRegex(ValueError, message):
+                screen(self.data, indices=indices, thresholds=thresholds)
 
     def test_invalid_consensus_threshold_raises(self) -> None:
         for value in [0, -1, 1.5, True]:

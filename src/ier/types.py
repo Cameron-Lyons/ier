@@ -12,6 +12,7 @@ IntArray: TypeAlias = npt.NDArray[np.int_]
 IndexScoreMap: TypeAlias = dict[str, FloatArray]
 IndexFlagMap: TypeAlias = dict[str, BoolArray]
 IndexErrorMap: TypeAlias = dict[str, str]
+IndexThresholdMap: TypeAlias = dict[str, float | None]
 
 CompositeMethod: TypeAlias = Literal["mean", "sum", "max", "best_subset"]
 
@@ -31,6 +32,7 @@ class ScreenResult(TypedDict):
 
     scores: IndexScoreMap
     flags: IndexFlagMap
+    thresholds: IndexThresholdMap
     flag_counts: IntArray
     consensus_flags: BoolArray
     min_flags: int

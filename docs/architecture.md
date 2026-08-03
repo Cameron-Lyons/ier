@@ -43,10 +43,12 @@ index module directly (e.g. `mahad(x, method="iqr")`).
 | Mode | Typical indices | Rule |
 |------|-----------------|------|
 | Low / high percentile | IRV, longstring, mahad, … | Extreme tail relative to the sample |
+| Fixed low / high threshold | Any percentile-mode index | At or beyond a validated cutoff |
 | Presence | `onset` | Any detected changepoint is flagged |
 
-Threshold defaults are **sample-relative heuristics**, not calibrated
-diagnostic cutoffs. See [Threshold Guidance](thresholds.md).
+Percentile defaults are **sample-relative heuristics**, not calibrated
+diagnostic cutoffs. `screen(thresholds=...)` accepts fixed cutoffs when a survey
+or validation study provides them. See [Threshold Guidance](thresholds.md).
 
 ## Missing data
 

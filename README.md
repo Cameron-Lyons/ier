@@ -11,6 +11,7 @@ For a comprehensive methods review, see
 - Multiple detection families: consistency, response patterns, response styles, outliers, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Configurable multi-index consensus decisions for respondent-level screening
+- Fixed or sample-relative per-index screening thresholds
 - CLI: `ier screen data.csv` / `ier composite data.csv` (text / JSON / CSV)
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Soft per-index errors during screening and composite scoring
@@ -62,6 +63,7 @@ print("Composite:", scores)
 ```bash
 ier screen data.csv --scale-min 1 --scale-max 5
 ier screen data.csv --format json --output screen.json
+ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier composite data.csv --indices irv longstring
 ier composite data.csv --format csv --output scores.csv
 ier --version
