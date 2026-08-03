@@ -58,6 +58,17 @@ def _validate_composite_request(
     return combine_method
 
 
+def _standardize_index_scores(scores: np.ndarray) -> np.ndarray:
+    """Return z-scores while retaining established sparse and constant behavior."""
+    valid_mask = ~np.isnan(scores)
+    if np.sum(valid_mask) <= 1:
+        return scores
+
+    mean_val = np.nanmean(scores)
+    std_val = np.nanstd(scores)
+    return (scores - mean_val) / std_val if std_val > 0 else np.zeros_like(scores)
+
+
 def _combine_scores(
     index_scores: dict[str, np.ndarray],
     diagnostics: dict[str, str],
@@ -67,36 +78,35 @@ def _combine_scores(
     if len(index_scores) == 0:
         failed = "; ".join(f"{name}: {msg}" for name, msg in sorted(diagnostics.items()))
         raise ValueError(f"no valid indices could be computed from the data. failures: {failed}")
+    if method not in {"mean", "sum", "max"}:
+        raise ValueError("method must be 'mean', 'sum', or 'max'")
 
-    if standardize:
-        standardized_scores = {}
-        for name, scores in index_scores.items():
-            valid_mask = ~np.isnan(scores)
-            if np.sum(valid_mask) > 1:
-                mean_val = np.nanmean(scores)
-                std_val = np.nanstd(scores)
-                if std_val > 0:
-                    standardized_scores[name] = (scores - mean_val) / std_val
-                else:
-                    standardized_scores[name] = np.zeros_like(scores)
-            else:
-                standardized_scores[name] = scores
-        index_scores = standardized_scores
+    n_respondents = len(next(iter(index_scores.values())))
+    if method == "max":
+        combined = np.full(n_respondents, np.nan)
+        valid_counts = None
+    else:
+        combined = np.zeros(n_respondents, dtype=float)
+        valid_counts = np.zeros(n_respondents, dtype=np.int_) if method == "mean" else None
 
-    score_matrix = np.column_stack(list(index_scores.values()))
+    for scores in index_scores.values():
+        values = _standardize_index_scores(scores) if standardize else scores
 
-    match method:
-        case "mean":
-            mean_result: np.ndarray = np.nanmean(score_matrix, axis=1)
-            return mean_result
-        case "sum":
-            sum_result: np.ndarray = np.nansum(score_matrix, axis=1)
-            return sum_result
-        case "max":
-            max_result: np.ndarray = np.nanmax(score_matrix, axis=1)
-            return max_result
+        if method == "max":
+            np.fmax(combined, values, out=combined)
+            continue
 
-    raise ValueError("method must be 'mean', 'sum', or 'max'")
+        valid_mask = ~np.isnan(values)
+        np.add(combined, values, out=combined, where=valid_mask)
+        if valid_counts is not None:
+            valid_counts += valid_mask
+
+    if method == "mean":
+        assert valid_counts is not None
+        np.divide(combined, valid_counts, out=combined, where=valid_counts > 0)
+        combined[valid_counts == 0] = np.nan
+
+    return combined
 
 
 def composite(

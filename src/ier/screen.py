@@ -50,6 +50,14 @@ def _resolve_screen_thresholds(
     return resolved
 
 
+def _count_flags(flags: Mapping[str, np.ndarray], n_respondents: int) -> np.ndarray:
+    """Count per-respondent flags without constructing an index matrix."""
+    counts = np.zeros(n_respondents, dtype=np.int_)
+    for values in flags.values():
+        counts += values
+    return counts
+
+
 def screen(
     x: MatrixLike,
     indices: list[str] | None = None,
@@ -166,10 +174,7 @@ def screen(
         )
         applied_thresholds[name] = cutoff
 
-    flag_matrix = (
-        np.column_stack(list(flags.values())) if flags else np.zeros((n_respondents, 0), dtype=bool)
-    )
-    flag_counts: np.ndarray = np.sum(flag_matrix, axis=1)
+    flag_counts = _count_flags(flags, n_respondents)
     consensus_flags = flag_counts >= min_flags
 
     summary: dict[str, ScreenIndexSummary] = {}
