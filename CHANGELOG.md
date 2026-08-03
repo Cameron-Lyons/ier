@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-08-02
+
+### Added
+
+- The new `ier response-time` command scores timing matrices with mean, median,
+  standard-deviation, minimum, consistency, or Gaussian-mixture metrics. It
+  supports fixed or percentile flagging, named respondent and timing columns,
+  mixture configuration, and text, JSON, or CSV output without new dependencies.
+
 ## [2.8.2] - 2026-08-02
 
 ### Changed
