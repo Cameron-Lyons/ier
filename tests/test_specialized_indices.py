@@ -548,6 +548,17 @@ class TestLongstringPattern(unittest.TestCase):
         result = longstring_pattern(data, na_rm=True)
         self.assertEqual(len(result), 1)
 
+    def test_complete_matrix_fast_path_matches_row_scoring(self) -> None:
+        """Test complete matrix scoring against the missing-data row path."""
+        rng = np.random.default_rng(42)
+        data = rng.integers(1, 6, size=(200, 24)).astype(float)
+
+        result = longstring_pattern(data, max_pattern_length=8)
+        row_path_data = np.column_stack((data, np.full(data.shape[0], np.nan)))
+        row_path_result = longstring_pattern(row_path_data, max_pattern_length=8)
+
+        np.testing.assert_array_equal(result, row_path_result)
+
     def test_min_columns(self) -> None:
         """Test minimum columns validation."""
         data = [[1]]

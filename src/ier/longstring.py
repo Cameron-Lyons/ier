@@ -195,10 +195,14 @@ def longstring_pattern(
     """
     x_array = validate_matrix_input(x, min_columns=2, check_type=False)
 
-    if not na_rm and np.isnan(x_array).any():
+    has_missing = np.isnan(x_array).any()
+    if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
 
     n_rows = x_array.shape[0]
+    if not has_missing:
+        return _longest_repeating_patterns(x_array, max_pattern_length)
+
     result = np.zeros(n_rows, dtype=float)
 
     for i, row in enumerate(iter_rows(x_array, na_rm)):
@@ -237,6 +241,34 @@ def longstring_scores(
         scores[i] = float(np.max(run_lengths))
 
     return scores
+
+
+def _longest_repeating_patterns(x: np.ndarray, max_k: int) -> np.ndarray:
+    """Find longest consecutive repeating sub-patterns for complete matrix rows."""
+    n_rows, n_columns = x.shape
+    best = np.zeros(n_rows, dtype=float)
+    changes = x[:, 1:] != x[:, :-1]
+    change_prefix = np.concatenate(
+        (
+            np.zeros((n_rows, 1), dtype=np.intp),
+            np.cumsum(changes, axis=1, dtype=np.intp),
+        ),
+        axis=1,
+    )
+
+    for k in range(2, min(max_k, n_columns // 2) + 1):
+        matches = x[:, k:] == x[:, :-k]
+        positions = np.arange(matches.shape[1])
+        next_mismatch = np.minimum.accumulate(
+            np.where(~matches, positions, matches.shape[1])[:, ::-1],
+            axis=1,
+        )[:, ::-1]
+        match_lengths = next_mismatch - positions
+        nonconstant = change_prefix[:, k - 1 : n_columns - 1] != change_prefix[:, : n_columns - k]
+        candidates = np.where(nonconstant & (match_lengths > 0), k + match_lengths, 0)
+        best = np.maximum(best, np.max(candidates, axis=1))
+
+    return best
 
 
 def _longest_repeating_pattern(row: np.ndarray, max_k: int) -> float:
