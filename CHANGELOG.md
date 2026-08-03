@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.68] - 2026-08-03
+
+### Added
+
+- `PsychsynModel`, `fit_psychsyn_model()`, and `psychsyn_model_scores()` now
+  expose reusable psychometric synonym or antonym calibration at the package
+  root. Models retain the fitted item count, threshold, mode, and an owned
+  read-only pair array; fixed-model scoring enforces the item-count and column-
+  order contract, preserves diagnostics and seeded missing-response retries,
+  and never rediscovers pairs. Direct and fixed training-cohort scores are
+  identical, the maintained benchmark measures repeated scoring, shared option
+  validation rejects non-finite thresholds and non-Boolean modes, and no
+  dependency is added.
+
 ## [2.19.67] - 2026-08-03
 
 ### Changed

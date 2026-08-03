@@ -21,6 +21,7 @@ from ier.longstring import (
 )
 from ier.mahad import _compute_mahalanobis_distance, mahad
 from ier.psychsyn import (
+    PsychsynModel,
     _complete_item_normalization,
     _compute_complete_person_scores,
     _compute_person_scores,
@@ -29,10 +30,12 @@ from ier.psychsyn import (
     _iter_pairwise_item_correlation_tiles,
     _normalized_complete_item_block,
     compute_person_correlations,
+    fit_psychsyn_model,
     get_highly_correlated_pairs,
     psychant,
     psychsyn,
     psychsyn_critval,
+    psychsyn_model_scores,
 )
 
 
@@ -796,6 +799,118 @@ class TestPsychometricFunctions(unittest.TestCase):
 
         self.assertAlmostEqual(expected_next, actual_next)
 
+    def test_reusable_psychsyn_model_matches_direct_training_scores(self) -> None:
+        rng = np.random.default_rng(20260803)
+        latent = rng.normal(size=(120, 1))
+        data = latent + rng.normal(scale=0.05, size=(120, 8))
+
+        model = fit_psychsyn_model(data, critval=0.8)
+        reused_scores, reused_counts = psychsyn_model_scores(data, model, diag=True)
+        direct_scores, direct_counts, direct_pairs = psychsyn(
+            data,
+            critval=0.8,
+            diag=True,
+            _return_item_info=True,
+        )
+
+        np.testing.assert_array_equal(model.item_pairs, direct_pairs)
+        np.testing.assert_array_equal(reused_scores, direct_scores)
+        np.testing.assert_array_equal(reused_counts, direct_counts)
+        self.assertEqual(model.n_items, data.shape[1])
+        self.assertEqual(model.n_pairs, len(direct_pairs))
+        self.assertEqual(model.critval, 0.8)
+        self.assertFalse(model.anto)
+        self.assertFalse(model.item_pairs.flags.writeable)
+
+    def test_reusable_psychsyn_model_scores_later_cohort_without_discovery(self) -> None:
+        rng = np.random.default_rng(20260803)
+        latent = rng.normal(size=(80, 1))
+        reference = latent + rng.normal(scale=0.05, size=(80, 7))
+        model = fit_psychsyn_model(reference, critval=0.8)
+        later = reference[:9].copy()
+        later[0, 0] = np.nan
+
+        with patch(
+            "ier.psychsyn._discover_item_pairs",
+            side_effect=AssertionError("unexpected pair discovery"),
+        ):
+            first, first_counts = psychsyn_model_scores(
+                later,
+                model,
+                diag=True,
+                resample_na=True,
+                random_seed=11,
+            )
+            second, second_counts = psychsyn_model_scores(
+                later,
+                model,
+                diag=True,
+                resample_na=True,
+                random_seed=11,
+            )
+
+        np.testing.assert_array_equal(first, second)
+        np.testing.assert_array_equal(first_counts, second_counts)
+        self.assertEqual(len(first), len(later))
+
+    def test_reusable_antonym_model_matches_direct_scores(self) -> None:
+        rng = np.random.default_rng(20260803)
+        latent = rng.normal(size=(100, 1))
+        positive = latent + rng.normal(scale=0.05, size=(100, 3))
+        negative = -latent + rng.normal(scale=0.05, size=(100, 3))
+        data = np.column_stack((positive, negative))
+
+        model = fit_psychsyn_model(data, critval=-0.8, anto=True)
+        reused = psychsyn_model_scores(data, model)
+        direct = psychsyn(data, critval=-0.8, anto=True)
+
+        self.assertTrue(model.anto)
+        self.assertGreater(model.n_pairs, 0)
+        np.testing.assert_array_equal(reused, direct)
+
+    def test_psychsyn_model_owns_pairs_and_validates_scoring_contract(self) -> None:
+        item_pairs = np.array([[1, 0], [2, 0], [2, 1]])
+        model = PsychsynModel(item_pairs, n_items=3, critval=0.7)
+        item_pairs[0] = [2, 1]
+
+        np.testing.assert_array_equal(model.item_pairs, [[1, 0], [2, 0], [2, 1]])
+        with self.assertRaisesRegex(ValueError, "model requires 3"):
+            psychsyn_model_scores(np.ones((4, 4)), model)
+        with self.assertRaisesRegex(TypeError, "PsychsynModel"):
+            psychsyn_model_scores(self.data, object())  # type: ignore[arg-type]
+
+        invalid_models: list[tuple[dict[str, object], str]] = [
+            ({"item_pairs": np.empty((0, 2)), "n_items": 1}, "at least 2"),
+            ({"item_pairs": np.array([0, 1]), "n_items": 3}, "two-column"),
+            ({"item_pairs": np.array([[0.5, 1.0]]), "n_items": 3}, "integer"),
+            ({"item_pairs": np.array([[0, 3]]), "n_items": 3}, "outside"),
+            ({"item_pairs": np.array([[1, 1]]), "n_items": 3}, "itself"),
+            (
+                {"item_pairs": np.array([[1, 0], [0, 1]]), "n_items": 3},
+                "duplicate",
+            ),
+            (
+                {"item_pairs": np.empty((0, 2)), "n_items": 3, "critval": np.nan},
+                "finite",
+            ),
+            (
+                {"item_pairs": np.empty((0, 2)), "n_items": 3, "anto": 1},
+                "boolean",
+            ),
+        ]
+        for kwargs, message in invalid_models:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                PsychsynModel(**kwargs)  # type: ignore[arg-type]
+
+    def test_empty_psychsyn_model_retains_unavailable_scores_and_zero_counts(self) -> None:
+        model = fit_psychsyn_model(self.data, critval=1.1)
+
+        scores, counts = psychsyn_model_scores(self.data, model, diag=True)
+
+        self.assertEqual(model.n_pairs, 0)
+        self.assertTrue(np.isnan(scores).all())
+        np.testing.assert_array_equal(counts, np.zeros(len(self.data), dtype=int))
+
     def test_psychsyn_critval(self) -> None:
         """Test critical value calculation returns tuples with indices and correlations."""
         results: list[tuple[int, int, float]] = psychsyn_critval(self.data)
@@ -1134,6 +1249,10 @@ class TestPsychometricFunctions(unittest.TestCase):
             psychsyn(self.data, critval=-0.5, anto=False)
         with self.assertRaises(ValueError):
             psychsyn([[1, 2], [3, 4]], critval=0.5, anto=True)
+        with self.assertRaisesRegex(ValueError, "finite"):
+            psychsyn(self.data, critval=np.nan)
+        with self.assertRaisesRegex(ValueError, "boolean"):
+            psychsyn(self.data, anto=1)  # type: ignore[arg-type]
 
     def test_psychsyn_no_pairs_diagnostics_and_item_info(self) -> None:
         """Test no-pair branches return diagnostics and item-pair metadata."""

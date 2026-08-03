@@ -10,6 +10,7 @@ individuals respond to psychometrically similar (synonym) or opposite (antonym) 
 """
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from math import isqrt
 from typing import Literal, overload
 
@@ -22,6 +23,73 @@ from ier.types import PsychsynSummary
 
 _PSYCHSYN_BATCH_ELEMENTS = 262_144
 _PSYCHSYN_CORRELATION_BLOCK_ELEMENTS = 262_144
+
+
+def _readonly_item_pairs(values: np.ndarray, n_items: int) -> np.ndarray:
+    """Return validated, independently owned psychometric item pairs."""
+    try:
+        numeric = np.asarray(values, dtype=float)
+    except (TypeError, ValueError) as error:
+        raise ValueError("item_pairs must be a numeric two-column array") from error
+    if numeric.ndim != 2 or numeric.shape[1] != 2:
+        raise ValueError("item_pairs must be a two-column array")
+    if not np.all(np.isfinite(numeric)) or np.any(numeric != np.floor(numeric)):
+        raise ValueError("item_pairs must contain only finite integer indices")
+
+    pairs = np.asarray(numeric, dtype=np.intp)
+    if np.any((pairs < 0) | (pairs >= n_items)):
+        raise ValueError("item_pairs contains indices outside the fitted item range")
+    if np.any(pairs[:, 0] == pairs[:, 1]):
+        raise ValueError("item_pairs cannot pair an item with itself")
+    if len(pairs):
+        undirected = np.sort(pairs, axis=1)
+        if len(np.unique(undirected, axis=0)) != len(pairs):
+            raise ValueError("item_pairs cannot contain duplicate pairs")
+
+    result = np.array(pairs, dtype=np.intp, copy=True)
+    result.setflags(write=False)
+    return result
+
+
+def _validate_psychsyn_options(critval: float, anto: bool) -> float:
+    """Validate shared synonym/antonym discovery options."""
+    if not isinstance(critval, (int, float)) or isinstance(critval, bool):
+        raise ValueError("critval must be a number")
+    value = float(critval)
+    if not np.isfinite(value):
+        raise ValueError("critval must be finite")
+    if not isinstance(anto, bool):
+        raise ValueError("anto must be a boolean")
+    if anto and value > 0:
+        raise ValueError("critval should be negative for antonym analysis")
+    if not anto and value < 0:
+        raise ValueError("critval should be positive for synonym analysis")
+    return value
+
+
+@dataclass(frozen=True, eq=False)
+class PsychsynModel:
+    """Immutable item-pair calibration for psychometric scoring."""
+
+    item_pairs: np.ndarray
+    n_items: int
+    critval: float = 0.60
+    anto: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.n_items, int) or isinstance(self.n_items, bool):
+            raise ValueError("n_items must be an integer")
+        if self.n_items < 2:
+            raise ValueError("n_items must be at least 2")
+        critval = _validate_psychsyn_options(self.critval, self.anto)
+        item_pairs = _readonly_item_pairs(self.item_pairs, self.n_items)
+        object.__setattr__(self, "critval", critval)
+        object.__setattr__(self, "item_pairs", item_pairs)
+
+    @property
+    def n_pairs(self) -> int:
+        """Number of calibrated psychometric item pairs."""
+        return len(self.item_pairs)
 
 
 def _complete_item_normalization(
@@ -348,6 +416,35 @@ def _discover_item_pairs(x: np.ndarray, critval: float, anto: bool) -> np.ndarra
     return ordered_pairs
 
 
+def fit_psychsyn_model(
+    x: MatrixLike,
+    critval: float = 0.60,
+    anto: bool = False,
+) -> PsychsynModel:
+    """Discover and retain psychometric item pairs for later cohort scoring.
+
+    The fitted model records the reference matrix's item count, threshold, mode,
+    and an immutable copy of every selected pair. Later matrices must use the
+    same item count and column order.
+
+    Parameters:
+    - x: Reference response matrix used for pair discovery.
+    - critval: Correlation threshold for synonym or antonym discovery.
+    - anto: Whether to discover negatively correlated antonym pairs.
+
+    Returns:
+    - An immutable psychometric item-pair calibration.
+    """
+    x_array = validate_matrix_input(x, min_columns=2)
+    resolved_critval = _validate_psychsyn_options(critval, anto)
+    return PsychsynModel(
+        item_pairs=_discover_item_pairs(x_array, resolved_critval, anto),
+        n_items=x_array.shape[1],
+        critval=resolved_critval,
+        anto=anto,
+    )
+
+
 def get_highly_correlated_pairs(
     item_correlations: np.ndarray, critval: float, anto: bool
 ) -> np.ndarray:
@@ -395,6 +492,71 @@ def compute_person_correlations(response_i: np.ndarray, response_j: np.ndarray) 
 
     result: np.ndarray = numerator / denominator
     return result
+
+
+@overload
+def psychsyn_model_scores(
+    x: MatrixLike,
+    model: PsychsynModel,
+    *,
+    diag: Literal[False] = False,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+) -> np.ndarray:
+    pass
+
+
+@overload
+def psychsyn_model_scores(
+    x: MatrixLike,
+    model: PsychsynModel,
+    *,
+    diag: Literal[True],
+    resample_na: bool = False,
+    random_seed: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    pass
+
+
+def psychsyn_model_scores(
+    x: MatrixLike,
+    model: PsychsynModel,
+    *,
+    diag: bool = False,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """Score a cohort with a fitted psychometric item-pair calibration.
+
+    Unlike :func:`psychsyn`, this function never rediscovers item pairs. The
+    scoring matrix must retain the fitted item count and column order.
+
+    Parameters:
+    - x: Response matrix to score.
+    - model: Calibration returned by :func:`fit_psychsyn_model`.
+    - diag: Whether to return each respondent's usable pair count.
+    - resample_na: Whether to retry undefined missing-response correlations.
+    - random_seed: Optional seed for reproducible retries.
+
+    Returns:
+    - Scores, or ``(scores, usable_pair_counts)`` when ``diag=True``.
+    """
+    if not isinstance(model, PsychsynModel):
+        raise TypeError("model must be a PsychsynModel")
+    x_array = validate_matrix_input(x, min_columns=2)
+    if x_array.shape[1] != model.n_items:
+        raise ValueError(
+            f"scoring data has {x_array.shape[1]} items; model requires {model.n_items}"
+        )
+    scores, diag_values = _score_psychsyn_pairs(
+        x_array,
+        model.item_pairs,
+        resample_na=resample_na,
+        rng=np.random.default_rng(random_seed),
+    )
+    if diag:
+        return scores, diag_values
+    return scores
 
 
 @overload
@@ -483,38 +645,17 @@ def psychsyn(
 
     x_array = validate_matrix_input(x, min_columns=2)
 
-    if not isinstance(critval, (int, float)):
-        raise ValueError("critval must be a number")
-
-    if anto and critval > 0:
-        raise ValueError("critval should be negative for antonym analysis")
-
-    if not anto and critval < 0:
-        raise ValueError("critval should be positive for synonym analysis")
+    resolved_critval = _validate_psychsyn_options(critval, anto)
 
     rng = np.random.default_rng(random_seed)
 
-    item_pairs = _discover_item_pairs(x_array, critval, anto)
-
-    if len(item_pairs) == 0:
-        empty_scores = np.full(x_array.shape[0], np.nan)
-        empty_diag = np.zeros(x_array.shape[0], dtype=int)
-        if _return_item_info:
-            return empty_scores, empty_diag, item_pairs
-        elif diag:
-            return empty_scores, empty_diag
-        else:
-            return empty_scores
-
-    scores, diag_values = _compute_person_scores(
+    item_pairs = _discover_item_pairs(x_array, resolved_critval, anto)
+    scores, diag_values = _score_psychsyn_pairs(
         x_array,
         item_pairs,
         resample_na=resample_na,
         rng=rng,
     )
-
-    if np.any(np.isnan(scores)) and len(item_pairs) > 0:
-        scores = np.nan_to_num(scores, nan=0.0)
 
     if _return_item_info:
         return (scores, diag_values, item_pairs)
@@ -592,6 +733,28 @@ def _compute_person_scores(
         rng,
         batch_rows,
     )
+    return scores, diag_values
+
+
+def _score_psychsyn_pairs(
+    x: np.ndarray,
+    item_pairs: np.ndarray,
+    *,
+    resample_na: bool,
+    rng: np.random.Generator,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Apply fixed item pairs and preserve the established unavailable-score policy."""
+    if len(item_pairs) == 0:
+        return np.full(len(x), np.nan), np.zeros(len(x), dtype=int)
+
+    scores, diag_values = _compute_person_scores(
+        x,
+        item_pairs,
+        resample_na=resample_na,
+        rng=rng,
+    )
+    if np.any(np.isnan(scores)):
+        scores = np.nan_to_num(scores, nan=0.0)
     return scores, diag_values
 
 

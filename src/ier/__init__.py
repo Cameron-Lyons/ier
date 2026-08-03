@@ -43,8 +43,11 @@ from .missing import missing_rate_flag as missing_rate_flag
 from .onset import onset as onset
 from .onset import onset_flag as onset_flag
 from .person_total import person_total as person_total
+from .psychsyn import PsychsynModel as PsychsynModel
+from .psychsyn import fit_psychsyn_model as fit_psychsyn_model
 from .psychsyn import psychant as psychant
 from .psychsyn import psychsyn as psychsyn
+from .psychsyn import psychsyn_model_scores as psychsyn_model_scores
 from .psychsyn import psychsyn_summary as psychsyn_summary
 from .reliability import individual_reliability as individual_reliability
 from .reliability import individual_reliability_flag as individual_reliability_flag
@@ -160,7 +163,10 @@ __all__ = [
     "plot_flag_counts",
     "plot_flagged_heatmap",
     "psychant",
+    "fit_psychsyn_model",
     "psychsyn",
+    "PsychsynModel",
+    "psychsyn_model_scores",
     "psychsyn_summary",
     "PsychsynSummary",
     "response_pattern",

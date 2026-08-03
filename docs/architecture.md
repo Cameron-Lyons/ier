@@ -257,10 +257,13 @@ in bounded respondent batches and report each respondent's actual available-pair
 count. Missing-response discovery accumulates pairwise-complete counts, sums,
 squares, and products in bounded respondent and strict-lower-triangle item
 tiles. Per-column finite origins prevent raw-moment cancellation without a
-matrix-sized centered copy. Complete matrices retain the faster normalized-
-column kernel. Both paths avoid a complete item-by-item correlation matrix, and
-the critical-value catalog shares the same dispatch. Seeded retries only process
-undefined rows that retain at least three usable pairs.
+matrix-sized centered copy. Complete matrices compute normalization parameters
+in capped column blocks and accumulate normalized respondent blocks. Both paths
+avoid a complete item-by-item correlation matrix, and the critical-value catalog
+shares the same dispatch. Immutable fitted-pair models retain the item count,
+threshold, mode, and owned pair indices so later cohorts can skip discovery.
+Seeded retries only process undefined rows that retain at least three usable
+pairs.
 Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
 reducer. Pair selection, optional reverse scoring, and missing-aware means stay
 within the common element budget instead of materializing complete pair matrices.

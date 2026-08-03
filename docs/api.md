@@ -8,6 +8,7 @@
         - MahadSummary
         - MarkovSummary
         - PsychsynSummary
+        - PsychsynModel
         - ResponseTimeArchive
         - ResponseTimeMixtureModel
         - ResponseTimeMixtureModelArchive
@@ -39,6 +40,8 @@
         - mahad
         - mahad_summary
         - psychsyn
+        - fit_psychsyn_model
+        - psychsyn_model_scores
         - psychsyn_summary
         - psychant
         - person_total
