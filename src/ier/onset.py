@@ -14,9 +14,9 @@ References:
 
 import numpy as np
 
+from ier._row_statistics import row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
-_ONSET_BATCH_WORKSPACE_BYTES = 64 * 1024 * 1024
 _SHAO_ZHANG_CRITICAL_VALUE = 1.358
 
 
@@ -62,13 +62,15 @@ def onset(
     if min_items < window_size:
         raise ValueError("min_items must be at least as large as window_size")
 
-    has_missing = bool(np.isnan(x_array).any())
+    n_rows, n_items = x_array.shape
+    has_missing = any(
+        np.isnan(x_array[start:stop]).any() for start, stop in row_slices(n_rows, n_items)
+    )
     if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
 
-    n_rows = x_array.shape[0]
     result = np.full(n_rows, np.nan)
-    if x_array.shape[1] < min_items:
+    if n_items < min_items:
         return result
 
     if not has_missing:
@@ -102,19 +104,8 @@ def _onset_complete(x: np.ndarray, window_size: int) -> np.ndarray:
     if n_windows < 3:
         return result
 
-    # ``np.std`` may materialize a window-sized temporary in addition to the
-    # prefix/candidate arrays, so include both in the row-size estimate.
-    bytes_per_row = np.dtype(float).itemsize * n_windows * (window_size + 6)
-    batch_rows = max(1, _ONSET_BATCH_WORKSPACE_BYTES // bytes_per_row)
-
-    for start in range(0, n_rows, batch_rows):
-        stop = min(start + batch_rows, n_rows)
-        windows = np.lib.stride_tricks.sliding_window_view(
-            x[start:stop],
-            window_size,
-            axis=1,
-        )
-        running_irv = np.std(windows, axis=2)
+    for start, stop in row_slices(n_rows, n_items):
+        running_irv = _running_inconsistency_complete(x[start:stop], window_size)
         changepoints = _shao_zhang_changepoints(running_irv)
         result[start:stop] = changepoints + window_size - 1
 
@@ -162,6 +153,33 @@ def _running_inconsistency(row: np.ndarray, window_size: int) -> np.ndarray:
     return result
 
 
+def _running_inconsistency_complete(x: np.ndarray, window_size: int) -> np.ndarray:
+    """Compute complete-row window deviations in bounded rolling workspaces."""
+    centered = x.astype(float, copy=True)
+    centered -= centered[:, :1]
+    prefix_sum = np.cumsum(centered, axis=1)
+    window_means = prefix_sum[:, window_size - 1 :].copy()
+    if window_means.shape[1] > 1:
+        window_means[:, 1:] -= prefix_sum[:, :-window_size]
+    window_means /= window_size
+    del prefix_sum
+
+    squared_deviations = np.zeros(window_means.shape)
+    scratch = np.empty(window_means.shape)
+    for offset in range(window_size):
+        np.subtract(
+            centered[:, offset : offset + window_means.shape[1]],
+            window_means,
+            out=scratch,
+        )
+        np.square(scratch, out=scratch)
+        squared_deviations += scratch
+
+    squared_deviations /= window_size
+    np.sqrt(squared_deviations, out=squared_deviations)
+    return squared_deviations
+
+
 def _shao_zhang_changepoint(series: np.ndarray) -> int | None:
     """
     Apply the Shao & Zhang self-normalized cumulative sum test to detect a changepoint.
@@ -178,32 +196,39 @@ def _shao_zhang_changepoint(series: np.ndarray) -> int | None:
 
 
 def _shao_zhang_changepoints(series: np.ndarray) -> np.ndarray:
-    """Apply the changepoint test to a complete batch of running IRV rows."""
+    """Apply the changepoint test, consuming its internal series workspace."""
     n_rows, n_observations = series.shape
     result = np.full(n_rows, np.nan)
     if n_observations < 3:
         return result
 
     prefix_sum = np.cumsum(series, axis=1)
-    prefix_square_sum = np.cumsum(series * series, axis=1)
-    centered_prefix = np.cumsum(series - np.mean(series, axis=1, keepdims=True), axis=1)
+    np.square(series, out=series)
+    prefix_square_sum = np.cumsum(series, axis=1)
 
     trim = max(1, n_observations // 10)
     candidate_positions = np.arange(trim, n_observations - trim)
     if len(candidate_positions) == 0:
         return result
 
-    prefix_positions = candidate_positions - 1
     prefix_counts = candidate_positions.astype(float)
-    variances = (
-        prefix_square_sum[:, prefix_positions]
-        - prefix_sum[:, prefix_positions] ** 2 / prefix_counts
-    )
-    variances = np.maximum(variances, 1e-10)
-    test_stats = centered_prefix[:, candidate_positions] ** 2 / variances
+    prefix_values = prefix_sum[:, candidate_positions - 1]
+    variances = prefix_square_sum[:, candidate_positions - 1]
+    np.square(prefix_values, out=prefix_values)
+    prefix_values /= prefix_counts
+    variances -= prefix_values
+    np.maximum(variances, 1e-10, out=variances)
 
-    offsets = np.argmax(test_stats, axis=1)
-    max_stats = np.take_along_axis(test_stats, offsets[:, None], axis=1)[:, 0]
+    centered_candidates = prefix_sum[:, candidate_positions]
+    prefix_values[:] = prefix_sum[:, -1, np.newaxis]
+    prefix_values *= candidate_positions + 1
+    prefix_values /= n_observations
+    centered_candidates -= prefix_values
+    np.square(centered_candidates, out=centered_candidates)
+    centered_candidates /= variances
+
+    offsets = np.argmax(centered_candidates, axis=1)
+    max_stats = np.take_along_axis(centered_candidates, offsets[:, None], axis=1)[:, 0]
     detected = max_stats > _SHAO_ZHANG_CRITICAL_VALUE
     result[detected] = (trim + offsets[detected]).astype(float)
     return result

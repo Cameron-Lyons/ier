@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.12] - 2026-08-03
+
+### Added
+
+- A reproducible complete-response carelessness-onset benchmark with
+  configurable matrix size, response scale, window, minimum length, and seed.
+
+### Changed
+
+- Complete-response onset detection now calculates stable sliding-window
+  variability from rolling means and bounded deviation buffers, while its
+  changepoint test retains candidate-position workspaces instead of complete
+  centered and test-statistic matrices. On a 100,000-respondent, 80-item
+  benchmark, median time falls from 187.7 to 109.6 ms and peak temporary
+  allocation from 53.6 to 12.6 MiB, without adding a dependency.
+
 ## [2.19.11] - 2026-08-03
 
 ### Added
