@@ -6,9 +6,31 @@ which can indicate careless responding patterns like extreme response style
 or random clicking at scale endpoints.
 """
 
+from collections.abc import Callable
+
 import numpy as np
 
+from ier._row_statistics import row_mean_std, row_slices
 from ier._validation import MatrixLike, validate_matrix_input
+
+
+def _valid_proportion(
+    x_array: np.ndarray,
+    matcher: Callable[[np.ndarray], np.ndarray],
+) -> np.ndarray:
+    """Calculate matching-response proportions in bounded row batches."""
+    scores = np.empty(len(x_array))
+    for start, stop in row_slices(len(x_array), x_array.shape[1]):
+        block = x_array[start:stop]
+        valid_counts = np.sum(~np.isnan(block), axis=1, dtype=np.intp)
+        match_counts = np.sum(matcher(block), axis=1, dtype=np.intp)
+        scores[start:stop] = np.divide(
+            match_counts,
+            valid_counts,
+            out=np.full(len(block), np.nan),
+            where=valid_counts > 0,
+        )
+    return scores
 
 
 def u3_poly(
@@ -47,19 +69,10 @@ def u3_poly(
     if scale_max is None:
         scale_max = np.nanmax(x_array)
 
-    extreme_low = x_array == scale_min
-    extreme_high = x_array == scale_max
-    extreme = extreme_low | extreme_high
-
-    valid = ~np.isnan(x_array)
-    valid_counts = np.sum(valid, axis=1)
-
-    with np.errstate(invalid="ignore", divide="ignore"):
-        u3_scores = np.sum(extreme & valid, axis=1) / valid_counts
-
-    u3_scores = np.where(valid_counts == 0, np.nan, u3_scores)
-
-    return u3_scores
+    return _valid_proportion(
+        x_array,
+        lambda block: (block == scale_min) | (block == scale_max),
+    )
 
 
 def midpoint_responding(
@@ -96,17 +109,12 @@ def midpoint_responding(
         scale_max = np.nanmax(x_array)
 
     midpoint = (scale_min + scale_max) / 2
-
-    is_midpoint = np.abs(x_array - midpoint) <= tolerance
-    valid = ~np.isnan(x_array)
-    valid_counts = np.sum(valid, axis=1)
-
-    with np.errstate(invalid="ignore", divide="ignore"):
-        mid_scores = np.sum(is_midpoint & valid, axis=1) / valid_counts
-
-    mid_scores = np.where(valid_counts == 0, np.nan, mid_scores)
-
-    return mid_scores
+    lower = midpoint - tolerance
+    upper = midpoint + tolerance
+    return _valid_proportion(
+        x_array,
+        lambda block: (block >= lower) & (block <= upper),
+    )
 
 
 def response_pattern(
@@ -142,25 +150,15 @@ def response_pattern(
     if scale_max is None:
         scale_max = np.nanmax(x_array)
 
-    extreme_low = x_array == scale_min
-    extreme_high = x_array == scale_max
-    extreme = extreme_low | extreme_high
     midpoint = (scale_min + scale_max) / 2
-    is_midpoint = x_array == midpoint
-
-    valid = ~np.isnan(x_array)
-    valid_counts = np.sum(valid, axis=1)
-
-    with np.errstate(invalid="ignore", divide="ignore"):
-        extreme_scores = np.sum(extreme & valid, axis=1) / valid_counts
-        mid_scores = np.sum(is_midpoint & valid, axis=1) / valid_counts
-
-    extreme_scores = np.where(valid_counts == 0, np.nan, extreme_scores)
-    mid_scores = np.where(valid_counts == 0, np.nan, mid_scores)
+    means, deviations = row_mean_std(x_array, ignore_nan=True)
 
     return {
-        "extreme": extreme_scores,
-        "midpoint": mid_scores,
-        "acquiescence": np.nanmean(x_array, axis=1),
-        "variability": np.nanstd(x_array, axis=1),
+        "extreme": _valid_proportion(
+            x_array,
+            lambda block: (block == scale_min) | (block == scale_max),
+        ),
+        "midpoint": _valid_proportion(x_array, lambda block: block == midpoint),
+        "acquiescence": means,
+        "variability": deviations,
     }

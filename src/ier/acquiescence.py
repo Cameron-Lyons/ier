@@ -14,6 +14,7 @@ References:
 import numpy as np
 
 from ier._flagging import threshold_flags
+from ier._row_statistics import row_mean, row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
 
@@ -88,21 +89,21 @@ def acquiescence(
                 raise ValueError(f"item index {idx} out of bounds for data with {n_cols} columns")
 
         min_len = min(len(positive_items), len(negative_items))
-        pos_responses = x_array[:, positive_items[:min_len]].astype(float)
-        neg_responses = x_array[:, negative_items[:min_len]].astype(float)
-
-        reversed_neg = (scale_max + scale_min) - neg_responses
-        pair_means = (pos_responses + reversed_neg) / 2.0
-
-        if na_rm:
-            raw_scores: np.ndarray = np.nanmean(pair_means, axis=1)
-        else:
-            raw_scores = np.mean(pair_means, axis=1)
+        selected_positive = positive_items[:min_len]
+        selected_negative = negative_items[:min_len]
+        raw_scores = np.empty(len(x_array))
+        for start, stop in row_slices(len(x_array), min_len):
+            positive = np.asarray(x_array[start:stop, selected_positive], dtype=float)
+            reversed_negative = np.asarray(
+                x_array[start:stop, selected_negative],
+                dtype=float,
+            )
+            np.subtract(scale_max + scale_min, reversed_negative, out=reversed_negative)
+            np.add(positive, reversed_negative, out=positive)
+            positive *= 0.5
+            raw_scores[start:stop] = row_mean(positive, ignore_nan=na_rm)
     else:
-        if na_rm:
-            raw_scores = np.nanmean(x_array.astype(float), axis=1)
-        else:
-            raw_scores = np.mean(x_array.astype(float), axis=1)
+        raw_scores = row_mean(x_array, ignore_nan=na_rm)
 
     normalized: np.ndarray = np.clip((raw_scores - scale_min) / scale_range, 0.0, 1.0)
     return normalized

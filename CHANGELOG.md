@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.7] - 2026-08-02
+
+### Changed
+
+- IRV, simple and balanced acquiescence, extreme and midpoint response
+  proportions, and combined response-pattern summaries now reduce in bounded
+  row batches through a shared mean and population-standard-deviation layer.
+  On a 100,000-respondent, 80-item benchmark with 10% missing responses, peak
+  temporary allocation falls from 77.1 to 4.0 MiB for IRV, 138.2 to 2.3 MiB for
+  acquiescence, 39.7 to 1.6 MiB for U3, 122.1 to 1.6 MiB for midpoint responding,
+  and 118.3 to 4.0 MiB for combined response patterns. Combined response-pattern
+  time also falls from 50.8 to 39.7 ms, without adding a dependency.
+
+### Fixed
+
+- Missing-aware row means and standard deviations now return unavailable scores
+  for entirely missing rows without emitting NumPy empty-slice warnings.
+
 ## [2.19.6] - 2026-08-02
 
 ### Changed

@@ -53,6 +53,28 @@ class TestAcquiescence(unittest.TestCase):
         )
         self.assertGreater(scores[0], 0.5)
 
+    def test_balanced_pair_mode_batches_without_mutating_input(self) -> None:
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(51, 8)).astype(float)
+        data[rng.random(data.shape) < 0.1] = np.nan
+        original = data.copy()
+        positive_items = [0, 2, 4, 6]
+        negative_items = [1, 3, 5, 7]
+        pairs = (data[:, positive_items] + (6.0 - data[:, negative_items])) * 0.5
+        expected = np.clip((np.nanmean(pairs, axis=1) - 1.0) / 4.0, 0.0, 1.0)
+
+        with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 24):
+            scores = acquiescence(
+                data,
+                scale_min=1,
+                scale_max=5,
+                positive_items=positive_items,
+                negative_items=negative_items,
+            )
+
+        np.testing.assert_allclose(scores, expected, rtol=0.0, atol=1e-15)
+        np.testing.assert_array_equal(data, original)
+
     def test_scale_inference(self) -> None:
         data = [[1, 2, 3, 4, 5]]
         scores = acquiescence(data)

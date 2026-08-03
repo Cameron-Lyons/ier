@@ -348,6 +348,53 @@ class TestU3Poly(unittest.TestCase):
         self.assertIn("acquiescence", result)
         self.assertIn("variability", result)
 
+    def test_response_pattern_batches_and_handles_all_missing_rows(self) -> None:
+        """Combined response summaries stay bounded and preserve missing semantics."""
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(53, 11)).astype(float)
+        data[rng.random(data.shape) < 0.1] = np.nan
+        data[0] = np.nan
+        original = data.copy()
+        valid = ~np.isnan(data)
+        counts = np.sum(valid, axis=1)
+        expected_extreme = np.divide(
+            np.sum(((data == 1) | (data == 5)) & valid, axis=1),
+            counts,
+            out=np.full(len(data), np.nan),
+            where=counts > 0,
+        )
+        expected_midpoint = np.divide(
+            np.sum((data == 3) & valid, axis=1),
+            counts,
+            out=np.full(len(data), np.nan),
+            where=counts > 0,
+        )
+
+        with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 30):
+            result = response_pattern(data, scale_min=1, scale_max=5)
+
+        np.testing.assert_allclose(
+            result["extreme"], expected_extreme, rtol=0.0, atol=1e-15, equal_nan=True
+        )
+        np.testing.assert_allclose(
+            result["midpoint"], expected_midpoint, rtol=0.0, atol=1e-15, equal_nan=True
+        )
+        assert np.isnan(result["acquiescence"][0])
+        assert np.isnan(result["variability"][0])
+        np.testing.assert_allclose(
+            result["acquiescence"][1:],
+            np.nanmean(data[1:], axis=1),
+            rtol=0.0,
+            atol=1e-15,
+        )
+        np.testing.assert_allclose(
+            result["variability"][1:],
+            np.nanstd(data[1:], axis=1),
+            rtol=0.0,
+            atol=1e-15,
+        )
+        np.testing.assert_array_equal(data, original)
+
 
 class TestMAD(unittest.TestCase):
     """Tests for Mean Absolute Difference functions."""
