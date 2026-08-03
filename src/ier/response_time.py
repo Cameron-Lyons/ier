@@ -474,20 +474,103 @@ def _score_gaussian_mixture_data(
     data: np.ndarray,
     model: ResponseTimeMixtureModel,
 ) -> np.ndarray:
-    """Return fast-component posteriors for prepared finite model values."""
+    """Return fast-component posteriors without a respondent-by-component matrix."""
     if len(data) == 0:
         return np.empty(0)
-    responsibilities = np.empty((len(data), model.n_components))
+
+    scores = np.empty(len(data))
+    normalizers = np.zeros(len(data))
     scratch = np.empty(len(data))
-    _mixture_expectation(
-        data,
-        model.weights,
-        model.means,
-        model.variances,
-        responsibilities,
-        scratch,
+    fast_component = model.fast_component
+    for component in range(model.n_components):
+        _gaussian_joint_density(
+            data,
+            model.weights[component],
+            model.means[component],
+            model.variances[component],
+            scratch,
+        )
+        np.add(normalizers, scratch, out=normalizers)
+        if component == fast_component:
+            np.copyto(scores, scratch)
+
+    regular = np.isfinite(normalizers) & (normalizers > 0.0)
+    np.divide(scores, normalizers, out=scores, where=regular)
+    if np.all(regular):
+        return scores
+
+    underflow = ~regular
+    underflow_data = data[underflow]
+    underflow_count = len(underflow_data)
+    row_maximum = normalizers[:underflow_count]
+    row_maximum.fill(-np.inf)
+    underflow_scratch = scratch[:underflow_count]
+
+    for component in range(model.n_components):
+        _gaussian_log_joint(
+            underflow_data,
+            model.weights[component],
+            model.means[component],
+            model.variances[component],
+            underflow_scratch,
+        )
+        np.maximum(row_maximum, underflow_scratch, out=row_maximum)
+
+    log_normalizers = np.zeros(underflow_count)
+    for component in range(model.n_components):
+        _gaussian_log_joint(
+            underflow_data,
+            model.weights[component],
+            model.means[component],
+            model.variances[component],
+            underflow_scratch,
+        )
+        np.subtract(underflow_scratch, row_maximum, out=underflow_scratch)
+        np.exp(underflow_scratch, out=underflow_scratch)
+        np.add(log_normalizers, underflow_scratch, out=log_normalizers)
+
+    _gaussian_log_joint(
+        underflow_data,
+        model.weights[fast_component],
+        model.means[fast_component],
+        model.variances[fast_component],
+        underflow_scratch,
     )
-    return responsibilities[:, model.fast_component].copy()
+    np.subtract(underflow_scratch, row_maximum, out=underflow_scratch)
+    np.exp(underflow_scratch, out=underflow_scratch)
+    np.divide(underflow_scratch, log_normalizers, out=underflow_scratch)
+    scores[underflow] = underflow_scratch
+    return scores
+
+
+def _gaussian_joint_density(
+    data: np.ndarray,
+    weight: float,
+    mean: float,
+    variance: float,
+    out: np.ndarray,
+) -> None:
+    """Write one weighted Gaussian density vector."""
+    np.subtract(data, mean, out=out)
+    np.square(out, out=out)
+    np.multiply(out, -0.5 / variance, out=out)
+    np.exp(out, out=out)
+    scale = weight / math.sqrt(2.0 * math.pi * variance)
+    np.multiply(out, scale, out=out)
+
+
+def _gaussian_log_joint(
+    data: np.ndarray,
+    weight: float,
+    mean: float,
+    variance: float,
+    out: np.ndarray,
+) -> None:
+    """Write one weighted Gaussian log-density vector."""
+    np.subtract(data, mean, out=out)
+    np.square(out, out=out)
+    np.multiply(out, -0.5 / variance, out=out)
+    out += math.log(weight) - 0.5 * (_LOG_TWO_PI + math.log(variance))
 
 
 def _mixture_expectation(
@@ -526,12 +609,12 @@ def _mixture_expectation(
     underflow_data = data[underflow]
     log_joint = np.empty((len(underflow_data), len(weights)))
     for component in range(len(weights)):
-        component_values = log_joint[:, component]
-        np.subtract(underflow_data, means[component], out=component_values)
-        np.square(component_values, out=component_values)
-        np.multiply(component_values, -0.5 / variances[component], out=component_values)
-        component_values += math.log(weights[component]) - 0.5 * (
-            _LOG_TWO_PI + math.log(variances[component])
+        _gaussian_log_joint(
+            underflow_data,
+            weights[component],
+            means[component],
+            variances[component],
+            log_joint[:, component],
         )
 
     row_maximum = np.max(log_joint, axis=1)

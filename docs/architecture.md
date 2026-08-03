@@ -209,8 +209,11 @@ throughout EM. Its expectation step follows a fast probability-space path for
 ordinary observations and normalizes only underflowed rows in log space.
 `fit_response_time_mixture()` exposes the fitted weights, means, and variances as
 an immutable calibration, while `response_time_mixture_scores()` applies those
-parameters to later cohorts with one expectation step. Returned posterior vectors
-own their one-dimensional storage rather than retaining the responsibility matrix.
+parameters to later cohorts without refitting. Fixed-model scoring streams one
+component at a time through respondent-sized numerator, normalizer, and scratch
+buffers. Only underflowed rows repeat that component pass in log space, keeping
+workspace independent of the component count. Returned posterior vectors own
+their one-dimensional storage rather than retaining a responsibility matrix.
 The model save/load pair streams those small parameter vectors through the shared
 atomic NPZ writer and reconstructs a fully validated read-only calibration, so
 cross-process reuse retains the same numerical and safety contracts.

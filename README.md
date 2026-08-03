@@ -25,7 +25,7 @@ For a comprehensive methods review, see
 - Batched missing-response longest-run and repeating-pattern scoring
 - Batched dependency-free chi-square quantiles for large Mahalanobis Q-Q plots
 - Grouped missing-aware medians for response-time summaries and mixtures
-- Reusable response-time mixture calibration for fixed-reference and batched scoring
+- Reusable response-time mixture calibration with component-bounded posterior scoring
 - Adaptive bounded Guttman counters for narrow and wide response scales
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
@@ -394,7 +394,9 @@ later_probabilities = response_time_mixture_scores(later_times, calibration)
 
 Scoring retains the model's log-transform choice and fastest-component meaning;
 missing, infinite, or non-positive respondent medians remain unavailable. Model
-archives are versioned, pickle-free, strictly validated, and atomically replaced.
+application streams component densities through respondent-sized buffers, so its
+workspace does not grow with the calibrated component count. Model archives are
+versioned, pickle-free, strictly validated, and atomically replaced.
 The same workflow is available from the CLI:
 
 ```bash
