@@ -20,6 +20,7 @@ For a comprehensive methods review, see
 - CLI workflows for item screening, composite scores, and response-time analysis
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Configurable soft or strict per-index failures during screening and composite scoring
+- Composite CLI diagnostics preserved across human-readable and structured outputs
 - Full type annotations (`py.typed`)
 
 ## Installation
@@ -142,6 +143,13 @@ output path for standard output. Files ending in `.gz` are read and written
 transparently using the Python standard library. CSV rows and JSON respondent
 arrays are written in bounded chunks, so output allocation stays bounded for
 plain, compressed, and standard-output destinations.
+
+When a requested screen or composite index soft-fails, every CLI format emits a
+concise warning on standard error. Text output also lists the failure, JSON
+includes an `errors` object, and NPZ includes aligned `error_names` and
+`error_messages` arrays. CSV remains a clean respondent-level table; use its
+standard-error stream to retain the diagnostic or pass `--strict` to fail
+immediately.
 
 All scoring commands accept `--format npz --output FILE.npz` for fast, typed,
 pickle-free result archives. NPZ preserves boolean flags, non-finite scores, and

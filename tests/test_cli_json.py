@@ -75,6 +75,19 @@ class TestCliJson(unittest.TestCase):
         composite_payload = json.loads(composite_output.getvalue())
         self.assertEqual(composite_payload["scores"], [1.0, None, None, None, 5.0])
         self.assertEqual(composite_payload["respondent_ids"], identifiers)
+        self.assertEqual(composite_payload["errors"], {})
+
+        diagnostic_output = StringIO()
+        _write_composite_json(
+            diagnostic_output,
+            result["scores"]["example"],
+            "mean",
+            errors={"mad": "missing item configuration"},
+        )
+        self.assertEqual(
+            json.loads(diagnostic_output.getvalue())["errors"],
+            {"mad": "missing item configuration"},
+        )
 
         timing_output = StringIO()
         _write_response_time_json(

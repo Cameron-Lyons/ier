@@ -15,6 +15,13 @@ allocation. JSON converts non-finite numbers to `null`, and CSV emits empty
 cells. NPZ preserves NumPy dtypes and non-finite values exactly without object
 arrays or pickling.
 
+Screen and composite commands report soft per-index failures on standard error
+without mixing warnings into standard output. Their JSON results retain an
+`errors` object, while NPZ archives use aligned `error_names` and
+`error_messages` vectors. Text repeats the failures inline. CSV stays
+row-oriented and carries no global metadata, so retain standard error when its
+diagnostics matter.
+
 ## NumPy archives
 
 Write archives from any scoring command:
@@ -71,7 +78,8 @@ float vector. When `--weight` is supplied, aligned `weight_names` and `weights`
 vectors record the explicit overrides; selected indices not listed there use
 weight 1. When `--min-valid-indices` is supplied, `min_valid_indices` records the
 integer completeness requirement. JSON composite output uses equivalent
-optional `weights` and `min_valid_indices` fields.
+optional `weights` and `min_valid_indices` fields. Aligned `error_names` and
+`error_messages` vectors preserve soft failures; JSON uses the `errors` object.
 
 ### Response-time schema
 

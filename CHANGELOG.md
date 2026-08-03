@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.14.1] - 2026-08-02
+
+### Fixed
+
+- `ier composite` now preserves the soft per-index failures already collected
+  during scoring instead of silently discarding them, and `ier screen` mirrors
+  its existing failures to standard error as well. Every output format emits a
+  concise warning, text output includes an `errors` section, JSON includes an
+  `errors` object, and NPZ stores aligned `error_names` and `error_messages`
+  vectors. CSV remains an unchanged respondent table, score computation still
+  runs once, and no dependency was added.
+
 ## [2.14.0] - 2026-08-02
 
 ### Added
