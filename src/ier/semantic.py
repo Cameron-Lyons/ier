@@ -7,6 +7,9 @@ are predefined based on item content (e.g., "I am happy" vs "I am sad").
 
 import numpy as np
 
+from ier._flagging import threshold_flags
+from ier._pair_statistics import paired_mean_absolute_difference, resolve_scale_bounds
+from ier._row_statistics import row_std
 from ier._validation import MatrixLike, validate_matrix_input
 
 
@@ -21,10 +24,9 @@ def semantic_syn(
     """
     Calculate semantic synonym/antonym consistency scores.
 
-    Computes within-person correlations for predefined item pairs based on
-    semantic content. For synonyms, consistent responders should show positive
-    correlations. For antonyms, consistent responders should show negative
-    correlations.
+    Computes mean absolute differences for predefined item pairs and normalizes
+    them by each person's response standard deviation. Synonyms are compared
+    directly; antonyms reverse-score the second response before comparison.
 
     Parameters:
     - x: A matrix of data where rows are individuals and columns are items.
@@ -61,35 +63,36 @@ def semantic_syn(
         if i == j:
             raise ValueError(f"item pair ({i}, {j}) contains duplicate indices")
 
-    pairs_array = np.array(item_pairs)
-    response_i = x_array[:, pairs_array[:, 0]].astype(float)
-    response_j = x_array[:, pairs_array[:, 1]].astype(float)
+    pairs_array = np.asarray(item_pairs, dtype=np.intp)
+    reflection: float | None = None
 
     if anto:
-        observed = x_array[~np.isnan(x_array)]
-        if len(observed) == 0:
+        bounds = resolve_scale_bounds(
+            x_array,
+            scale_min=scale_min,
+            scale_max=scale_max,
+        )
+        if bounds is None:
             return np.full(x_array.shape[0], np.nan, dtype=float)
+        resolved_min, resolved_max = bounds
+        reflection = resolved_min + resolved_max
 
-        resolved_min = float(np.min(observed)) if scale_min is None else scale_min
-        resolved_max = float(np.max(observed)) if scale_max is None else scale_max
-        if resolved_max < resolved_min:
-            raise ValueError("scale_max must be greater than or equal to scale_min")
-        response_j = (resolved_min + resolved_max) - response_j
-
-    pair_diffs = np.abs(response_i - response_j)
-    invalid_mask = np.isnan(response_i) | np.isnan(response_j)
-    pair_diffs[invalid_mask] = np.nan
-
-    pair_mean_diffs = np.nanmean(pair_diffs, axis=1)
-    row_std = np.nanstd(x_array, axis=1)
+    pair_mean_diffs = paired_mean_absolute_difference(
+        x_array,
+        pairs_array[:, 0],
+        pairs_array[:, 1],
+        right_reflection=reflection,
+        ignore_nan=True,
+    )
+    row_deviations = row_std(x_array, ignore_nan=True)
     scores = np.full(x_array.shape[0], np.nan, dtype=float)
 
     valid_rows = ~np.isnan(pair_mean_diffs)
-    nonzero_std = valid_rows & (row_std > 0)
+    nonzero_std = valid_rows & (row_deviations > 0)
     with np.errstate(invalid="ignore", divide="ignore"):
-        scores[nonzero_std] = 1 - pair_mean_diffs[nonzero_std] / row_std[nonzero_std]
+        scores[nonzero_std] = 1 - pair_mean_diffs[nonzero_std] / row_deviations[nonzero_std]
 
-    zero_std = valid_rows & (row_std == 0)
+    zero_std = valid_rows & (row_deviations == 0)
     if np.any(zero_std):
         scores[zero_std] = np.where(np.isclose(pair_mean_diffs[zero_std], 0.0), 1.0, -1.0)
 
@@ -130,3 +133,45 @@ def semantic_ant(
         scale_min=scale_min,
         scale_max=scale_max,
     )
+
+
+def semantic_syn_flag(
+    x: MatrixLike,
+    item_pairs: list[tuple[int, int]],
+    threshold: float | None = None,
+    percentile: float = 5.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Score semantic synonym consistency and flag unusually low values."""
+    scores = semantic_syn(x, item_pairs)
+    flags = threshold_flags(
+        scores,
+        threshold=threshold,
+        percentile=percentile,
+        direction="low",
+    )
+    return scores, flags
+
+
+def semantic_ant_flag(
+    x: MatrixLike,
+    item_pairs: list[tuple[int, int]],
+    threshold: float | None = None,
+    percentile: float = 5.0,
+    *,
+    scale_min: float | None = None,
+    scale_max: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Score semantic antonym consistency and flag unusually low values."""
+    scores = semantic_ant(
+        x,
+        item_pairs,
+        scale_min=scale_min,
+        scale_max=scale_max,
+    )
+    flags = threshold_flags(
+        scores,
+        threshold=threshold,
+        percentile=percentile,
+        direction="low",
+    )
+    return scores, flags

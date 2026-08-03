@@ -144,6 +144,7 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
         evenodd_factors=_parse_int_list(args.evenodd_factors),
         mad_positive_items=_parse_int_list(args.mad_positive_items),
         mad_negative_items=_parse_int_list(args.mad_negative_items),
+        mad_scale_min=args.mad_scale_min,
         mad_scale_max=args.mad_scale_max,
         longstring_max_pattern_length=args.longstring_max_pattern_length,
         midpoint_tolerance=args.midpoint_tolerance,
@@ -233,7 +234,8 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--mad-positive-items", default=None, help="Comma-separated item indices")
     parser.add_argument("--mad-negative-items", default=None, help="Comma-separated item indices")
-    parser.add_argument("--mad-scale-max", type=int, default=None)
+    parser.add_argument("--mad-scale-min", type=float, default=None)
+    parser.add_argument("--mad-scale-max", type=float, default=None)
     parser.add_argument("--longstring-max-pattern-length", type=int, default=5)
     parser.add_argument("--midpoint-tolerance", type=float, default=0.0)
     parser.add_argument(

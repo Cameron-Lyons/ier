@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.9] - 2026-08-02
+
+### Added
+
+- Standalone `semantic_syn_flag()` and `semantic_ant_flag()` helpers now expose
+  the registry's low-consistency flagging behavior for direct semantic-pair
+  workflows. MAD accepts an optional fractional `scale_min`, also available as
+  `mad_scale_min` in `IndexOptions` and `--mad-scale-min` in the CLI.
+
+### Changed
+
+- Predefined semantic and MAD item pairs now share a bounded absolute-difference
+  reducer. On a 100,000-respondent, 80-item, 40-pair benchmark with 10% missing
+  responses, semantic synonym scoring falls from 56.6 to 44.0 ms and 173.3 to
+  6.8 MiB, semantic antonym scoring from 68.1 to 46.4 ms and 228.2 to 6.8 MiB,
+  and MAD from 31.8 to 16.8 ms and 161.0 to 6.8 MiB, without adding a dependency.
+
+### Fixed
+
+- MAD no longer truncates fractional response-scale endpoints during reverse
+  scoring, and its documentation now correctly describes high scores as paired
+  inconsistency. Entirely missing semantic and MAD matrices return unavailable
+  scores without emitting empty-slice warnings.
+
 ## [2.19.8] - 2026-08-02
 
 ### Changed

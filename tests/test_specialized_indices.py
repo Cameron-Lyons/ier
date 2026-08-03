@@ -22,7 +22,7 @@ from ier.markov import _transition_entropy, markov, markov_flag, markov_summary
 from ier.onset import onset, onset_flag
 from ier.person_total import person_total
 from ier.reliability import individual_reliability, individual_reliability_flag
-from ier.semantic import semantic_ant, semantic_syn
+from ier.semantic import semantic_ant, semantic_ant_flag, semantic_syn, semantic_syn_flag
 from ier.u3_poly import midpoint_responding, response_pattern, u3_poly
 
 
@@ -160,6 +160,66 @@ class TestSemanticSyn(unittest.TestCase):
         ant = semantic_ant(data, pairs)
         np.testing.assert_array_almost_equal(syn, [1.0, 1.0])
         np.testing.assert_array_almost_equal(ant, [1.0, 1.0])
+
+    def test_batched_scoring_matches_expanded_formula_without_mutation(self) -> None:
+        """Bounded pair differences preserve the expanded semantic definition."""
+        from ier._row_statistics import row_mean
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(503, 40)).astype(float)
+        data[rng.random(data.shape) < 0.1] = np.nan
+        original = data.copy()
+        pairs = [(index, index + 20) for index in range(20)]
+        pair_differences = np.abs(data[:, :20] - data[:, 20:])
+        mean_differences = np.nanmean(pair_differences, axis=1)
+        deviations = np.nanstd(data, axis=1)
+        expected = np.full(len(data), np.nan)
+        nonzero = deviations > 0
+        expected[nonzero] = 1.0 - mean_differences[nonzero] / deviations[nonzero]
+        zero = deviations == 0
+        expected[zero] = np.where(np.isclose(mean_differences[zero], 0.0), 1.0, -1.0)
+        np.clip(expected, -1.0, 1.0, out=expected)
+
+        with (
+            patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 120),
+            patch("ier._pair_statistics.row_mean", wraps=row_mean) as reductions,
+        ):
+            result = semantic_syn(data, pairs)
+
+        self.assertGreater(reductions.call_count, 2)
+        self.assertTrue(all(call.args[0].size <= 120 for call in reductions.call_args_list))
+        np.testing.assert_allclose(result, expected, rtol=0.0, atol=1e-15, equal_nan=True)
+        np.testing.assert_array_equal(data, original)
+
+    def test_all_missing_data_returns_unavailable_scores_without_warning(self) -> None:
+        data = np.full((3, 4), np.nan)
+        pairs = [(0, 1), (2, 3)]
+
+        self.assertTrue(np.isnan(semantic_syn(data, pairs)).all())
+        self.assertTrue(np.isnan(semantic_ant(data, pairs)).all())
+
+    def test_direct_flag_helpers_use_low_consistency_direction(self) -> None:
+        synonym_data = [[1, 1, 5, 5], [1, 5, 5, 1]]
+        antonym_data = [[1, 5, 2, 4], [1, 1, 2, 2]]
+        pairs = [(0, 1), (2, 3)]
+
+        synonym_scores, synonym_flags = semantic_syn_flag(
+            synonym_data,
+            pairs,
+            threshold=0.0,
+        )
+        antonym_scores, antonym_flags = semantic_ant_flag(
+            antonym_data,
+            pairs,
+            threshold=0.0,
+            scale_min=1,
+            scale_max=5,
+        )
+
+        np.testing.assert_array_equal(synonym_flags, [False, True])
+        np.testing.assert_array_equal(antonym_flags, [False, True])
+        self.assertGreater(synonym_scores[0], synonym_scores[1])
+        self.assertGreater(antonym_scores[0], antonym_scores[1])
 
 
 class TestGuttman(unittest.TestCase):
@@ -481,6 +541,71 @@ class TestMAD(unittest.TestCase):
         data = [[5, 1, 5, 1], [3, 3, 3, 3]]
         result = mad(data, positive_items=[0, 2], negative_items=[1, 3])
         self.assertEqual(len(result), 2)
+
+    def test_batched_scoring_matches_expanded_missing_policies(self) -> None:
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(503, 40)).astype(float)
+        data[rng.random(data.shape) < 0.1] = np.nan
+        original = data.copy()
+        positive_items = list(range(20))
+        negative_items = list(range(20, 40))
+        differences = np.abs(data[:, :20] - (6.0 - data[:, 20:]))
+
+        with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 120):
+            missing_aware = mad(
+                data,
+                positive_items=positive_items,
+                negative_items=negative_items,
+                scale_min=1,
+                scale_max=5,
+            )
+            strict = mad(
+                data,
+                positive_items=positive_items,
+                negative_items=negative_items,
+                scale_min=1,
+                scale_max=5,
+                na_rm=False,
+            )
+
+        np.testing.assert_allclose(
+            missing_aware,
+            np.nanmean(differences, axis=1),
+            rtol=0.0,
+            atol=1e-15,
+        )
+        np.testing.assert_allclose(
+            strict,
+            np.mean(differences, axis=1),
+            rtol=0.0,
+            atol=1e-15,
+            equal_nan=True,
+        )
+        np.testing.assert_array_equal(data, original)
+
+    def test_fractional_scale_bounds_are_preserved(self) -> None:
+        data = [[1.5, 0.5], [0.5, 1.5]]
+        result = mad(
+            data,
+            item_pairs=[(0, 1)],
+            scale_min=0.5,
+            scale_max=1.5,
+        )
+        np.testing.assert_array_equal(result, [0.0, 0.0])
+
+    def test_all_missing_data_returns_nan_without_warning(self) -> None:
+        data = np.full((3, 2), np.nan)
+        result = mad(data, item_pairs=[(0, 1)])
+        self.assertTrue(np.isnan(result).all())
+
+    def test_inverted_scale_bounds_raise(self) -> None:
+        with self.assertRaisesRegex(ValueError, "scale_max"):
+            mad(
+                [[1.0, 5.0]],
+                item_pairs=[(0, 1)],
+                scale_min=5.0,
+                scale_max=1.0,
+            )
 
 
 class TestLz(unittest.TestCase):

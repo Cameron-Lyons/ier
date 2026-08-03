@@ -30,9 +30,12 @@
         - onset
         - evenodd
         - mad
+        - mad_flag
         - lz
         - semantic_syn
+        - semantic_syn_flag
         - semantic_ant
+        - semantic_ant_flag
         - infrequency
         - response_time
         - response_time_consistency

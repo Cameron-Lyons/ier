@@ -40,7 +40,7 @@ defaults, and options that must be configured before an index can run.
 | `individual_reliability` | Split-half individual reliability | low | no | yes | `reliability_n_splits`, seed |
 | `onset` | Carelessness onset item index | present | no | no | `onset_window_size`, `onset_min_items` |
 | `evenodd` | Even-odd consistency | low | no | yes | `evenodd_factors` |
-| `mad` | Maximum absolute deviation (antonyms) | high | no | yes | MAD item lists / `mad_scale_max` |
+| `mad` | Mean absolute paired difference | high | no | yes | MAD item lists / optional scale bounds |
 | `lz` | lz person-fit | low | no | yes | optional IRT params via direct API; overflow-safe logistic kernel |
 | `semantic_syn` | Predefined synonym consistency | low | no | yes | `semantic_item_pairs` |
 | `semantic_ant` | Predefined antonym consistency | low | no | yes | `semantic_item_pairs`, optional scale bounds |
@@ -60,6 +60,12 @@ rejects numeric or multidimensional arrays.
 computing consistency. Pass `scale_min` and `scale_max` through `IndexOptions`
 when the matrix does not contain both response-scale endpoints; otherwise the
 bounds are inferred from the observed data.
+
+`mad` also reverse-scores the second item in each pair. Provide
+`mad_scale_min` and `mad_scale_max` when observed responses may omit a scale
+endpoint or use fractional endpoints. Higher MAD values mean greater paired
+inconsistency. The standalone `semantic_syn_flag()` and `semantic_ant_flag()`
+helpers flag unusually low consistency scores.
 
 `missing_rate` is opt-in because planned skip logic and matrix preprocessing can
 create legitimate omissions. Use the standalone function's `item_indices` option

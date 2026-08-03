@@ -39,7 +39,7 @@ class IndexOptions:
     evenodd_factors: list[int] | None = None
     mad_positive_items: list[int] | None = None
     mad_negative_items: list[int] | None = None
-    mad_scale_max: int | None = None
+    mad_scale_max: float | None = None
     scale_min: float | None = None
     scale_max: float | None = None
     acquiescence_positive_items: list[int] | None = None
@@ -55,6 +55,7 @@ class IndexOptions:
     infrequency_item_indices: list[int] | None = None
     infrequency_expected_responses: list[float] | None = None
     infrequency_proportion: bool = False
+    mad_scale_min: float | None = None
 
 
 def resolve_index_options(options: IndexOptions | None = None) -> IndexOptions:
@@ -142,6 +143,7 @@ def _mad_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
         x,
         positive_items=options.mad_positive_items,
         negative_items=options.mad_negative_items,
+        scale_min=options.mad_scale_min,
         scale_max=options.mad_scale_max,
         na_rm=options.na_rm,
     )

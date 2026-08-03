@@ -151,6 +151,9 @@ Psychometric synonym and antonym scoring reuse the same row-correlation kernel
 in bounded respondent batches. Missing responses therefore do not trigger a
 complete respondent-by-pair contribution matrix, and seeded resampling is also
 reduced in bounded chunks.
+Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
+reducer. Pair selection, optional reverse scoring, and missing-aware means stay
+within the common element budget instead of materializing complete pair matrices.
 Person–total correlation calculates item-profile means and respondent
 correlations in bounded batches as well. The shared kernel accepts the index's
 undefined-correlation policy, so constant person or item profiles remain
@@ -177,6 +180,7 @@ Plotting remains optional and reports a centralized install hint from
 - Throughput microbench: `benchmarks/bench_screen.py`.
 - Multi-factor even–odd throughput and memory: `benchmarks/bench_evenodd.py`.
 - Psychometric synonym missing-data throughput and memory: `benchmarks/bench_psychsyn.py`.
+- Predefined semantic/MAD pair throughput and memory: `benchmarks/bench_pair_differences.py`.
 - Person–total correlation throughput and memory: `benchmarks/bench_person_total.py`.
 - Row-wise response reduction throughput and memory: `benchmarks/bench_row_reductions.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
