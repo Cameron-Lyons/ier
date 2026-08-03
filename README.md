@@ -246,6 +246,7 @@ uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_evenodd.py
 uv run python benchmarks/bench_psychsyn.py
 uv run python benchmarks/bench_pair_differences.py
+uv run python benchmarks/bench_mahad.py
 uv run python benchmarks/bench_guttman.py
 uv run python benchmarks/bench_reliability.py
 uv run python benchmarks/bench_onset.py

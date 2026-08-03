@@ -161,6 +161,10 @@ reduced in bounded chunks.
 Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
 reducer. Pair selection, optional reverse scoring, and missing-aware means stay
 within the common element budget instead of materializing complete pair matrices.
+Mahalanobis scoring uses the same row budget for both centered covariance
+accumulation and quadratic-form evaluation. Only the item-by-item covariance and
+pseudo-inverse remain resident outside each block, so temporary allocation does
+not grow with the respondent count.
 Guttman scoring likewise batches item means, difficulty-ordered selection,
 valid-response counts, and error accumulation by respondent. Small categorical
 scales use cumulative category counts within each batch, while high-cardinality
@@ -201,6 +205,7 @@ Plotting remains optional and reports a centralized install hint from
 - Multi-factor even–odd throughput and memory: `benchmarks/bench_evenodd.py`.
 - Psychometric synonym missing-data throughput and memory: `benchmarks/bench_psychsyn.py`.
 - Predefined semantic/MAD pair throughput and memory: `benchmarks/bench_pair_differences.py`.
+- Mahalanobis covariance and distance throughput and memory: `benchmarks/bench_mahad.py`.
 - Guttman error-scoring throughput and memory: `benchmarks/bench_guttman.py`.
 - Split-half reliability throughput and memory: `benchmarks/bench_reliability.py`.
 - Carelessness-onset throughput and memory: `benchmarks/bench_onset.py`.

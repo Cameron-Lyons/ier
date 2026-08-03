@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 
 from ier._optional_imports import require_matplotlib_pyplot
+from ier._row_statistics import row_slices
 from ier._statistics import chi_square_quantile, chi_square_quantiles, normal_quantile
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
@@ -75,9 +76,7 @@ def mahad(
         raise ValueError("method must be one of: 'chi2', 'iqr', 'zscore'")
 
     if na_rm:
-        all_nan_mask = np.isnan(x_array).all(axis=1)
-        partial_nan_mask = np.isnan(x_array).any(axis=1)
-        valid_mask = ~partial_nan_mask & ~all_nan_mask
+        valid_mask = ~np.isnan(x_array).any(axis=1)
         x_filtered = x_array[valid_mask]
     else:
         if np.isnan(x_array).any():
@@ -100,8 +99,6 @@ def mahad(
     distances = np.full(shape=(x_array.shape[0],), fill_value=np.nan)
     distances[valid_mask] = distances_filtered
 
-    distances = np.where(np.isnan(distances), np.nan, np.abs(distances))
-
     if flag:
         flags = _flag_outliers(distances, confidence, method, x_array.shape[1])
         return distances, flags
@@ -111,7 +108,7 @@ def mahad(
 
 def _compute_mahalanobis_distance(x: np.ndarray) -> np.ndarray:
     """
-    Compute Mahalanobis distances for a matrix of data.
+    Compute Mahalanobis distances with respondent-bounded workspaces.
 
     Parameters:
     - x: Matrix of data (n_samples, n_features) with no missing values
@@ -119,8 +116,13 @@ def _compute_mahalanobis_distance(x: np.ndarray) -> np.ndarray:
     Returns:
     - Array of Mahalanobis distances
     """
-    mean_vector = np.mean(x, axis=0)
-    cov_matrix = np.cov(x, rowvar=False)
+    mean_vector = np.mean(x, axis=0, dtype=float)
+    cov_matrix = np.zeros((x.shape[1], x.shape[1]), dtype=float)
+    for start, stop in row_slices(len(x), x.shape[1]):
+        centered = np.array(x[start:stop], dtype=float, copy=True)
+        centered -= mean_vector
+        cov_matrix += centered.T @ centered
+    cov_matrix /= len(x) - 1
 
     u, s, vh = np.linalg.svd(cov_matrix, full_matrices=False)
 
@@ -128,18 +130,32 @@ def _compute_mahalanobis_distance(x: np.ndarray) -> np.ndarray:
     s_min = s[-1] if s[-1] > 0 else eps
     cond_number = s[0] / s_min
 
-    if cond_number < 1 / eps:
+    if s[0] == 0:
+        inv_s = np.zeros_like(s)
+    elif cond_number < 1 / eps:
         inv_s = 1.0 / s
     else:
         threshold = eps * max(cov_matrix.shape) * s[0]
-        inv_s = np.where(s > threshold, 1.0 / s, 0.0)
+        inv_s = np.zeros_like(s)
+        np.divide(1.0, s, out=inv_s, where=s > threshold)
 
     inv_cov_matrix = (vh.T * inv_s) @ u.T
 
-    centered_data = x - mean_vector
-    mahalanobis_squared = np.sum((centered_data @ inv_cov_matrix) * centered_data, axis=1)
-    result: np.ndarray = np.sqrt(mahalanobis_squared)
-    return result
+    squared_distances = np.empty(len(x), dtype=float)
+    for start, stop in row_slices(len(x), x.shape[1]):
+        centered = np.array(x[start:stop], dtype=float, copy=True)
+        centered -= mean_vector
+        transformed = centered @ inv_cov_matrix
+        np.einsum(
+            "ij,ij->i",
+            transformed,
+            centered,
+            out=squared_distances[start:stop],
+        )
+
+    np.maximum(squared_distances, 0.0, out=squared_distances)
+    np.sqrt(squared_distances, out=squared_distances)
+    return squared_distances
 
 
 def _flag_outliers(

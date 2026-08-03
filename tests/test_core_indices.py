@@ -2,6 +2,7 @@
 
 import unittest
 import warnings
+from collections.abc import Iterator
 from typing import Any, cast
 from unittest.mock import patch
 
@@ -314,17 +315,32 @@ class TestMahadFunction(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(distances)))
         self.assertTrue(np.all(distances >= 0))
 
+    def test_constant_matrix_returns_zero_without_warnings(self) -> None:
+        """Test an all-zero covariance uses an exact zero pseudo-inverse."""
+        distances = mahad(np.full((20, 4), 3.0))
+
+        np.testing.assert_array_equal(distances, np.zeros(20))
+
     def test_matrix_product_matches_quadratic_form(self) -> None:
-        """Test optimized distance evaluation against the direct quadratic form."""
+        """Test bounded distance evaluation against the direct quadratic form."""
         rng = np.random.default_rng(42)
         data = rng.normal(size=(200, 12))
+        original = data.copy()
         centered = data - np.mean(data, axis=0)
         covariance = np.cov(data, rowvar=False)
         inverse = np.linalg.pinv(covariance)
         expected = np.sqrt(np.einsum("ij,jk,ik->i", centered, inverse, centered))
 
-        result = _compute_mahalanobis_distance(data)
+        def small_row_slices(n_rows: int, n_columns: int) -> Iterator[tuple[int, int]]:
+            del n_columns
+            for start in range(0, n_rows, 17):
+                yield start, min(start + 17, n_rows)
 
+        with patch("ier.mahad.row_slices", side_effect=small_row_slices) as slices:
+            result = _compute_mahalanobis_distance(data)
+
+        self.assertEqual(slices.call_count, 2)
+        np.testing.assert_array_equal(data, original)
         np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
 
     def test_invalid_confidence(self) -> None:
