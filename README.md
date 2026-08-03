@@ -125,6 +125,8 @@ ier screen data.csv --index-percentile irv=90 --index-percentile longstring=99
 ier screen data.csv --indices irv longstring missing_rate --min-valid-indices 2
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --workers 4
+ier screen data.csv --indices acquiescence --scale-min 1 --scale-max 5 \
+  --acquiescence-positive-items 0,2,4 --acquiescence-negative-items 1,3,5
 ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
 ier screen data.csv --indices missing_rate --missing-applicable-mask applicable.npy
 ier screen data.csv --indices infrequency \
@@ -192,6 +194,13 @@ handling is enabled. Set `IndexOptions(psychsyn_random_seed=...)` or
 The CLI equivalents are `--psychsyn-random-seed` and
 `--psychant-random-seed`. Each scorer uses an isolated random stream and does
 not modify NumPy's process-wide state.
+
+Balanced acquiescence scoring pairs positively and negatively worded items to
+separate agreement tendency from item content. Python workflows accept
+`acquiescence_positive_items` and `acquiescence_negative_items` through
+`IndexOptions`; CLI screening exposes the same lists through
+`--acquiescence-positive-items` and `--acquiescence-negative-items`. Indices are
+zero-based positions in the scored item matrix and are paired by list order.
 
 Missing-response scoring is opt-in because planned omissions are often valid.
 Use `IndexOptions(missing_item_indices=[...])` or CLI

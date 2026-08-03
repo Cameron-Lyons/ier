@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.54] - 2026-08-03
+
+### Added
+
+- The `screen` command now accepts balanced acquiescence polarity lists through
+  `--acquiescence-positive-items` and `--acquiescence-negative-items`. The
+  zero-based lists are paired in order after any named-column selection and
+  reproduce direct and shared `acquiescence()` scores. Incomplete or invalid
+  pairs retain the established soft/strict index-error policy, default simple
+  scoring is unchanged, and no dependency is added.
+
 ## [2.19.53] - 2026-08-03
 
 ### Added

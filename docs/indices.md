@@ -35,7 +35,7 @@ defaults, and options that must be configured before an index can run.
 | `missing_rate` | Missing-response proportion | high | no | yes | optional item subset / applicability mask |
 | `u3_poly` | Polytomous person-fit / Guttman-like | high | yes | no | `scale_min` / `scale_max` |
 | `midpoint` | Midpoint responding | high | yes | no | `scale_min` / `scale_max`, `midpoint_tolerance` |
-| `acquiescence` | Agreeing / yea-saying | high | yes | no | scale bounds; optional item lists |
+| `acquiescence` | Agreeing / yea-saying | high | yes | no | scale bounds; optional ordered polarity lists |
 | `guttman` | Guttman errors | high | yes | yes | adaptive bounded counters; `guttman_normalize` |
 | `individual_reliability` | Split-half individual reliability | low | no | yes | `reliability_n_splits`, seed; bounded stable raw moments |
 | `onset` | Carelessness onset item index | present | no | no | `onset_window_size`, `onset_min_items` |
@@ -85,6 +85,12 @@ bounds are inferred from the observed data.
 endpoint or use fractional endpoints. Higher MAD values mean greater paired
 inconsistency. The standalone `semantic_syn_flag()` and `semantic_ant_flag()`
 helpers flag unusually low consistency scores.
+
+`acquiescence` supports balanced polarity pairs through
+`IndexOptions.acquiescence_positive_items` and
+`IndexOptions.acquiescence_negative_items`. CLI screening accepts the same
+zero-based ordered lists through `--acquiescence-positive-items` and
+`--acquiescence-negative-items`; both must be supplied together.
 
 `missing_rate` is opt-in because planned skip logic and matrix preprocessing can
 create legitimate omissions. Use `IndexOptions.missing_item_indices` to restrict

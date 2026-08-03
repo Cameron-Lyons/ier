@@ -155,6 +155,8 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
         mad_negative_items=_parse_int_list(args.mad_negative_items),
         mad_scale_min=args.mad_scale_min,
         mad_scale_max=args.mad_scale_max,
+        acquiescence_positive_items=_parse_int_list(args.acquiescence_positive_items),
+        acquiescence_negative_items=_parse_int_list(args.acquiescence_negative_items),
         longstring_max_pattern_length=args.longstring_max_pattern_length,
         midpoint_tolerance=args.midpoint_tolerance,
         guttman_normalize=args.guttman_normalize,
@@ -403,6 +405,18 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--mad-negative-items", default=None, help="Comma-separated item indices")
     parser.add_argument("--mad-scale-min", type=float, default=None)
     parser.add_argument("--mad-scale-max", type=float, default=None)
+    parser.add_argument(
+        "--acquiescence-positive-items",
+        default=None,
+        metavar="I,J,...",
+        help="Comma-separated positively worded item indices for balanced acquiescence",
+    )
+    parser.add_argument(
+        "--acquiescence-negative-items",
+        default=None,
+        metavar="I,J,...",
+        help="Comma-separated negatively worded item indices for balanced acquiescence",
+    )
     parser.add_argument("--longstring-max-pattern-length", type=int, default=5)
     parser.add_argument("--midpoint-tolerance", type=float, default=0.0)
     parser.add_argument(

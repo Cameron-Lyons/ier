@@ -424,6 +424,28 @@ class TestScreen(unittest.TestCase):
         result = screen(self.data, indices=["irv", "longstring"])
         self.assertEqual(set(result["indices_used"]), {"irv", "longstring"})
 
+    def test_balanced_acquiescence_options_match_direct_scores(self) -> None:
+        expected = acquiescence(
+            self.data,
+            scale_min=1,
+            scale_max=5,
+            positive_items=[0, 2, 4],
+            negative_items=[1, 3, 5],
+        )
+
+        result = screen(
+            self.data,
+            indices=["acquiescence"],
+            options=IndexOptions(
+                scale_min=1,
+                scale_max=5,
+                acquiescence_positive_items=[0, 2, 4],
+                acquiescence_negative_items=[1, 3, 5],
+            ),
+        )
+
+        np.testing.assert_array_equal(result["scores"]["acquiescence"], expected)
+
     def test_irv_section_options_match_direct_scores(self) -> None:
         expected = irv(self.data, split=True, num_split=3)
 

@@ -223,6 +223,18 @@ ier screen responses.csv --indices psychant --psychant-random-seed 29
 Seeds affect only retry draws for undefined within-person correlations. Each
 scorer uses an isolated random stream and leaves NumPy's global state untouched.
 
+Balanced acquiescence scoring is available without preprocessing item polarity:
+
+```bash
+ier screen responses.csv --indices acquiescence --scale-min 1 --scale-max 5 \
+  --acquiescence-positive-items 0,2,4 \
+  --acquiescence-negative-items 1,3,5
+```
+
+Both lists are required together. Their zero-based positions refer to the
+scored item matrix after any `--item-columns` selection, and entries are paired
+in list order.
+
 Command-line missing-rate scoring supports respondent-specific skip logic with
 a separate applicability matrix:
 
