@@ -22,6 +22,7 @@ For a comprehensive methods review, see
 - CLI workflows for item screening, composite scores, and response-time analysis
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Configurable soft or strict per-index failures during screening and composite scoring
+- Opt-in soft-failure diagnostics from every composite Python helper
 - Composite CLI diagnostics preserved across human-readable and structured outputs
 - Opt-in raw component scores and availability counts in every composite CLI format
 - Full type annotations (`py.typed`)
@@ -47,7 +48,7 @@ compatibility alias.
 
 ```python
 import numpy as np
-from ier import IndexOptions, composite, irv, screen
+from ier import IndexOptions, composite, composite_probability, irv, screen
 
 data = np.array([
     [1, 2, 3, 4, 5, 4],
@@ -79,6 +80,14 @@ complete_enough = composite(
     min_valid_indices=2,
 )
 print("Coverage-filtered composite:", complete_enough)
+
+probabilities, failures = composite_probability(
+    data,
+    indices=["irv", "mad"],
+    return_diagnostics=True,
+)
+print("Logistic composite:", probabilities)
+print("Unavailable indices:", failures)
 
 # Opt in to concurrent index scoring for larger matrices.
 large_result = screen(data, workers=4)

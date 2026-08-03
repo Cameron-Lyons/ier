@@ -14,7 +14,7 @@ References:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 
@@ -430,6 +430,24 @@ def composite_summary(
     }
 
 
+def _logistic_transform(scores: np.ndarray) -> np.ndarray:
+    """Apply the logistic transform without overflowing at either extreme."""
+    values = np.asarray(scores, dtype=float)
+    result = np.empty_like(values)
+    nonnegative = values >= 0.0
+
+    np.negative(values, out=result)
+    np.exp(result, out=result, where=nonnegative)
+    np.logical_not(nonnegative, out=nonnegative)
+    np.exp(values, out=result, where=nonnegative)
+    denominator = 1.0 + result
+    np.divide(result, denominator, out=result, where=nonnegative)
+    np.logical_not(nonnegative, out=nonnegative)
+    np.reciprocal(denominator, out=result, where=nonnegative)
+    return result
+
+
+@overload
 def composite_probability(
     x: MatrixLike,
     indices: list[str] | None = None,
@@ -438,9 +456,39 @@ def composite_probability(
     options: IndexOptions | None = None,
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
+    return_diagnostics: Literal[False] = False,
     strict: bool = False,
     workers: int = 1,
-) -> np.ndarray:
+) -> np.ndarray: ...
+
+
+@overload
+def composite_probability(
+    x: MatrixLike,
+    indices: list[str] | None = None,
+    method: CompositeMethod = "mean",
+    *,
+    options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+    return_diagnostics: Literal[True],
+    strict: bool = False,
+    workers: int = 1,
+) -> tuple[np.ndarray, dict[str, str]]: ...
+
+
+def composite_probability(
+    x: MatrixLike,
+    indices: list[str] | None = None,
+    method: CompositeMethod = "mean",
+    *,
+    options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+    return_diagnostics: bool = False,
+    strict: bool = False,
+    workers: int = 1,
+) -> np.ndarray | tuple[np.ndarray, dict[str, str]]:
     """
     Compute an uncalibrated logistic composite IER score.
 
@@ -452,7 +500,8 @@ def composite_probability(
     every selected index to succeed. Set ``workers`` above 1 to score independent
     indices concurrently. Optional ``weights`` are applied before the logistic
     transform. ``min_valid_indices`` applies the same completeness rule as
-    ``composite()`` before transformation.
+    ``composite()`` before transformation. Set ``return_diagnostics=True`` to
+    also receive ordered per-index soft-failure messages.
     """
     z_scores_result = composite(
         x,
@@ -462,10 +511,20 @@ def composite_probability(
         options=options,
         weights=weights,
         min_valid_indices=min_valid_indices,
+        return_diagnostics=return_diagnostics,
         strict=strict,
         workers=workers,
     )
-    z_scores = z_scores_result[0] if isinstance(z_scores_result, tuple) else z_scores_result
+    if return_diagnostics:
+        if not isinstance(z_scores_result, tuple):
+            raise TypeError("expected (scores, diagnostics) when return_diagnostics=True")
+        z_scores, diagnostics = z_scores_result
+    else:
+        if isinstance(z_scores_result, tuple):
+            raise TypeError("unexpected diagnostics tuple when return_diagnostics=False")
+        z_scores = z_scores_result
 
-    result: np.ndarray = 1.0 / (1.0 + np.exp(-z_scores))
+    result = _logistic_transform(z_scores)
+    if return_diagnostics:
+        return result, diagnostics
     return result

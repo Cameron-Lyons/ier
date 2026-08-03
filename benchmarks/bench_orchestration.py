@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier.composite import _combine_scores
+from ier.composite import _combine_scores, _logistic_transform
 from ier.screen import _count_flags
 
 if TYPE_CHECKING:
@@ -96,6 +96,11 @@ def main() -> None:
         lambda: _count_flags(flags, args.respondents),
         args.repeats,
     )
+    probability_scores = np.linspace(-1000.0, 1000.0, args.respondents)
+    probability_seconds, probability_peak = _measure(
+        lambda: _logistic_transform(probability_scores),
+        args.repeats,
+    )
 
     print(
         f"respondents={args.respondents} indices={args.indices} "
@@ -103,6 +108,7 @@ def main() -> None:
         f"min_valid_indices={args.min_valid_indices}"
     )
     print(f"composite: median={composite_seconds:.4f}s peak={composite_peak:.1f} MiB")
+    print(f"logistic transform: median={probability_seconds:.4f}s peak={probability_peak:.1f} MiB")
     print(f"screen flags: median={screen_seconds:.4f}s peak={screen_peak:.1f} MiB")
 
 

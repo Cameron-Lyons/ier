@@ -23,6 +23,12 @@ coverage_filtered = composite(
     min_valid_indices=2,
 )
 ranks = composite_probability(data, indices=["irv", "longstring"], options=opts)
+auditable_ranks, probability_errors = composite_probability(
+    data,
+    indices=["irv", "mad"],
+    options=opts,
+    return_diagnostics=True,
+)
 
 # Available on composite(), composite_flag(), composite_summary(), and
 # composite_probability().
@@ -35,7 +41,8 @@ parallel_scores = composite(data, indices=["irv", "longstring"], workers=4)
     `composite_probability()` applies a logistic transform to standardized
     composite scores. Values lie in `[0, 1]` but are **not** validated
     probabilities of IER unless you calibrate against labeled data from a
-    comparable survey.
+    comparable survey. The transform is numerically stable for extreme scores,
+    including infinite inputs, without emitting overflow warnings.
 
 Practical guidance:
 
@@ -113,7 +120,9 @@ coverage decisions can be audited.
 By default, one invalid configured index is returned in diagnostics while other
 indices continue. Pass `strict=True` to `composite()`, `composite_flag()`,
 `composite_summary()`, or `composite_probability()` when every selected index
-must succeed.
+must succeed. For probability output, pass `return_diagnostics=True` to receive
+`(probabilities, diagnostics)`; omitting it retains the established array-only
+return value.
 
 The CLI does not discard these soft failures. Every format writes a warning to
 standard error, text output includes an `errors` section, JSON includes an

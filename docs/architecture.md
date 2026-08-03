@@ -120,7 +120,10 @@ the rule needs no additional respondent-sized workspace on that path; other
 methods allocate one integer count vector only when the rule is enabled.
 `composite_probability()` applies a logistic transform for convenience — it is
 **not** a calibrated probability of carelessness. Do not treat it as a
-posterior or diagnostic probability without your own validation study.
+posterior or diagnostic probability without your own validation study. Its
+piecewise NumPy transform evaluates positive and negative scores separately,
+avoiding overflow while preserving finite-tail precision and exact infinite
+endpoints.
 
 ## Response-time helpers
 
