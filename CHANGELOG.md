@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.6] - 2026-08-02
+
+### Changed
+
+- Person–total item-profile means and respondent correlations now run in
+  bounded batches through the shared row-correlation kernel instead of
+  materializing several complete respondent-by-item arrays. On the
+  100,000-respondent, 80-item benchmark, median time falls from 56.7 to 24.0 ms
+  and peak temporary allocation from 322.7 to 4.9 MiB, without adding a
+  dependency.
+
+### Fixed
+
+- Person–total scoring now ignores entirely unavailable items without emitting
+  a warning when missing removal is enabled. Disabling missing removal restores
+  strict propagation instead of silently discarding contaminated items, while
+  constant respondent and item profiles remain unavailable.
+- The index catalog now describes `person_total` as agreement with the sample
+  item profile rather than as an extreme total-score measure.
+
 ## [2.19.5] - 2026-08-02
 
 ### Changed
