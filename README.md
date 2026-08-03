@@ -21,6 +21,7 @@ For a comprehensive methods review, see
 - Bounded grouped missing-response Markov entropy scoring
 - Batched missing-response longest-run and repeating-pattern scoring
 - Batched dependency-free chi-square quantiles for large Mahalanobis Q-Q plots
+- Grouped missing-aware medians for response-time summaries and mixtures
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format
@@ -313,7 +314,9 @@ write cannot truncate an existing result. See
 
 `ier response-time` accepts a separate respondent-by-timing matrix and supports
 mean, median, standard-deviation, minimum, consistency, and Gaussian-mixture
-scores. Fixed thresholds are inclusive; sample-relative defaults flag the low
+scores. Missing-aware median summaries and mixture preprocessing reuse bounded
+NaN-free row groups, keeping temporary matrix workspaces independent of respondent count.
+Fixed thresholds are inclusive; sample-relative defaults flag the low
 5% for direct timing metrics and the high 5% for mixture probabilities. Text,
 JSON, and NPZ preserve whether the resolved cutoff was fixed or percentile-based
 and record the requested percentile when applicable. Retain

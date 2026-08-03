@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.44] - 2026-08-03
+
+### Performance
+
+- Missing-aware row medians now group respondents by retained observation count
+  and apply ordinary median selection to bounded NaN-free batches instead of
+  repeatedly entering NumPy's general missing-value reducer. On a
+  100,000-respondent, 80-item timing matrix with 10% missing observations, the
+  median kernel improved from 0.1995 to 0.0859 seconds, a 2.32x speedup, while
+  peak traced allocation fell from 9.6 to 7.6 MiB. The public median workflow
+  improved from 0.2325 to 0.0861 seconds, a 2.70x speedup, and Gaussian-mixture
+  scoring improved from 0.2638 to 0.1170 seconds, a 2.25x speedup. Results remain
+  exactly equal, all-missing rows remain unavailable, source order is preserved,
+  and the shared 262,144-element matrix-workspace bound adds no dependency.
+
 ## [2.19.43] - 2026-08-03
 
 ### Performance

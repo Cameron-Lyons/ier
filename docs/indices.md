@@ -105,6 +105,10 @@ flags in your analysis code if needed.
 | `response_time_mixture` | Stable mixture P(fast component) | high |
 | `response_time_score_flags` | Reflag retained direct or mixture scores | low or high |
 
+Median summaries and mixture preprocessing remove missing observations within
+bounded equal-length row groups before median selection. This keeps large timing
+matrices allocation-bounded while preserving each respondent's observation order.
+
 ## Plot helpers
 
 Requires `insufficient-effort[plot]`:

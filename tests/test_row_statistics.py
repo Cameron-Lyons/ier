@@ -93,6 +93,42 @@ def test_all_missing_rows_are_unavailable_without_warning() -> None:
     np.testing.assert_allclose(medians[1], 3.0)
 
 
+def test_missing_aware_median_groups_nan_free_rows_by_retained_length() -> None:
+    """Missing-aware medians reuse bounded ordinary-median groups."""
+    data = np.array(
+        [
+            [9.0, np.nan, 1.0, 5.0, np.nan],
+            [np.nan, 8.0, np.nan, 2.0, np.nan],
+            [np.nan, np.nan, np.nan, np.nan, np.nan],
+            [7.0, 3.0, 4.0, np.nan, 2.0],
+            [6.0, np.nan, np.nan, np.nan, np.nan],
+        ]
+    )
+    original = data.copy()
+
+    with (
+        patch.object(
+            row_statistics,
+            "compressed_row_groups",
+            wraps=row_statistics.compressed_row_groups,
+        ) as groups,
+        patch.object(
+            row_statistics,
+            "_row_median_block",
+            wraps=row_statistics._row_median_block,
+        ) as median_blocks,
+    ):
+        observed = row_statistics.row_median(data, ignore_nan=True)
+
+    np.testing.assert_array_equal(observed, np.array([5.0, 5.0, np.nan, 3.5, 6.0]))
+    np.testing.assert_array_equal(data, original)
+    groups.assert_called_once_with(data, min_columns=1)
+    assert median_blocks.call_count == 4
+    for call in median_blocks.call_args_list:
+        assert call.kwargs == {}
+        assert not np.isnan(call.args[0]).any()
+
+
 def test_reductions_obey_shared_element_budget() -> None:
     """Mean and standard-deviation work is split into bounded row blocks."""
     rng = np.random.default_rng(7)
