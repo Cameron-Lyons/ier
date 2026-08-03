@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.31] - 2026-08-03
+
+### Added
+
+- `ier response-time-reflag ARCHIVE` reapplies a required fixed or percentile
+  cutoff to validated retained timing scores without reading the original timing
+  matrix or recomputing its metric. Text, JSON, CSV, and NPZ outputs preserve
+  archived identifiers, metric, score direction, and scores; NPZ can atomically
+  replace its source archive in place.
+
+### Changed
+
+- Response-time scoring and archive reflagging now share one cutoff-resolution
+  and output-dispatch path, keeping fixed-inclusive and percentile-exclusive
+  behavior aligned across every format.
+- On a 100,000-by-80 timing benchmark, five archive-backed cutoff scenarios take
+  5.1 ms and 2.0 MiB peak traced allocation versus 1.1713 seconds and 10.0 MiB
+  for five full rescoring runs, a 231.8x speedup without another dependency.
+
 ## [2.19.30] - 2026-08-03
 
 ### Added

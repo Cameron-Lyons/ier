@@ -11,10 +11,14 @@ import numpy as np
 
 from ier import (
     IndexOptions,
+    ResponseTimeFlagDirection,
+    ResponseTimeMetric,
+    ResponseTimeThresholdSource,
     __version__,
     composite,
     composite_summary,
     index_catalog,
+    load_response_time_archive,
     response_time,
     response_time_consistency,
     response_time_mixture,
@@ -436,6 +440,32 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_matrix_input_options(response_time_parser)
     _add_output_options(response_time_parser)
 
+    response_time_reflag_parser = sub.add_parser(
+        "response-time-reflag",
+        help="Reflag stored response-time scores without rescoring the timing matrix.",
+    )
+    response_time_reflag_parser.add_argument(
+        "archive",
+        type=Path,
+        help="Validated response-time .npz archive to reuse",
+    )
+    response_time_reflagging = response_time_reflag_parser.add_mutually_exclusive_group(
+        required=True
+    )
+    response_time_reflagging.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Flag scores inclusively at a fixed cutoff",
+    )
+    response_time_reflagging.add_argument(
+        "--percentile",
+        type=float,
+        default=None,
+        help="Flag scores beyond a sample percentile, excluding cutoff ties",
+    )
+    _add_output_options(response_time_reflag_parser)
+
     indices_parser = sub.add_parser(
         "indices", help="List registered indices and orchestration metadata."
     )
@@ -478,6 +508,89 @@ def _score_response_times(
     return response_time(matrix, metric=metric), "low"
 
 
+def _flag_response_time_scores(
+    scores: np.ndarray,
+    direction: ResponseTimeFlagDirection,
+    threshold: float | None,
+    percentile: float | None,
+) -> tuple[np.ndarray, float, ResponseTimeThresholdSource, float | None]:
+    """Apply one fixed or percentile cutoff and retain its provenance."""
+    comparison_percentile = (
+        (95.0 if direction == "high" else 5.0) if percentile is None else percentile
+    )
+    cutoff = resolve_threshold(scores, threshold, comparison_percentile)
+    threshold_source: ResponseTimeThresholdSource = (
+        "fixed" if threshold is not None else "percentile"
+    )
+    requested_percentile = None if threshold is not None else comparison_percentile
+    flags = threshold_flags(
+        scores,
+        threshold=cutoff,
+        percentile=comparison_percentile,
+        direction=direction,
+        inclusive=threshold is not None,
+    )
+    return flags, cutoff, threshold_source, requested_percentile
+
+
+def _write_response_time_result(
+    args: argparse.Namespace,
+    scores: np.ndarray,
+    flags: np.ndarray,
+    metric: ResponseTimeMetric,
+    direction: ResponseTimeFlagDirection,
+    cutoff: float,
+    respondent_ids: list[str] | None,
+    threshold_source: ResponseTimeThresholdSource,
+    percentile: float | None,
+) -> int:
+    """Write one response-time result through the selected CLI format."""
+    if args.format == "json":
+        _write_json_output(
+            args.output,
+            lambda handle: _write_response_time_json(
+                handle,
+                scores,
+                flags,
+                metric,
+                direction,
+                cutoff,
+                respondent_ids,
+                threshold_source=threshold_source,
+                percentile=percentile,
+            ),
+        )
+    elif args.format == "csv":
+        with _output_stream(args.output) as handle:
+            _write_response_time_csv(handle, scores, flags, respondent_ids)
+    elif args.format == "npz":
+        _write_response_time_npz(
+            args.output,
+            scores,
+            flags,
+            metric,
+            direction,
+            cutoff,
+            respondent_ids,
+            threshold_source=threshold_source,
+            percentile=percentile,
+        )
+    else:
+        text = _emit_response_time_text(
+            scores,
+            flags,
+            metric,
+            direction,
+            cutoff,
+            args.top,
+            respondent_ids,
+            threshold_source=threshold_source,
+            percentile=percentile,
+        )
+        _write_output(text, args.output)
+    return 0
+
+
 def _run_command(args: argparse.Namespace) -> int:
     """Execute one parsed CLI command, allowing user-facing failures to bubble to main()."""
     if args.command == "indices":
@@ -499,6 +612,26 @@ def _run_command(args: argparse.Namespace) -> int:
     if args.format == "npz":
         _require_npz_output_path(args.output)
 
+    if args.command == "response-time-reflag":
+        saved = load_response_time_archive(args.archive)
+        flags, cutoff, threshold_source, percentile = _flag_response_time_scores(
+            saved["scores"],
+            saved["flag_direction"],
+            args.threshold,
+            args.percentile,
+        )
+        return _write_response_time_result(
+            args,
+            saved["scores"],
+            flags,
+            saved["metric"],
+            saved["flag_direction"],
+            cutoff,
+            saved["respondent_ids"],
+            threshold_source,
+            percentile,
+        )
+
     matrix, respondent_ids = _load_input(
         args.data,
         args.delimiter,
@@ -513,69 +646,23 @@ def _run_command(args: argparse.Namespace) -> int:
             args.log_transform,
             args.random_seed,
         )
-        percentile = args.percentile
-        if percentile is None:
-            percentile = 95.0 if direction == "high" else 5.0
-        cutoff = resolve_threshold(scores, args.threshold, percentile)
-        threshold_source: Literal["fixed", "percentile"] = (
-            "fixed" if args.threshold is not None else "percentile"
-        )
-        requested_percentile = None if args.threshold is not None else percentile
-        flags = threshold_flags(
+        flags, cutoff, threshold_source, percentile = _flag_response_time_scores(
             scores,
-            threshold=cutoff,
-            percentile=percentile,
-            direction=direction,
-            inclusive=args.threshold is not None,
+            direction,
+            args.threshold,
+            args.percentile,
         )
-
-        if args.format == "json":
-            _write_json_output(
-                args.output,
-                lambda handle: _write_response_time_json(
-                    handle,
-                    scores,
-                    flags,
-                    args.metric,
-                    direction,
-                    cutoff,
-                    respondent_ids,
-                    threshold_source=threshold_source,
-                    percentile=requested_percentile,
-                ),
-            )
-            return 0
-        elif args.format == "csv":
-            with _output_stream(args.output) as handle:
-                _write_response_time_csv(handle, scores, flags, respondent_ids)
-            return 0
-        elif args.format == "npz":
-            _write_response_time_npz(
-                args.output,
-                scores,
-                flags,
-                args.metric,
-                direction,
-                cutoff,
-                respondent_ids,
-                threshold_source=threshold_source,
-                percentile=requested_percentile,
-            )
-            return 0
-        else:
-            text = _emit_response_time_text(
-                scores,
-                flags,
-                args.metric,
-                direction,
-                cutoff,
-                args.top,
-                respondent_ids,
-                threshold_source=threshold_source,
-                percentile=requested_percentile,
-            )
-        _write_output(text, args.output)
-        return 0
+        return _write_response_time_result(
+            args,
+            scores,
+            flags,
+            args.metric,
+            direction,
+            cutoff,
+            respondent_ids,
+            threshold_source,
+            percentile,
+        )
 
     options = _options_from_args(args)
     if args.command == "screen":

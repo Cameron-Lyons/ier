@@ -191,6 +191,19 @@ flags or tie-exclusive percentile flags because their source was not recorded.
 For v2, the loader enforces the rule named by `threshold_source` and recomputes a
 percentile-derived cutoff from the stored scores and requested percentile.
 
+Reuse those validated scores directly from the CLI:
+
+```bash
+ier response-time-reflag timing.npz --percentile 1 --format json --output strict.json
+ier response-time-reflag timing.npz --threshold 1.0 --format npz --output timing.npz
+```
+
+`response-time-reflag` requires exactly one new fixed or percentile cutoff. It
+preserves the archived metric, suspicious-tail direction, score vector, and
+optional respondent identifiers, then writes through the same text, JSON, CSV,
+or NPZ serializers as `response-time`. An NPZ destination may be the input path;
+the validated arrays are loaded before the atomic replacement begins.
+
 `save_response_time_archive()` writes legacy v1 when both provenance arguments
 are omitted, preserving existing calls. Pass `threshold_source="fixed"` or pass
 `threshold_source="percentile", percentile=VALUE` to write v2; supplying only

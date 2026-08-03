@@ -178,7 +178,9 @@ throughout EM. Its expectation step follows a fast probability-space path for
 ordinary observations and normalizes only underflowed rows in log space.
 Retained summary vectors and mixture probabilities pass through the same shared
 single-vector validation and threshold boundary, so cutoff sensitivity analysis
-does not recalculate row summaries or refit EM.
+does not recalculate row summaries or refit EM. The archive reflag CLI loads that
+validated vector directly, then shares cutoff resolution and all four output
+serializers with the original response-time command.
 
 Markov transition entropy counts categorical pairs in bounded row batches for
 up to 64 observed states. Higher-cardinality inputs use only each row's observed
@@ -247,7 +249,8 @@ Plotting remains optional and reports a centralized install hint from
 - Row-wise response reduction throughput and memory: `benchmarks/bench_row_reductions.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
-- Response-time mixture EM, scoring, and reusable cutoff sensitivity:
+- Response-time mixture EM, scoring, in-memory cutoff reuse, and archive-backed
+  CLI cutoff reuse:
   `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - Reusable composite sensitivity analysis: `benchmarks/bench_composite.py`.

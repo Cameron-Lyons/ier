@@ -10,18 +10,22 @@ from __future__ import annotations
 import argparse
 import gc
 import statistics
+import tempfile
 import time
 import tracemalloc
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ier import (
+    load_response_time_archive,
     response_time,
     response_time_consistency,
     response_time_flag,
     response_time_mixture,
     response_time_score_flags,
+    save_response_time_archive,
 )
 from ier.response_time import _em_gaussian_mixture
 
@@ -155,6 +159,37 @@ def main() -> None:
         repeats=args.repeats,
         warmup=args.warmup,
     )
+    with tempfile.TemporaryDirectory() as directory:
+        archive_path = Path(directory) / "timing.npz"
+        initial_threshold = float(np.nanpercentile(retained_scores, 5.0))
+        save_response_time_archive(
+            archive_path,
+            retained_scores,
+            retained_scores < initial_threshold,
+            threshold=initial_threshold,
+            threshold_source="percentile",
+            percentile=5.0,
+        )
+
+        def archived_sensitivity() -> np.ndarray:
+            saved = load_response_time_archive(archive_path)
+            return np.concatenate(
+                [
+                    response_time_score_flags(
+                        saved["scores"],
+                        cutoff_percentile=percentile,
+                        direction=saved["flag_direction"],
+                    )
+                    for percentile in sensitivity_percentiles
+                ]
+            )
+
+        np.testing.assert_array_equal(archived_sensitivity(), reused_sensitivity())
+        archived_sensitivity_seconds, archived_sensitivity_peak = _measure(
+            archived_sensitivity,
+            repeats=args.repeats,
+            warmup=args.warmup,
+        )
 
     print(
         f"shape={timings.shape} components={args.components} "
@@ -172,6 +207,11 @@ def main() -> None:
         f"five reused cutoff scenarios: median={reused_sensitivity_seconds:.4f}s "
         f"peak={reused_sensitivity_peak:.1f} MiB "
         f"speedup={full_sensitivity_seconds / reused_sensitivity_seconds:.1f}x"
+    )
+    print(
+        f"five archived cutoff scenarios: median={archived_sensitivity_seconds:.4f}s "
+        f"peak={archived_sensitivity_peak:.1f} MiB "
+        f"speedup={full_sensitivity_seconds / archived_sensitivity_seconds:.1f}x"
     )
 
 

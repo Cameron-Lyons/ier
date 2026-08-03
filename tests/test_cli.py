@@ -13,7 +13,13 @@ from unittest.mock import patch
 
 import numpy as np
 
-from ier import composite, composite_flag, composite_probability, composite_summary
+from ier import (
+    composite,
+    composite_flag,
+    composite_probability,
+    composite_summary,
+    save_response_time_archive,
+)
 from ier._cli_input import _load_input, _load_matrix
 from ier._cli_output import _emit_composite_json, _emit_composite_text, _write_composite_csv
 from ier.cli import (
@@ -695,6 +701,124 @@ class TestCli(unittest.TestCase):
         self.assertEqual(payload["flag_direction"], "high")
         self.assertEqual(payload["flags"], [True, True, True, True, False, False, False, False])
         self.assertTrue(all(0.0 <= score <= 1.0 for score in payload["scores"]))
+
+    def test_response_time_reflag_reuses_legacy_archive_across_text_json_and_csv(
+        self,
+    ) -> None:
+        archive = self.root / "retained-timing.npz"
+        scores = np.asarray([0.5, 1.0, 1.0, 3.0])
+        save_response_time_archive(
+            archive,
+            scores,
+            scores <= 1.0,
+            threshold=1.0,
+            respondent_ids=["fast", "tie-a", "tie-b", "slow"],
+        )
+        json_out = self.root / "reflagged.json"
+        csv_out = self.root / "reflagged.csv"
+        stdout = StringIO()
+
+        with patch("ier.cli._load_input", side_effect=AssertionError("rescored")):
+            json_code = main(
+                [
+                    "response-time-reflag",
+                    str(archive),
+                    "--percentile",
+                    "50",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(json_out),
+                ]
+            )
+            csv_code = main(
+                [
+                    "response-time-reflag",
+                    str(archive),
+                    "--threshold",
+                    "1",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(csv_out),
+                ]
+            )
+            with patch("sys.stdout", stdout):
+                text_code = main(
+                    [
+                        "response-time-reflag",
+                        str(archive),
+                        "--percentile",
+                        "50",
+                        "--top",
+                        "2",
+                    ]
+                )
+
+        self.assertEqual(json_code, 0)
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["metric"], "median")
+        self.assertEqual(payload["flag_direction"], "low")
+        self.assertEqual(payload["threshold"], 1.0)
+        self.assertEqual(payload["threshold_source"], "percentile")
+        self.assertEqual(payload["percentile"], 50.0)
+        self.assertEqual(payload["scores"], scores.tolist())
+        self.assertEqual(payload["flags"], [True, False, False, False])
+        self.assertEqual(payload["respondent_ids"], ["fast", "tie-a", "tie-b", "slow"])
+
+        self.assertEqual(csv_code, 0)
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        self.assertEqual([row["respondent"] for row in rows], ["fast", "tie-a", "tie-b", "slow"])
+        self.assertEqual([row["response_time_flag"] for row in rows], ["1", "1", "1", "0"])
+
+        self.assertEqual(text_code, 0)
+        self.assertIn("threshold: 1 (percentile)", stdout.getvalue())
+        self.assertIn("percentile: 50", stdout.getvalue())
+
+    def test_response_time_reflag_preserves_mixture_high_tail(self) -> None:
+        archive = self.root / "mixture-timing.npz"
+        scores = np.asarray([0.1, 0.7, 0.7, 0.9])
+        save_response_time_archive(
+            archive,
+            scores,
+            scores >= 0.7,
+            threshold=0.7,
+            metric="mixture",
+            flag_direction="high",
+        )
+        out = self.root / "mixture-reflagged.json"
+
+        code = main(
+            [
+                "response-time-reflag",
+                str(archive),
+                "--percentile",
+                "50",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["metric"], "mixture")
+        self.assertEqual(payload["flag_direction"], "high")
+        self.assertEqual(payload["threshold"], 0.7)
+        self.assertEqual(payload["flags"], [False, False, False, True])
+
+    def test_response_time_reflag_reports_invalid_archive_without_traceback(self) -> None:
+        invalid = self.root / "invalid.npz"
+        np.savez(invalid, values=np.asarray([1.0, 2.0]))
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            code = main(["response-time-reflag", str(invalid), "--threshold", "1"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("missing required member: schema_version", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_response_time_invalid_components_returns_structured_error(self) -> None:
         stderr = StringIO()

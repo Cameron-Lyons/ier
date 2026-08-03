@@ -291,6 +291,7 @@ ier response-time timings.csv --metric median --percentile 5
 ier response-time timings.csv --metric consistency --threshold 0.05 --format csv
 ier response-time timings.csv --metric mixture --components 2 --random-seed 42
 ier response-time timings.csv --metric median --format npz --output timing.npz
+ier response-time-reflag timing.npz --percentile 1 --format npz --output strict.npz
 ```
 
 Direct timing metrics and consistency scores use low-tail flagging. Mixture
@@ -304,6 +305,10 @@ or percentile provenance before reuse. Provenance-aware archives retain the
 requested percentile and recompute the derived cutoff during validation. The
 matching writer performs the same checks before creating a CLI-compatible
 archive; calls without provenance remain compatible with legacy v1 output.
+The archive reflag command exposes the same sensitivity path without Python and
+requires a new fixed or percentile cutoff. It preserves the stored metric,
+direction, scores, and identifiers and can atomically replace its input when NPZ
+output targets the same path.
 Mixture fitting excludes respondents whose median time is missing, infinite, or
 non-positive. Its posterior normalization remains stable when ordinary Gaussian
 density calculations underflow for an extreme valid observation.
