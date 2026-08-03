@@ -1,8 +1,9 @@
-"""Benchmark psychometric synonym scoring and high-item pair discovery.
+"""Benchmark direct and fixed-model psychometric synonym scoring.
 
 Missing responses are distributed across the matrix so the benchmark exercises
 pairwise-complete item discovery and respondent scoring. Independent data with
-a high cutoff isolates the bounded no-pair discovery path.
+a high cutoff isolates the bounded no-pair discovery path. Each scenario also
+measures scoring with one retained item-pair calibration.
 
 Usage:
     uv run python benchmarks/bench_psychsyn.py
@@ -20,10 +21,43 @@ import gc
 import statistics
 import time
 import tracemalloc
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import psychsyn
+from ier import fit_psychsyn_model, psychsyn, psychsyn_model_scores
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+def _measure(
+    operation: Callable[[], tuple[np.ndarray, np.ndarray]],
+    repeats: int,
+) -> tuple[float, float, np.ndarray, np.ndarray]:
+    """Measure one psychometric scoring operation."""
+    timings: list[float] = []
+    peaks: list[int] = []
+    result: np.ndarray | None = None
+    diagnostic: np.ndarray | None = None
+    for _ in range(repeats):
+        gc.collect()
+        tracemalloc.start()
+        started = time.perf_counter()
+        result, diagnostic = operation()
+        timings.append(time.perf_counter() - started)
+        peaks.append(tracemalloc.get_traced_memory()[1])
+        tracemalloc.stop()
+
+    assert result is not None and diagnostic is not None
+    if not (np.isfinite(result).all() or np.isnan(result).all()):
+        raise RuntimeError("benchmark produced non-finite psychometric synonym scores")
+    return (
+        statistics.median(timings),
+        statistics.median(peaks) / 1024 / 1024,
+        result,
+        diagnostic,
+    )
 
 
 def main() -> None:
@@ -57,34 +91,31 @@ def main() -> None:
     if args.missing_rate:
         data[rng.random(data.shape) < args.missing_rate] = np.nan
 
+    model = fit_psychsyn_model(data, critval=args.critval)
     for _ in range(args.warmup):
         psychsyn(data, critval=args.critval)
+        psychsyn_model_scores(data, model)
 
-    timings: list[float] = []
-    peaks: list[int] = []
-    result: np.ndarray | None = None
-    diagnostic: np.ndarray | None = None
-    for _ in range(args.repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        result, diagnostic = psychsyn(data, critval=args.critval, diag=True)
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-
-    assert result is not None and diagnostic is not None
-    if not (np.isfinite(result).all() or np.isnan(result).all()):
-        raise RuntimeError("benchmark produced non-finite psychometric synonym scores")
+    direct_seconds, direct_peak, result, diagnostic = _measure(
+        lambda: psychsyn(data, critval=args.critval, diag=True),
+        args.repeats,
+    )
+    fixed_seconds, fixed_peak, fixed_result, fixed_diagnostic = _measure(
+        lambda: psychsyn_model_scores(data, model, diag=True),
+        args.repeats,
+    )
+    np.testing.assert_array_equal(fixed_result, result)
+    np.testing.assert_array_equal(fixed_diagnostic, diagnostic)
 
     print(
-        f"shape={data.shape} selected_pairs={int(diagnostic.max(initial=0))} "
+        f"shape={data.shape} selected_pairs={model.n_pairs} "
         f"missing_rate={args.missing_rate} independent={args.independent} "
         f"repeats={args.repeats} warmup={args.warmup}"
     )
+    print(f"psychsyn: median={direct_seconds:.4f}s peak={direct_peak:.1f} MiB")
     print(
-        f"psychsyn: median={statistics.median(timings):.4f}s "
-        f"peak={statistics.median(peaks) / 1024 / 1024:.1f} MiB"
+        f"fixed model: median={fixed_seconds:.4f}s peak={fixed_peak:.1f} MiB "
+        f"speedup={direct_seconds / fixed_seconds:.1f}x"
     )
 
 

@@ -15,6 +15,7 @@ For a comprehensive methods review, see
 - Auto-detecting result/model archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded complete and pairwise-complete discovery and scoring for psychometric synonyms
+- Reusable immutable psychometric pair calibration for later cohorts
 - Reproducible psychometric missing-response retries across shared and CLI workflows
 - Contracted, active-row-compacted LZ estimation for complete and missing responses
 - Externally calibrated LZ parameters across Python and CLI scoring workflows

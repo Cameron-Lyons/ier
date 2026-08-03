@@ -65,6 +65,23 @@ at least three usable pairs for a score; seeded retries keep the observed pair
 count unchanged. Shared workflows accept independent `psychsyn_random_seed` and
 `psychant_random_seed` values, with matching command-line options.
 
+Fit psychometric pairs once on a reference cohort and reuse the immutable
+calibration on later matrices with the same item count and column order:
+
+```python
+from ier import fit_psychsyn_model, psychsyn_model_scores
+
+model = fit_psychsyn_model(reference_responses, critval=0.6)
+later_scores, usable_pairs = psychsyn_model_scores(
+    later_responses,
+    model,
+    diag=True,
+)
+```
+
+Fixed-model scoring never rediscovers pairs. The model retains the fitted
+threshold, synonym/antonym mode, item count, and a read-only owned pair array.
+
 `mahad_qqplot()` generates dependency-free theoretical chi-square coordinates
 in bounded vector batches. Plotting remains optional; with `plot=False`, large
 Q-Q datasets require only the NumPy base installation.
