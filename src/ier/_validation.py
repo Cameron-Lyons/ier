@@ -58,7 +58,7 @@ def validate_matrix_input(
     if isinstance(x, (list, tuple)) and len(x) == 0:
         raise ValueError("input data cannot be empty")
 
-    x_array = np.array(x, dtype=dtype) if dtype is not None else np.asarray(x)
+    x_array = np.asarray(x, dtype=dtype)
 
     if allow_1d and x_array.ndim == 1:
         x_array = x_array.reshape(1, -1)
