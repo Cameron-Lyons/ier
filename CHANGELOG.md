@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 2026-08-02
+
+### Changed
+
+- Complete-matrix repeating-pattern scoring now streams match lengths in reverse
+  using respondent-sized, smallest-safe integer vectors instead of several
+  respondent-by-position integer matrices; the 10,000-respondent, 80-item
+  benchmark runs roughly 1.6 times as fast with substantially less workspace,
+  reducing the same default-screen benchmark by about 10%.
+
 ## [2.7.0] - 2026-08-02
 
 ### Added
