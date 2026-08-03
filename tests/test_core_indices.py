@@ -16,7 +16,7 @@ from ier.longstring import (
     _run_length_encode,
     longstring,
 )
-from ier.mahad import mahad, mahad_summary
+from ier.mahad import _compute_mahalanobis_distance, mahad, mahad_summary
 from ier.psychsyn import (
     _resample_missing_correlations,
     compute_person_correlations,
@@ -310,6 +310,19 @@ class TestMahadFunction(unittest.TestCase):
         distances = mahad(data)
         self.assertTrue(np.all(np.isfinite(distances)))
         self.assertTrue(np.all(distances >= 0))
+
+    def test_matrix_product_matches_quadratic_form(self) -> None:
+        """Test optimized distance evaluation against the direct quadratic form."""
+        rng = np.random.default_rng(42)
+        data = rng.normal(size=(200, 12))
+        centered = data - np.mean(data, axis=0)
+        covariance = np.cov(data, rowvar=False)
+        inverse = np.linalg.pinv(covariance)
+        expected = np.sqrt(np.einsum("ij,jk,ik->i", centered, inverse, centered))
+
+        result = _compute_mahalanobis_distance(data)
+
+        np.testing.assert_allclose(result, expected, rtol=1e-12, atol=1e-12)
 
     def test_invalid_confidence(self) -> None:
         """Test MAHAD raises ValueError for invalid confidence values."""

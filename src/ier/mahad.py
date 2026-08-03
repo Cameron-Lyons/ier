@@ -137,7 +137,7 @@ def _compute_mahalanobis_distance(x: np.ndarray) -> np.ndarray:
     inv_cov_matrix = (vh.T * inv_s) @ u.T
 
     centered_data = x - mean_vector
-    mahalanobis_squared = np.einsum("ij,jk,ik->i", centered_data, inv_cov_matrix, centered_data)
+    mahalanobis_squared = np.sum((centered_data @ inv_cov_matrix) * centered_data, axis=1)
     result: np.ndarray = np.sqrt(mahalanobis_squared)
     return result
 
