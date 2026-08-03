@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.1] - 2026-08-02
+
+### Changed
+
+- Composite and lz scoring now share one overflow-safe NumPy logistic kernel,
+  removing four duplicate or direct exponential calculations. On the
+  10,000-respondent, 80-item lz benchmark, median time falls from 144.7 to
+  132.8 ms while peak temporary allocation remains 13.8 MiB, without adding a
+  dependency.
+
+### Fixed
+
+- Complete and missing-data lz likelihood calculations no longer emit overflow
+  warnings for extreme user-supplied difficulty, discrimination, or theta
+  values; probabilities retain finite-tail precision before established
+  clipping is applied.
+
 ## [2.19.0] - 2026-08-02
 
 ### Added

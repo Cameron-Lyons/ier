@@ -41,7 +41,7 @@ defaults, and options that must be configured before an index can run.
 | `onset` | Carelessness onset item index | present | no | no | `onset_window_size`, `onset_min_items` |
 | `evenodd` | Even-odd consistency | low | no | yes | `evenodd_factors` |
 | `mad` | Maximum absolute deviation (antonyms) | high | no | yes | MAD item lists / `mad_scale_max` |
-| `lz` | lz person-fit | low | no | yes | optional IRT params via direct API |
+| `lz` | lz person-fit | low | no | yes | optional IRT params via direct API; overflow-safe logistic kernel |
 | `semantic_syn` | Predefined synonym consistency | low | no | yes | `semantic_item_pairs` |
 | `semantic_ant` | Predefined antonym consistency | low | no | yes | `semantic_item_pairs`, optional scale bounds |
 | `infrequency` | Failed attention / bogus items | high | no | yes | item indices + expected responses |

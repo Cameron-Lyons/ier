@@ -121,9 +121,10 @@ methods allocate one integer count vector only when the rule is enabled.
 `composite_probability()` applies a logistic transform for convenience — it is
 **not** a calibrated probability of carelessness. Do not treat it as a
 posterior or diagnostic probability without your own validation study. Its
-piecewise NumPy transform evaluates positive and negative scores separately,
+shared piecewise NumPy kernel evaluates positive and negative values separately,
 avoiding overflow while preserving finite-tail precision and exact infinite
-endpoints.
+endpoints. The lz theta and likelihood paths reuse the same kernel for both
+complete batches and missing-data rows.
 The CLI computes this transform from the final aggregate vector only when
 `--include-probability` is requested. JSON and CSV then serialize it
 forward-only, while NPZ stores one additional typed vector; index scoring is not
@@ -148,5 +149,6 @@ Plotting remains optional and reports a centralized install hint from
   JSON under `tests/fixtures/parity/`.
 - Detection-rate simulation: `benchmarks/bench_detection.py`.
 - Throughput microbench: `benchmarks/bench_screen.py`.
+- Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.

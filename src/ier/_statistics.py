@@ -45,6 +45,23 @@ def normal_pdf(
     return result
 
 
+def logistic_transform(values: np.ndarray) -> np.ndarray:
+    """Apply the logistic transform without overflowing at either extreme."""
+    value_array = np.asarray(values, dtype=float)
+    result = np.empty_like(value_array)
+    nonnegative = value_array >= 0.0
+
+    np.negative(value_array, out=result)
+    np.exp(result, out=result, where=nonnegative)
+    np.logical_not(nonnegative, out=nonnegative)
+    np.exp(value_array, out=result, where=nonnegative)
+    denominator = 1.0 + result
+    np.divide(result, denominator, out=result, where=nonnegative)
+    np.logical_not(nonnegative, out=nonnegative)
+    np.reciprocal(denominator, out=result, where=nonnegative)
+    return result
+
+
 def _regularized_gamma_pair(shape: float, value: float) -> tuple[float, float]:
     """Return regularized lower/upper incomplete gamma values ``P`` and ``Q``.
 
