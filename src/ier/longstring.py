@@ -15,6 +15,7 @@ from ier._row_statistics import compressed_row_groups, row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
 _MISSING_COMPRESSION_BATCH_ELEMENTS = 131_072
+_PATTERN_BATCH_ELEMENTS = 1_048_576
 
 
 def _has_missing(x: np.ndarray) -> bool:
@@ -265,7 +266,17 @@ def _longstring_scores_complete(x: np.ndarray) -> np.ndarray:
 
 
 def _longest_repeating_patterns(x: np.ndarray, max_k: int) -> np.ndarray:
-    """Find longest consecutive repeating sub-patterns for complete matrix rows."""
+    """Find complete-row repeating patterns in cache-sized respondent batches."""
+    result = np.empty(len(x), dtype=float)
+    batch_rows = max(1, _PATTERN_BATCH_ELEMENTS // x.shape[1])
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        result[start:stop] = _longest_repeating_patterns_block(x[start:stop], max_k)
+    return result
+
+
+def _longest_repeating_patterns_block(x: np.ndarray, max_k: int) -> np.ndarray:
+    """Find longest consecutive repeating sub-patterns for one bounded block."""
     n_rows, n_columns = x.shape
     count_dtype = np.min_scalar_type(n_columns)
     best = np.zeros(n_rows, dtype=count_dtype)

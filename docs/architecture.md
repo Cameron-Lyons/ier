@@ -239,9 +239,11 @@ or sparse kernel.
 Numeric longest-run and repeating-pattern indices use the shared retained-length
 compression iterator when responses are missing. Each bounded group preserves
 post-removal item order and reuses the complete-response vectorized kernel,
-avoiding respondent-wise array construction. Markov and carelessness-onset
-scoring share the same grouping primitive with index-specific minimum lengths
-and workspace limits.
+avoiding respondent-wise array construction. Complete repeating-pattern matrices
+also traverse cache-sized respondent blocks, bounding change-prefix workspaces
+while retaining the same vectorized position scan. Markov and carelessness-onset
+scoring share the retained-length grouping primitive with index-specific minimum
+lengths and workspace limits.
 
 Even–odd consistency reduces factor correlations directly into respondent-level
 sums and valid-factor counts. Factors with exactly two paired observations use
