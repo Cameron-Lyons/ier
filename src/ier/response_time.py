@@ -5,14 +5,22 @@ Extremely fast or unusually consistent response times may indicate
 careless or inattentive responding.
 """
 
+from __future__ import annotations
+
 import math
 import warnings
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ier._flagging import threshold_flags
 from ier._row_statistics import row_mean, row_mean_std, row_median, row_std
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_matrix_input, validate_score_array
+
+if TYPE_CHECKING:
+    from numpy.typing import ArrayLike
+
+    from ier.types import ResponseTimeFlagDirection
 
 _LOG_TWO_PI = math.log(2.0 * math.pi)
 _MIN_COMPONENT_MASS = 1e-10
@@ -67,6 +75,50 @@ def response_time(
     return result
 
 
+def response_time_score_flags(
+    scores: ArrayLike,
+    threshold: float | None = None,
+    cutoff_percentile: float | None = None,
+    direction: ResponseTimeFlagDirection = "low",
+) -> np.ndarray:
+    """
+    Flag a retained one-dimensional response-time score vector.
+
+    Use low-tail flagging for direct timing summaries and consistency scores,
+    or high-tail flagging for fast-component mixture probabilities. Fixed
+    thresholds include equality; percentile-derived cutoffs exclude ties.
+    When ``cutoff_percentile`` is omitted, the low tail defaults to the 5th
+    percentile and the high tail to the 95th percentile.
+
+    Parameters:
+    - scores: Retained per-respondent response-time scores.
+    - threshold: Optional fixed cutoff in the score's units.
+    - cutoff_percentile: Optional sample-relative cutoff percentile.
+    - direction: Suspicious tail, ``"low"`` or ``"high"``.
+
+    Returns:
+    - Boolean array where ``True`` indicates a suspicious score.
+
+    Example:
+        >>> medians = response_time(times, metric="median")
+        >>> strict = response_time_score_flags(medians, cutoff_percentile=1)
+        >>> mixture = response_time_mixture(times, random_seed=42)
+        >>> likely_fast = response_time_score_flags(mixture, direction="high")
+    """
+    if not isinstance(direction, str) or direction not in {"high", "low"}:
+        raise ValueError("direction must be 'high' or 'low'")
+    validated_scores = validate_score_array(scores, name="response time scores")
+    percentile = cutoff_percentile
+    if percentile is None:
+        percentile = 95.0 if direction == "high" else 5.0
+    return threshold_flags(
+        validated_scores,
+        threshold=threshold,
+        percentile=percentile,
+        direction=direction,
+    )
+
+
 def response_time_flag(
     times: MatrixLike,
     threshold: float | None = None,
@@ -93,11 +145,10 @@ def response_time_flag(
     """
     person_times = response_time(times, metric=method)
 
-    return threshold_flags(
+    return response_time_score_flags(
         person_times,
         threshold=threshold,
-        percentile=cutoff_percentile,
-        direction="low",
+        cutoff_percentile=cutoff_percentile,
     )
 
 

@@ -10,7 +10,7 @@ For a comprehensive methods review, see
 
 - Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
-- Reusable `screen_scores()` and `composite_scores()` decision layers
+- Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
 - Validated, pickle-free `save_score_archive()` / `load_score_archive()` persistence
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
@@ -253,7 +253,9 @@ structured metadata without adding a dependency. See
 `ier response-time` accepts a separate respondent-by-timing matrix and supports
 mean, median, standard-deviation, minimum, consistency, and Gaussian-mixture
 scores. Fixed thresholds are inclusive; sample-relative defaults flag the low
-5% for direct timing metrics and the high 5% for mixture probabilities.
+5% for direct timing metrics and the high 5% for mixture probabilities. Retain
+any returned score vector and pass it to `response_time_score_flags()` to compare
+cutoffs without recalculating row summaries or refitting a mixture.
 
 ## Documentation
 

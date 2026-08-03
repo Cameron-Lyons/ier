@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.26] - 2026-08-03
+
+### Added
+
+- `response_time_score_flags()` reapplies fixed or percentile cutoffs to a
+  retained direct timing score vector or fast-component mixture probabilities.
+  Low-tail defaults suit timing summaries and consistency; high-tail defaults
+  suit mixture probabilities.
+- The public `ResponseTimeFlagDirection` type documents the supported suspicious
+  tails, and the response-time benchmark now measures repeated cutoff scenarios.
+
+### Changed
+
+- Single reusable score vectors and registered-index score mappings share one
+  numeric, dimensionality, emptiness, and finiteness validator. The established
+  `response_time_flag()` path delegates to the reusable implementation while
+  preserving inclusive fixed cutoffs and tie-exclusive percentile cutoffs.
+- On a 100,000-respondent, 80-item benchmark, five cutoff scenarios fall from
+  1.1683 seconds and 10.0 MiB peak temporary allocation to 3.2 ms and 1.2 MiB,
+  a 368.9x speedup without adding a dependency.
+
 ## [2.19.25] - 2026-08-03
 
 ### Added

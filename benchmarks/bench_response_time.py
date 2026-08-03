@@ -16,7 +16,13 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import response_time, response_time_consistency, response_time_mixture
+from ier import (
+    response_time,
+    response_time_consistency,
+    response_time_flag,
+    response_time_mixture,
+    response_time_score_flags,
+)
 from ier.response_time import _em_gaussian_mixture
 
 if TYPE_CHECKING:
@@ -85,6 +91,30 @@ def main() -> None:
     if args.missing_rate:
         timings[rng.random(timings.shape) < args.missing_rate] = np.nan
 
+    retained_scores = response_time(timings, metric="median")
+    sensitivity_percentiles = (1.0, 2.5, 5.0, 10.0, 20.0)
+
+    def full_sensitivity() -> np.ndarray:
+        return np.concatenate(
+            [
+                response_time_flag(timings, cutoff_percentile=percentile)
+                for percentile in sensitivity_percentiles
+            ]
+        )
+
+    def reused_sensitivity() -> np.ndarray:
+        return np.concatenate(
+            [
+                response_time_score_flags(
+                    retained_scores,
+                    cutoff_percentile=percentile,
+                )
+                for percentile in sensitivity_percentiles
+            ]
+        )
+
+    np.testing.assert_array_equal(reused_sensitivity(), full_sensitivity())
+
     summary_operations: dict[str, Callable[[], np.ndarray]] = {
         "mean": lambda: response_time(timings, metric="mean"),
         "median": lambda: response_time(timings, metric="median"),
@@ -115,6 +145,16 @@ def main() -> None:
         warmup=args.warmup,
         probability=True,
     )
+    full_sensitivity_seconds, full_sensitivity_peak = _measure(
+        full_sensitivity,
+        repeats=args.repeats,
+        warmup=args.warmup,
+    )
+    reused_sensitivity_seconds, reused_sensitivity_peak = _measure(
+        reused_sensitivity,
+        repeats=args.repeats,
+        warmup=args.warmup,
+    )
 
     print(
         f"shape={timings.shape} components={args.components} "
@@ -124,6 +164,15 @@ def main() -> None:
         print(f"{name}: median={seconds:.4f}s peak={peak:.1f} MiB")
     print(f"EM core: median={core_seconds:.4f}s peak={core_peak:.1f} MiB")
     print(f"public workflow: median={workflow_seconds:.4f}s peak={workflow_peak:.1f} MiB")
+    print(
+        f"five full cutoff scenarios: median={full_sensitivity_seconds:.4f}s "
+        f"peak={full_sensitivity_peak:.1f} MiB"
+    )
+    print(
+        f"five reused cutoff scenarios: median={reused_sensitivity_seconds:.4f}s "
+        f"peak={reused_sensitivity_peak:.1f} MiB "
+        f"speedup={full_sensitivity_seconds / reused_sensitivity_seconds:.1f}x"
+    )
 
 
 if __name__ == "__main__":

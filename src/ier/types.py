@@ -19,6 +19,7 @@ ScoreArchiveResultType: TypeAlias = Literal["screen", "composite"]
 
 CompositeMethod: TypeAlias = Literal["mean", "sum", "max", "best_subset"]
 InfrequencyMissingPolicy: TypeAlias = Literal["pass", "fail", "omit", "propagate"]
+ResponseTimeFlagDirection: TypeAlias = Literal["high", "low"]
 
 
 class IndexMetadata(TypedDict):

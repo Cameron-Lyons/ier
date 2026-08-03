@@ -256,10 +256,11 @@ units), not Likert item responses. They are intentionally **not** registered in
 respondents. Call them directly or use the dedicated CLI command:
 
 ```python
-from ier import response_time, response_time_flag
+from ier import response_time, response_time_flag, response_time_score_flags
 
 median_rt = response_time(times, metric="median")
 flags = response_time_flag(times, cutoff_percentile=5)
+stricter_flags = response_time_score_flags(median_rt, cutoff_percentile=1)
 ```
 
 ```bash
@@ -271,6 +272,9 @@ ier response-time timings.csv --metric mixture --components 2 --random-seed 42
 Direct timing metrics and consistency scores use low-tail flagging. Mixture
 probabilities use high-tail flagging. Fixed thresholds include equality; derived
 percentile cutoffs exclude ties, matching the other public flagging workflows.
+Retained direct scores use `direction="low"` by default; pass `direction="high"`
+for mixture probabilities. This sensitivity path never recomputes row summaries
+or refits the mixture.
 Mixture fitting excludes respondents whose median time is missing, infinite, or
 non-positive. Its posterior normalization remains stable when ordinary Gaussian
 density calculations underflow for an extreme valid observation.
