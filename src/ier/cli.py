@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import IndexOptions, __version__, composite, screen
+from ier import IndexOptions, __version__, composite, index_catalog, screen
 
 if TYPE_CHECKING:
-    from ier.types import ScreenResult
+    from ier.types import IndexCatalog, ScreenResult
 
 
 def _row_starts_with_non_numeric_value(row: list[str]) -> bool:
@@ -296,6 +296,22 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_shared_options(composite_parser)
 
+    indices_parser = sub.add_parser(
+        "indices", help="List registered indices and orchestration metadata."
+    )
+    indices_parser.add_argument(
+        "--format",
+        choices=["text", "json", "csv"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    indices_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write output to this path (default: stdout)",
+    )
+
     return parser
 
 
@@ -314,6 +330,64 @@ def _json_numbers(values: np.ndarray) -> list[float | None]:
 def _csv_number(value: float) -> float | None:
     """Return a CSV-safe number, using an empty cell for non-finite values."""
     return float(value) if np.isfinite(value) else None
+
+
+def _emit_index_catalog_text(catalog: IndexCatalog) -> str:
+    lines = [
+        "index\tdirection\tflag_mode\tscreen_default\tcomposite\tcomposite_default"
+        "\trequired_options"
+    ]
+    for name, metadata in catalog.items():
+        required = ",".join(metadata["required_options"]) or "-"
+        lines.append(
+            "\t".join(
+                (
+                    name,
+                    metadata["flag_direction"],
+                    metadata["flag_mode"],
+                    "yes" if metadata["default_screen"] else "no",
+                    "yes" if metadata["composite_enabled"] else "no",
+                    "yes" if metadata["default_composite"] else "no",
+                    required,
+                )
+            )
+        )
+    return "\n".join(lines)
+
+
+def _emit_index_catalog_json(catalog: IndexCatalog) -> str:
+    return json.dumps(
+        {"n_indices": len(catalog), "indices": catalog},
+        indent=2,
+    )
+
+
+def _emit_index_catalog_csv(catalog: IndexCatalog) -> str:
+    fieldnames = [
+        "index",
+        "flag_direction",
+        "flag_mode",
+        "default_screen",
+        "default_composite",
+        "composite_enabled",
+        "required_options",
+    ]
+    buf = StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames)
+    writer.writeheader()
+    for name, metadata in catalog.items():
+        writer.writerow(
+            {
+                "index": name,
+                "flag_direction": metadata["flag_direction"],
+                "flag_mode": metadata["flag_mode"],
+                "default_screen": metadata["default_screen"],
+                "default_composite": metadata["default_composite"],
+                "composite_enabled": metadata["composite_enabled"],
+                "required_options": ",".join(metadata["required_options"]),
+            }
+        )
+    return buf.getvalue()
 
 
 def _emit_screen_text(result: ScreenResult, top: int) -> str:
@@ -431,6 +505,17 @@ def _emit_composite_csv(scores: np.ndarray) -> str:
 
 def _run_command(args: argparse.Namespace) -> int:
     """Execute one parsed CLI command, allowing user-facing failures to bubble to main()."""
+    if args.command == "indices":
+        catalog = index_catalog()
+        if args.format == "json":
+            text = _emit_index_catalog_json(catalog)
+        elif args.format == "csv":
+            text = _emit_index_catalog_csv(catalog)
+        else:
+            text = _emit_index_catalog_text(catalog)
+        _write_output(text, args.output)
+        return 0
+
     matrix = _load_matrix(args.data, args.delimiter)
     options = _options_from_args(args)
     if args.command == "screen":

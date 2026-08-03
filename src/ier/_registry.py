@@ -21,6 +21,7 @@ from ier.person_total import person_total
 from ier.psychsyn import psychant, psychsyn
 from ier.reliability import individual_reliability
 from ier.semantic import semantic_ant, semantic_syn
+from ier.types import IndexCatalog
 from ier.u3_poly import midpoint_responding, u3_poly
 
 FlagDirection = Literal["high", "low"]
@@ -73,6 +74,7 @@ class IndexSpec:
     composite_enabled: bool = True
     flag_mode: FlagMode = "percentile"
     required_error: Callable[[IndexOptions], str | None] | None = None
+    required_options: tuple[str, ...] = ()
 
 
 def _require_evenodd_factors(options: IndexOptions) -> str | None:
@@ -323,12 +325,14 @@ INDEX_REGISTRY: dict[str, IndexSpec] = {
         flag_direction="low",
         composite_multiplier=-1.0,
         required_error=_require_evenodd_factors,
+        required_options=("evenodd_factors",),
     ),
     "mad": IndexSpec(
         name="mad",
         scorer=_mad_scores,
         flag_direction="high",
         required_error=_require_mad_items,
+        required_options=("mad_positive_items", "mad_negative_items"),
     ),
     "lz": IndexSpec(
         name="lz",
@@ -342,6 +346,7 @@ INDEX_REGISTRY: dict[str, IndexSpec] = {
         flag_direction="low",
         composite_multiplier=-1.0,
         required_error=_require_semantic_pairs,
+        required_options=("semantic_item_pairs",),
     ),
     "semantic_ant": IndexSpec(
         name="semantic_ant",
@@ -349,14 +354,31 @@ INDEX_REGISTRY: dict[str, IndexSpec] = {
         flag_direction="low",
         composite_multiplier=-1.0,
         required_error=_require_semantic_pairs,
+        required_options=("semantic_item_pairs",),
     ),
     "infrequency": IndexSpec(
         name="infrequency",
         scorer=_infrequency_scores,
         flag_direction="high",
         required_error=_require_infrequency_config,
+        required_options=("infrequency_item_indices", "infrequency_expected_responses"),
     ),
 }
+
+
+def index_catalog() -> IndexCatalog:
+    """Return discoverable metadata for all registered orchestration indices."""
+    return {
+        name: {
+            "flag_direction": spec.flag_direction,
+            "flag_mode": spec.flag_mode,
+            "default_screen": spec.default_screen,
+            "default_composite": spec.default_composite,
+            "composite_enabled": spec.composite_enabled,
+            "required_options": spec.required_options,
+        }
+        for name, spec in INDEX_REGISTRY.items()
+    }
 
 
 def default_screen_indices() -> list[str]:

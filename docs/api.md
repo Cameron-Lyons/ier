@@ -5,6 +5,7 @@
       members:
         - IndexOptions
         - __version__
+        - index_catalog
         - screen
         - composite
         - composite_flag

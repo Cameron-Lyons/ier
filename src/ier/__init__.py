@@ -3,6 +3,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from ._registry import IndexOptions as IndexOptions
+from ._registry import index_catalog as index_catalog
 from ._validation import MatrixLike as MatrixLike
 from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
@@ -46,8 +47,10 @@ from .types import BoolArray as BoolArray
 from .types import CompositeMethod as CompositeMethod
 from .types import CompositeSummary as CompositeSummary
 from .types import FloatArray as FloatArray
+from .types import IndexCatalog as IndexCatalog
 from .types import IndexErrorMap as IndexErrorMap
 from .types import IndexFlagMap as IndexFlagMap
+from .types import IndexMetadata as IndexMetadata
 from .types import IndexScoreMap as IndexScoreMap
 from .types import IntArray as IntArray
 from .types import ScreenIndexSummary as ScreenIndexSummary
@@ -85,8 +88,11 @@ __all__ = [
     "individual_reliability_flag",
     "infrequency",
     "infrequency_flag",
+    "index_catalog",
+    "IndexCatalog",
     "IndexErrorMap",
     "IndexFlagMap",
+    "IndexMetadata",
     "IndexScoreMap",
     "IntArray",
     "irv",
