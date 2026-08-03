@@ -207,8 +207,10 @@ states and pairs, avoiding a dense global state-square allocation. Both paths
 evaluate the equivalent count form of conditional entropy.
 
 Even–odd consistency reduces factor correlations directly into respondent-level
-sums and valid-factor counts. Correlation kernels use centered row workspaces and
-contraction reductions, so peak allocation does not grow with the factor count.
+sums and valid-factor counts. Factors with exactly two paired observations use
+the closed-form product of response-difference signs, avoiding centered matrices;
+larger factors retain centered contraction reductions. Peak allocation therefore
+does not grow with the factor count.
 Psychometric synonym and antonym scoring reuse the same row-correlation kernel
 in bounded respondent batches. Missing responses therefore do not trigger a
 complete respondent-by-pair contribution matrix, and seeded resampling is also

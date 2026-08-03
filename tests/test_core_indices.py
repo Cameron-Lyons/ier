@@ -494,6 +494,63 @@ class TestCalculateCorrelations(unittest.TestCase):
         self.assertEqual(len(result), 2)
         np.testing.assert_almost_equal(result, [-1.0, -1.0])
 
+    def test_two_point_correlations_use_exact_difference_signs(self) -> None:
+        """Two-pair rows avoid centered matrices while preserving edge cases."""
+        maximum = np.finfo(float).max
+        even_cols = np.array(
+            [
+                [1.0, 3.0],
+                [3.0, 1.0],
+                [2.0, 2.0],
+                [1.0, np.nan],
+                [maximum, -maximum],
+            ]
+        )
+        odd_cols = np.array(
+            [
+                [2.0, 4.0],
+                [2.0, 4.0],
+                [1.0, 4.0],
+                [2.0, 3.0],
+                [-maximum, maximum],
+            ]
+        )
+
+        with patch(
+            "ier._correlation.np.mean",
+            side_effect=AssertionError("centered correlation path was used"),
+        ):
+            result = calculate_correlations(even_cols, odd_cols)
+
+        np.testing.assert_array_equal(result, [1.0, -1.0, 0.0, np.nan, -1.0])
+
+    def test_two_point_zero_variance_policy_is_preserved(self) -> None:
+        """Callers can retain unavailable scores for constant two-pair rows."""
+        from ier._correlation import row_correlations
+
+        left = np.array([[1.0, 1.0], [1.0, 2.0]])
+        right = np.array([[1.0, 2.0], [3.0, 3.0]])
+
+        result = row_correlations(left, right, zero_variance=np.nan)
+
+        self.assertTrue(np.isnan(result).all())
+
+    def test_two_point_infinities_retain_centered_correlation_behavior(self) -> None:
+        """Non-finite extremes remain on the established centered path."""
+        even_cols = np.array(
+            [
+                [np.inf, 1.0],
+                [np.inf, np.inf],
+                [np.inf, np.nan],
+                [-np.inf, 0.0],
+            ]
+        )
+        odd_cols = np.array([[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0]])
+
+        result = calculate_correlations(even_cols, odd_cols)
+
+        np.testing.assert_array_equal(result, [0.0, 0.0, np.nan, 0.0])
+
     def test_with_nan_values(self) -> None:
         """Test correlation calculation handles NaN values correctly."""
         even_cols: npt.NDArray[np.float64] = np.array([[1, np.nan, 5], [2, 4, 6]])
