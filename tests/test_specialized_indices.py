@@ -8,7 +8,14 @@ import numpy as np
 from ier.guttman import guttman, guttman_flag
 from ier.infrequency import infrequency, infrequency_flag
 from ier.longstring import longstring_pattern
-from ier.lz import _ml_theta, lz, lz_flag
+from ier.lz import (
+    _compute_lz,
+    _compute_lz_row,
+    _estimate_theta,
+    _ml_theta,
+    lz,
+    lz_flag,
+)
 from ier.mad import mad, mad_flag
 from ier.mahad import mahad_qqplot
 from ier.markov import _transition_entropy, markov, markov_flag, markov_summary
@@ -476,6 +483,45 @@ class TestLz(unittest.TestCase):
         data = [[1, 1, np.nan, 0], [1, 0, 1, 0]]
         result = lz(data, na_rm=True)
         self.assertEqual(len(result), 2)
+
+    def test_complete_batch_kernels_match_scalar_rows(self) -> None:
+        """Batched complete-data kernels preserve exact scalar results."""
+        rng = np.random.default_rng(29)
+        for n_items in (4, 5, 17, 80):
+            with self.subTest(n_items=n_items):
+                data = rng.integers(0, 2, size=(257, n_items)).astype(float)
+                data[0] = 0.0
+                data[1] = 1.0
+                discrimination = rng.uniform(0.2, 3.0, n_items)
+                difficulty = rng.uniform(-3.0, 3.0, n_items)
+
+                with patch("ier.lz._LZ_BATCH_ELEMENTS", 512):
+                    theta = _estimate_theta(data, discrimination, difficulty)
+                    scores = _compute_lz(
+                        data,
+                        discrimination,
+                        difficulty,
+                        theta,
+                    )
+
+                expected_theta = np.array(
+                    [
+                        -3.0
+                        if np.all(row == 0)
+                        else 3.0
+                        if np.all(row == 1)
+                        else _ml_theta(row, discrimination, difficulty)
+                        for row in data
+                    ]
+                )
+                expected_scores = np.array(
+                    [
+                        _compute_lz_row(row, discrimination, difficulty, row_theta)
+                        for row, row_theta in zip(data, expected_theta, strict=True)
+                    ]
+                )
+                np.testing.assert_array_equal(theta, expected_theta)
+                np.testing.assert_array_equal(scores, expected_scores)
 
     def test_all_correct_responses(self) -> None:
         """Test handling of all correct responses."""
