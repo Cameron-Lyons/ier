@@ -12,17 +12,23 @@ import numpy as np
 from ier import (
     IndexOptions,
     IndexScoreMap,
+    ResponseTimeMetric,
+    ResponseTimeMixtureModel,
     __version__,
     composite,
     composite_scores,
     composite_summary,
+    fit_response_time_mixture,
     index_catalog,
     load_archive,
     load_response_time_archive,
+    load_response_time_mixture_model,
     load_score_archive,
     response_time,
     response_time_consistency,
     response_time_mixture,
+    response_time_mixture_scores,
+    save_response_time_mixture_model,
     screen,
     screen_scores,
 )
@@ -563,7 +569,7 @@ def _build_parser() -> argparse.ArgumentParser:
     response_time_parser.add_argument(
         "--metric",
         choices=["mean", "median", "sd", "min", "consistency", "mixture"],
-        default="median",
+        default=None,
         help="Timing score to compute (default: median)",
     )
     response_time_parser.add_argument(
@@ -581,18 +587,54 @@ def _build_parser() -> argparse.ArgumentParser:
     response_time_parser.add_argument(
         "--components",
         type=int,
-        default=2,
+        default=None,
         help="Gaussian components for the mixture metric (default: 2)",
     )
     response_time_parser.add_argument(
         "--log-transform",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help="Log-transform median times for the mixture metric (default: true)",
     )
     response_time_parser.add_argument("--random-seed", type=int, default=None)
+    response_time_parser.add_argument(
+        "--mixture-model",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Score with a saved mixture calibration instead of fitting this matrix",
+    )
     _add_matrix_input_options(response_time_parser)
     _add_output_options(response_time_parser)
+
+    response_time_fit_parser = sub.add_parser(
+        "response-time-fit",
+        help="Fit and save a reusable response-time mixture calibration.",
+    )
+    response_time_fit_parser.add_argument(
+        "data",
+        type=Path,
+        help="Reference CSV/TSV/whitespace or .npy timing matrix",
+    )
+    response_time_fit_parser.add_argument(
+        "model",
+        type=Path,
+        help="Destination model archive ending in .npz",
+    )
+    response_time_fit_parser.add_argument(
+        "--components",
+        type=int,
+        default=2,
+        help="Gaussian component count (default: 2)",
+    )
+    response_time_fit_parser.add_argument(
+        "--log-transform",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Log-transform median times before fitting (default: true)",
+    )
+    response_time_fit_parser.add_argument("--random-seed", type=int, default=None)
+    _add_matrix_input_options(response_time_fit_parser)
 
     response_time_reflag_parser = sub.add_parser(
         "response-time-reflag",
@@ -656,15 +698,18 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def _score_response_times(
     matrix: np.ndarray,
-    metric: str,
+    metric: ResponseTimeMetric,
     components: int,
     log_transform: bool,
     random_seed: int | None,
+    mixture_model: ResponseTimeMixtureModel | None = None,
 ) -> tuple[np.ndarray, Literal["high", "low"]]:
     """Compute one timing metric and its suspicious-score direction."""
     if metric == "consistency":
         return response_time_consistency(matrix), "low"
     if metric == "mixture":
+        if mixture_model is not None:
+            return response_time_mixture_scores(matrix, mixture_model), "high"
         return (
             response_time_mixture(
                 matrix,
@@ -675,6 +720,27 @@ def _score_response_times(
             "high",
         )
     return response_time(matrix, metric=metric), "low"
+
+
+def _resolve_response_time_model(
+    metric: ResponseTimeMetric | None,
+    model_path: Path | None,
+    components: int | None,
+    log_transform: bool | None,
+    random_seed: int | None,
+) -> tuple[ResponseTimeMetric, ResponseTimeMixtureModel | None]:
+    """Resolve the timing metric and optional fixed calibration before input loading."""
+    resolved_metric = "median" if metric is None else metric
+    if model_path is None:
+        return resolved_metric, None
+    if metric is not None and metric != "mixture":
+        raise ValueError("--mixture-model requires --metric mixture when metric is explicit")
+    if components is not None or log_transform is not None or random_seed is not None:
+        raise ValueError(
+            "--mixture-model cannot be combined with --components, "
+            "--log-transform, --no-log-transform, or --random-seed"
+        )
+    return "mixture", load_response_time_mixture_model(model_path)
 
 
 def _select_archive_scores(
@@ -702,6 +768,26 @@ def _run_command(args: argparse.Namespace) -> int:
 
     if args.command in {"screen", "composite"}:
         validate_worker_count(args.workers)
+
+    if args.command == "response-time-fit":
+        matrix, _ = _load_input(
+            args.data,
+            args.delimiter,
+            args.id_column,
+            _parse_name_list(args.item_columns),
+        )
+        model = fit_response_time_mixture(
+            matrix,
+            n_components=args.components,
+            log_transform=args.log_transform,
+            random_seed=args.random_seed,
+        )
+        save_response_time_mixture_model(args.model, model)
+        print(
+            f"saved response-time mixture model with {model.n_components} components "
+            f"to {args.model}"
+        )
+        return 0
 
     if args.format == "npz":
         _require_npz_output_path(args.output)
@@ -774,6 +860,17 @@ def _run_command(args: argparse.Namespace) -> int:
             valid_score_counts(selected_scores) if args.include_components else None,
         )
 
+    response_metric: ResponseTimeMetric | None = None
+    mixture_model: ResponseTimeMixtureModel | None = None
+    if args.command == "response-time":
+        response_metric, mixture_model = _resolve_response_time_model(
+            args.metric,
+            args.mixture_model,
+            args.components,
+            args.log_transform,
+            args.random_seed,
+        )
+
     options = None if args.command == "response-time" else _options_from_args(args)
     matrix, respondent_ids = _load_input(
         args.data,
@@ -782,12 +879,14 @@ def _run_command(args: argparse.Namespace) -> int:
         _parse_name_list(args.item_columns),
     )
     if args.command == "response-time":
+        assert response_metric is not None
         scores, direction = _score_response_times(
             matrix,
-            args.metric,
-            args.components,
-            args.log_transform,
+            response_metric,
+            2 if args.components is None else args.components,
+            True if args.log_transform is None else args.log_transform,
             args.random_seed,
+            mixture_model,
         )
         flags, cutoff, threshold_source, percentile = flag_response_time_scores(
             scores,
@@ -799,7 +898,7 @@ def _run_command(args: argparse.Namespace) -> int:
             args,
             scores,
             flags,
-            args.metric,
+            response_metric,
             direction,
             cutoff,
             respondent_ids,

@@ -128,6 +128,19 @@ and reconstructs independent read-only parameter arrays. Model archives are not
 respondent results, so use the dedicated loader rather than `load_archive()` or
 `archive-info`.
 
+The CLI can write and apply this model schema directly:
+
+```bash
+ier response-time-fit reference-times.csv timing-model.npz --components 3 --random-seed 42
+ier response-time later-times.csv --mixture-model timing-model.npz \
+  --format npz --output scored.npz
+```
+
+`response-time-fit` writes only the reusable calibration. The later scoring
+command writes an ordinary response-time result archive, including scores,
+high-tail flags, identifiers, and cutoff provenance; that result can be passed
+to `response-time-reflag` without the original timing matrix.
+
 Reuse validated registered-index scores directly from the CLI:
 
 ```bash

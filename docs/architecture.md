@@ -78,6 +78,9 @@ The command-line path is split by responsibility:
   Its generic result loader reads the declared result type once and dispatches
   to the same complete specialized validators; model archives use their dedicated
   loader because they contain parameters rather than respondent results.
+- `response-time-fit` writes that model schema after fitting a selected reference
+  matrix. `response-time --mixture-model` validates the model before loading the
+  scoring matrix and applies one posterior expectation step without refitting.
 
 Screen and composite commands carry the registry's ordered soft-failure map
 through text, JSON, and NPZ serializers and mirror failures to standard error

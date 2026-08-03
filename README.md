@@ -158,6 +158,8 @@ ier composite-recombine composite.npz --indices irv longstring --no-standardize
 ier archive-info composite.npz --format json
 ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
+ier response-time-fit reference-times.csv timing-model.npz --components 3 --random-seed 42
+ier response-time later-times.csv --mixture-model timing-model.npz --threshold 0.5
 ier screen responses.csv.gz --format json --output screening.json.gz
 ier screen responses.npy --indices irv longstring
 cat responses.csv | ier screen - --indices irv longstring --format json
@@ -393,6 +395,16 @@ later_probabilities = response_time_mixture_scores(later_times, calibration)
 Scoring retains the model's log-transform choice and fastest-component meaning;
 missing, infinite, or non-positive respondent medians remain unavailable. Model
 archives are versioned, pickle-free, strictly validated, and atomically replaced.
+The same workflow is available from the CLI:
+
+```bash
+ier response-time-fit reference-times.csv timing-model.npz --components 3 --random-seed 42
+ier response-time later-times.csv --mixture-model timing-model.npz --threshold 0.5
+```
+
+`--mixture-model` implies the mixture metric and preserves high-tail flagging in
+every response-time output format. Fitting-only options such as `--components`,
+`--log-transform`, and `--random-seed` cannot be combined with a saved model.
 CLI users can reapply a cutoff without rescoring the original matrix:
 
 ```bash
