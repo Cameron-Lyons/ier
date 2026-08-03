@@ -135,6 +135,7 @@ ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier response-time timings.csv --metric median --threshold 1.0
 ier screen data.csv.gz --format json --output screening.json.gz
+ier screen data.npy --indices irv longstring --format json
 cat data.csv | ier screen - --indices irv longstring --format json
 ier --version
 ```
@@ -143,6 +144,11 @@ ier --version
 lets screen and composite commands ignore unselected metadata columns while
 preserving the requested item order. Any item-index options refer to that
 selected order.
+
+Uncompressed `.npy` input is memory-mapped read-only and must contain one
+non-empty, two-dimensional, real numeric array. It has no headers, so
+`--id-column`, `--item-columns`, and `--delimiter` do not apply. Compressed
+`.npy.gz` input is not supported because it cannot be memory-mapped.
 
 Use `-` as the data path to read a forward-only standard-input stream, and use
 `--output -` to select standard output explicitly. Input and output paths ending

@@ -70,7 +70,12 @@ ier composite data.csv --indices irv longstring --method mean
 ier composite data.csv --indices irv mad --strict
 ier composite data.csv --format json --output composite.json
 ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
+ier composite data.npy --indices irv longstring --format json
 ```
+
+Uncompressed `.npy` matrices are memory-mapped read-only. They must be non-empty,
+two-dimensional, and real numeric; header selection and delimiter options do not
+apply to this binary format.
 
 JSON output is standards-compliant: unavailable or non-finite scores are encoded
 as `null`. CSV output represents those scores as empty cells so numeric columns

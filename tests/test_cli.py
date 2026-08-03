@@ -337,6 +337,99 @@ class TestCli(unittest.TestCase):
         matrix[0, 0] = 9.0
         self.assertEqual(matrix[0, 0], 9.0)
 
+    def test_npy_input_is_memory_mapped_and_scores(self) -> None:
+        path = self.root / "responses.npy"
+        expected = np.array(
+            [[1, 1, 1, 1, 1], [1, 2, 3, 4, 5], [5, 5, 5, 1, 2]],
+            dtype=np.float64,
+        )
+        np.save(path, expected)
+
+        matrix = _load_matrix(path, None)
+
+        self.assertIsInstance(matrix, np.memmap)
+        self.assertFalse(matrix.flags.writeable)
+        np.testing.assert_array_equal(matrix, expected)
+
+        out = self.root / "screen.json"
+        code = main(
+            [
+                "screen",
+                str(path),
+                "--indices",
+                "irv",
+                "longstring",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(set(payload["scores"]), {"irv", "longstring"})
+        self.assertEqual(len(payload["consensus_flags"]), expected.shape[0])
+
+    def test_npy_input_rejects_header_options_and_delimiter(self) -> None:
+        path = self.root / "responses.npy"
+        np.save(path, np.ones((2, 3), dtype=np.float64))
+
+        for option in [
+            ["--delimiter", ","],
+            ["--id-column", "participant"],
+            ["--item-columns", "i1,i2"],
+        ]:
+            with self.subTest(option=option):
+                stderr = StringIO()
+                with patch("sys.stderr", stderr):
+                    code = main(["screen", str(path), "--indices", "irv", *option])
+
+                self.assertEqual(code, 1)
+                self.assertIn(".npy input", stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_npy_input_rejects_invalid_arrays(self) -> None:
+        cases = [
+            ("vector", np.array([1.0, 2.0]), "non-empty 2D"),
+            ("empty", np.empty((0, 2)), "non-empty 2D"),
+            ("complex", np.array([[1 + 2j]]), "real numeric"),
+            ("text", np.array([["one", "two"]]), "real numeric"),
+        ]
+
+        for name, values, message in cases:
+            with self.subTest(name=name):
+                path = self.root / f"{name}.npy"
+                np.save(path, values)
+
+                with self.assertRaisesRegex(ValueError, message):
+                    _load_matrix(path, None)
+
+    def test_npy_input_rejects_malformed_files_and_archives(self) -> None:
+        malformed = self.root / "malformed.npy"
+        malformed.write_bytes(b"")
+        with self.assertRaisesRegex(ValueError, "failed to load NumPy matrix"):
+            _load_matrix(malformed, None)
+
+        archive = self.root / "archive.npy"
+        with archive.open("wb") as handle:
+            np.savez(handle, responses=np.ones((2, 3), dtype=np.float64))
+        with self.assertRaisesRegex(ValueError, "not an archive"):
+            _load_matrix(archive, None)
+
+    def test_compressed_npy_input_returns_structured_error(self) -> None:
+        path = self.root / "responses.npy.gz"
+        with gzip.open(path, mode="wb") as handle:
+            np.save(handle, np.ones((2, 3), dtype=np.float64))
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            code = main(["screen", str(path), "--indices", "irv"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("compressed .npy input is not supported", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_indices_command_text_output(self) -> None:
         stdout = StringIO()
         with patch("sys.stdout", stdout):
