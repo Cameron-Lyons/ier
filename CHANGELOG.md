@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.16.0] - 2026-08-02
+
+### Added
+
+- `ier composite` now supports `--standardize` and `--no-standardize`, matching
+  the Python composite APIs while retaining standardized scoring as the default.
+  Text, JSON, and NPZ outputs record the effective setting so aggregate values
+  remain interpretable after export; CSV continues to contain only respondent
+  rows. On 500,000 respondents and 20 indices, the raw-score mean used 8.6 MiB
+  peak temporary allocation and 13.8 ms median reduction time, compared with
+  17.2 MiB and 52.9 ms for standardization, without adding a dependency.
+
 ## [2.15.0] - 2026-08-02
 
 ### Added

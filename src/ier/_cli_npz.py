@@ -125,6 +125,7 @@ def _write_composite_npz(
     errors: Mapping[str, str] | None = None,
     component_scores: Mapping[str, np.ndarray] | None = None,
     valid_index_counts: np.ndarray | None = None,
+    standardized: bool = True,
 ) -> None:
     """Write composite results as a versioned NumPy archive."""
     if (component_scores is None) != (valid_index_counts is None):
@@ -142,6 +143,7 @@ def _write_composite_npz(
     payload.update(
         {
             "method": np.asarray(method, dtype=np.str_),
+            "standardized": np.asarray(standardized, dtype=np.bool_),
             "scores": np.asarray(scores, dtype=np.float64),
         }
     )

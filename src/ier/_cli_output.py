@@ -331,6 +331,7 @@ def _emit_composite_text(
     errors: Mapping[str, str] | None = None,
     component_scores: Mapping[str, np.ndarray] | None = None,
     valid_index_counts: np.ndarray | None = None,
+    standardized: bool = True,
 ) -> str:
     _validate_composite_components(len(scores), component_scores, valid_index_counts)
     finite_rows = np.flatnonzero(np.isfinite(scores))
@@ -340,6 +341,7 @@ def _emit_composite_text(
     lines = [
         f"respondents: {len(scores)}",
         f"method: {method}",
+        f"standardized: {str(standardized).lower()}",
     ]
     if weights:
         lines.append(
@@ -377,6 +379,7 @@ def _emit_composite_json(
     errors: Mapping[str, str] | None = None,
     component_scores: Mapping[str, np.ndarray] | None = None,
     valid_index_counts: np.ndarray | None = None,
+    standardized: bool = True,
 ) -> str:
     output = StringIO()
     _write_composite_json(
@@ -389,6 +392,7 @@ def _emit_composite_json(
         errors,
         component_scores,
         valid_index_counts,
+        standardized,
     )
     return output.getvalue()
 
@@ -403,11 +407,13 @@ def _write_composite_json(
     errors: Mapping[str, str] | None = None,
     component_scores: Mapping[str, np.ndarray] | None = None,
     valid_index_counts: np.ndarray | None = None,
+    standardized: bool = True,
 ) -> None:
     """Write composite JSON while bounding respondent-array allocation."""
     _validate_composite_components(len(scores), component_scores, valid_index_counts)
     payload: dict[str, object] = {
         "method": method,
+        "standardized": standardized,
         "scores": _JsonArray(scores, "number"),
         "n_respondents": len(scores),
         "errors": dict(errors or {}),
