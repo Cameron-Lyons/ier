@@ -8,6 +8,7 @@ flagging suspected careless responders, and summarizing results.
 from collections.abc import Mapping
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 from ier._flagging import resolve_threshold, threshold_flags, validate_percentile
 from ier._registry import (
@@ -22,6 +23,49 @@ from ier._registry import (
 )
 from ier._validation import MatrixLike, validate_matrix_input
 from ier.types import IndexThresholdSourceMap, ScreenIndexSummary, ScreenResult
+
+
+def _validate_min_flags(min_flags: int) -> int:
+    """Return a validated respondent-level consensus threshold."""
+    if isinstance(min_flags, bool) or not isinstance(min_flags, int) or min_flags < 1:
+        raise ValueError("min_flags must be a positive integer")
+    return min_flags
+
+
+def _validate_screen_scores(
+    scores: Mapping[str, ArrayLike],
+) -> tuple[dict[str, np.ndarray], int]:
+    """Validate reusable registered-index score vectors without stacking them."""
+    if not isinstance(scores, Mapping):
+        raise TypeError("scores must be a mapping of registered index names to score arrays")
+    if not scores:
+        raise ValueError("scores must contain at least one registered index")
+
+    names = list(scores)
+    validate_index_names(names)
+    validated: dict[str, np.ndarray] = {}
+    n_respondents: int | None = None
+    for name, values in scores.items():
+        try:
+            score_arr = np.asarray(values, dtype=float)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"scores for {name} must be a one-dimensional numeric array"
+            ) from error
+        if score_arr.ndim != 1:
+            raise ValueError(f"scores for {name} must be one-dimensional")
+        if len(score_arr) == 0:
+            raise ValueError(f"scores for {name} cannot be empty")
+        if np.isinf(score_arr).any():
+            raise ValueError(f"scores for {name} must contain only finite values or NaN")
+        if n_respondents is None:
+            n_respondents = len(score_arr)
+        elif len(score_arr) != n_respondents:
+            raise ValueError("all score arrays must have the same respondent count")
+        validated[name] = score_arr
+
+    assert n_respondents is not None
+    return validated, n_respondents
 
 
 def _resolve_screen_thresholds(
@@ -124,6 +168,147 @@ def _reduce_screen_results(
     return flag_counts, valid_index_counts, summary
 
 
+def _build_screen_result(
+    scores: dict[str, np.ndarray],
+    errors: dict[str, str],
+    n_respondents: int,
+    *,
+    percentile: float,
+    min_flags: int,
+    min_valid_indices: int | None,
+    fixed_thresholds: Mapping[str, float],
+    percentile_overrides: Mapping[str, float],
+) -> ScreenResult:
+    """Apply flagging and consensus rules to validated score vectors."""
+    flags: dict[str, np.ndarray] = {}
+    applied_thresholds: dict[str, float | None] = {}
+    threshold_sources: IndexThresholdSourceMap = {}
+    applied_percentiles: dict[str, float | None] = {}
+    for name, score_arr in scores.items():
+        spec = INDEX_REGISTRY[name]
+        if spec.flag_mode == "present":
+            flags[name] = ~np.isnan(score_arr)
+            applied_thresholds[name] = None
+            threshold_sources[name] = "presence"
+            applied_percentiles[name] = None
+            continue
+
+        tail_percentile = percentile_overrides.get(name, percentile)
+        flag_percentile = (
+            tail_percentile if spec.flag_direction == "high" else 100.0 - tail_percentile
+        )
+        explicit = name in fixed_thresholds
+        cutoff = resolve_threshold(
+            score_arr,
+            fixed_thresholds[name] if explicit else None,
+            flag_percentile,
+        )
+        flags[name] = threshold_flags(
+            score_arr,
+            threshold=cutoff,
+            percentile=flag_percentile,
+            direction=spec.flag_direction,
+            inclusive=explicit,
+        )
+        applied_thresholds[name] = cutoff
+        threshold_sources[name] = "fixed" if explicit else "percentile"
+        applied_percentiles[name] = None if explicit else tail_percentile
+
+    flag_counts, valid_index_counts, summary = _reduce_screen_results(
+        scores,
+        flags,
+        n_respondents,
+    )
+    consensus_eligible = (
+        np.ones(n_respondents, dtype=bool)
+        if min_valid_indices is None
+        else valid_index_counts >= min_valid_indices
+    )
+    consensus_flags = (flag_counts >= min_flags) & consensus_eligible
+
+    return {
+        "scores": scores,
+        "flags": flags,
+        "thresholds": applied_thresholds,
+        "threshold_sources": threshold_sources,
+        "percentiles": applied_percentiles,
+        "flag_counts": flag_counts,
+        "valid_index_counts": valid_index_counts,
+        "consensus_eligible": consensus_eligible,
+        "consensus_flags": consensus_flags,
+        "min_flags": min_flags,
+        "min_valid_indices": min_valid_indices,
+        "n_indices": len(scores),
+        "indices_used": list(scores),
+        "errors": errors,
+        "n_respondents": n_respondents,
+        "summary": summary,
+    }
+
+
+def screen_scores(
+    scores: Mapping[str, ArrayLike],
+    *,
+    percentile: float = 95.0,
+    min_flags: int = 2,
+    min_valid_indices: int | None = None,
+    thresholds: Mapping[str, float] | None = None,
+    percentiles: Mapping[str, float] | None = None,
+) -> ScreenResult:
+    """
+    Apply screening decisions to already-computed registered-index scores.
+
+    This is the reusable post-scoring counterpart to :func:`screen`. It supports
+    fast threshold, percentile, and consensus sensitivity analysis without
+    calculating any index again. Score mappings preserve insertion order; each
+    value must be a non-empty one-dimensional numeric vector with the same
+    respondent count. Finite values and ``NaN`` are accepted, with ``NaN``
+    treated as an unavailable score.
+
+    Compatible ``float64`` NumPy vectors are retained by reference. The function
+    never mutates them, but callers should avoid changing the arrays while using
+    the returned result.
+
+    Parameters:
+    - scores: Mapping from registered index names to respondent score vectors.
+    - percentile: Default tail percentile for sample-relative flagging.
+    - min_flags: Minimum number of index flags required for consensus.
+    - min_valid_indices: Optional minimum available-score count for consensus.
+    - thresholds: Optional fixed per-index cutoffs.
+    - percentiles: Optional per-index tail-percentile overrides.
+
+    Returns:
+    - The same structured ``ScreenResult`` contract as :func:`screen`, with an
+      empty ``errors`` mapping because no index calculation is attempted.
+
+    Example:
+        >>> from ier import screen, screen_scores
+        >>> initial = screen(data, indices=["irv", "longstring"])
+        >>> stricter = screen_scores(
+        ...     initial["scores"],
+        ...     percentiles={"irv": 99, "longstring": 99},
+        ... )
+    """
+    validated_scores, n_respondents = _validate_screen_scores(scores)
+    indices = list(validated_scores)
+    percentile = validate_percentile(percentile)
+    min_flags = _validate_min_flags(min_flags)
+    min_valid_indices = validate_min_valid_indices(min_valid_indices, len(indices))
+    fixed_thresholds = _resolve_screen_thresholds(thresholds, indices)
+    percentile_overrides = _resolve_screen_percentiles(percentiles, indices, fixed_thresholds)
+
+    return _build_screen_result(
+        validated_scores,
+        {},
+        n_respondents,
+        percentile=percentile,
+        min_flags=min_flags,
+        min_valid_indices=min_valid_indices,
+        fixed_thresholds=fixed_thresholds,
+        percentile_overrides=percentile_overrides,
+    )
+
+
 def screen(
     x: MatrixLike,
     indices: list[str] | None = None,
@@ -205,8 +390,7 @@ def screen(
         >>> print(result["consensus_flags"])
     """
     workers = validate_worker_count(workers)
-    if isinstance(min_flags, bool) or not isinstance(min_flags, int) or min_flags < 1:
-        raise ValueError("min_flags must be a positive integer")
+    min_flags = _validate_min_flags(min_flags)
     percentile = validate_percentile(percentile)
 
     x_array = validate_matrix_input(x, check_type=False)
@@ -229,67 +413,13 @@ def screen(
         workers=workers,
     )
 
-    flags: dict[str, np.ndarray] = {}
-    applied_thresholds: dict[str, float | None] = {}
-    threshold_sources: IndexThresholdSourceMap = {}
-    applied_percentiles: dict[str, float | None] = {}
-    for name, score_arr in scores.items():
-        spec = INDEX_REGISTRY[name]
-        if spec.flag_mode == "present":
-            flags[name] = ~np.isnan(score_arr)
-            applied_thresholds[name] = None
-            threshold_sources[name] = "presence"
-            applied_percentiles[name] = None
-            continue
-
-        tail_percentile = percentile_overrides.get(name, percentile)
-        flag_percentile = (
-            tail_percentile if spec.flag_direction == "high" else 100.0 - tail_percentile
-        )
-        explicit = name in fixed_thresholds
-        cutoff = resolve_threshold(
-            score_arr,
-            fixed_thresholds[name] if explicit else None,
-            flag_percentile,
-        )
-        flags[name] = threshold_flags(
-            score_arr,
-            threshold=cutoff,
-            percentile=flag_percentile,
-            direction=spec.flag_direction,
-            inclusive=explicit,
-        )
-        applied_thresholds[name] = cutoff
-        threshold_sources[name] = "fixed" if explicit else "percentile"
-        applied_percentiles[name] = None if explicit else tail_percentile
-
-    flag_counts, valid_index_counts, summary = _reduce_screen_results(
+    return _build_screen_result(
         scores,
-        flags,
+        errors,
         n_respondents,
+        percentile=percentile,
+        min_flags=min_flags,
+        min_valid_indices=min_valid_indices,
+        fixed_thresholds=fixed_thresholds,
+        percentile_overrides=percentile_overrides,
     )
-    consensus_eligible = (
-        np.ones(n_respondents, dtype=bool)
-        if min_valid_indices is None
-        else valid_index_counts >= min_valid_indices
-    )
-    consensus_flags = (flag_counts >= min_flags) & consensus_eligible
-
-    return {
-        "scores": scores,
-        "flags": flags,
-        "thresholds": applied_thresholds,
-        "threshold_sources": threshold_sources,
-        "percentiles": applied_percentiles,
-        "flag_counts": flag_counts,
-        "valid_index_counts": valid_index_counts,
-        "consensus_eligible": consensus_eligible,
-        "consensus_flags": consensus_flags,
-        "min_flags": min_flags,
-        "min_valid_indices": min_valid_indices,
-        "n_indices": len(scores),
-        "indices_used": list(scores.keys()),
-        "errors": errors,
-        "n_respondents": n_respondents,
-        "summary": summary,
-    }

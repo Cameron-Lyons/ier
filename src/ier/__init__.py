@@ -43,6 +43,7 @@ from .response_time import response_time_consistency as response_time_consistenc
 from .response_time import response_time_flag as response_time_flag
 from .response_time import response_time_mixture as response_time_mixture
 from .screen import screen as screen
+from .screen import screen_scores as screen_scores
 from .semantic import semantic_ant as semantic_ant
 from .semantic import semantic_ant_flag as semantic_ant_flag
 from .semantic import semantic_syn as semantic_syn
@@ -131,6 +132,7 @@ __all__ = [
     "response_time_flag",
     "response_time_mixture",
     "screen",
+    "screen_scores",
     "ScreenIndexSummary",
     "ScreenResult",
     "semantic_ant",

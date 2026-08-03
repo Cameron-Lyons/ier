@@ -9,6 +9,7 @@ flags respondents. It is aimed at contributors and methods-curious users.
 CLI / examples
       │
 screen() / composite()     ← public orchestration
+screen_scores()            ← reusable decision layer
       │
 IndexOptions + registry    ← shared config + index catalog
       │
@@ -38,6 +39,10 @@ _validation / _flagging    ← shared input checks and threshold helpers
   use the same bounded approach. Orchestration retains its documented per-index
   result vectors but does not construct another complete respondent-by-index
   matrix for final reductions.
+- **Reusable decisions.** `screen_scores()` applies the same direction-aware
+  flagging, completeness, consensus, and summary layer to retained registered
+  score vectors. This supports sensitivity analysis without rerunning scorers or
+  copying compatible floating arrays.
 
 ## Command-line boundaries
 
