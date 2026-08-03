@@ -4,11 +4,14 @@
     options:
       members:
         - IndexOptions
+        - ResponseTimeArchive
         - ResponseTimeFlagDirection
+        - ResponseTimeMetric
         - ScoreArchive
         - __version__
         - index_catalog
         - load_score_archive
+        - load_response_time_archive
         - save_score_archive
         - screen
         - screen_scores

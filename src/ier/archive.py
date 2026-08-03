@@ -1,4 +1,4 @@
-"""Validated persistence for reusable score vectors in versioned NumPy archives."""
+"""Validated persistence for reusable results in versioned NumPy archives."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from zipfile import ZIP_STORED, ZipFile
 import numpy as np
 
 from ier._registry import composite_index_names, validate_index_names
-from ier._validation import validate_score_vectors
+from ier._validation import validate_score_array, validate_score_vectors
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -18,9 +18,16 @@ if TYPE_CHECKING:
     from numpy.lib.npyio import NpzFile
     from numpy.typing import ArrayLike
 
-    from ier.types import ScoreArchive, ScoreArchiveResultType
+    from ier.types import (
+        BoolArray,
+        ResponseTimeArchive,
+        ResponseTimeFlagDirection,
+        ResponseTimeMetric,
+        ScoreArchive,
+        ScoreArchiveResultType,
+    )
 
-_SCORE_ARCHIVE_SCHEMA_VERSION = 1
+_ARCHIVE_SCHEMA_VERSION = 1
 
 
 def _validate_result_type(value: object) -> ScoreArchiveResultType:
@@ -74,20 +81,20 @@ def _validate_error_metadata(
 def _validate_respondent_ids(values: list[str], n_respondents: int) -> list[str]:
     """Validate aligned, unique, nonblank respondent identifiers."""
     if len(values) != n_respondents:
-        raise ValueError("score archive respondent ID count must match n_respondents")
+        raise ValueError("archive respondent ID count must match n_respondents")
     if any(not isinstance(value, str) for value in values):
-        raise ValueError("score archive respondent IDs must be strings")
+        raise ValueError("archive respondent IDs must be strings")
     if any(not value.strip() for value in values):
-        raise ValueError("score archive respondent IDs must be nonblank")
+        raise ValueError("archive respondent IDs must be nonblank")
     if len(values) != len(set(values)):
-        raise ValueError("score archive respondent IDs must be unique")
+        raise ValueError("archive respondent IDs must be unique")
     return values
 
 
 def _write_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
     """Stream typed arrays into one uncompressed, pickle-free NPZ archive."""
     if any(value.dtype.hasobject for value in payload.values()):
-        raise ValueError("score archive cannot contain object arrays")
+        raise ValueError("NPZ archive cannot contain object arrays")
     with ZipFile(path, mode="w", compression=ZIP_STORED, allowZip64=True) as archive:
         for name, value in payload.items():
             with archive.open(f"{name}.npy", mode="w", force_zip64=True) as member:
@@ -97,35 +104,56 @@ def _write_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
 def _require_member(archive: NpzFile, name: str) -> np.ndarray:
     """Load one required pickle-free member with a contextual error."""
     if name not in archive.files:
-        raise ValueError(f"score archive is missing required member: {name}")
+        raise ValueError(f"NPZ archive is missing required member: {name}")
     try:
         value = archive[name]
     except ValueError as error:
-        raise ValueError(f"score archive member {name} is not pickle-free") from error
+        raise ValueError(f"NPZ archive member {name} is not pickle-free") from error
     if not isinstance(value, np.ndarray):
-        raise ValueError(f"score archive member {name} must be a NumPy array")
+        raise ValueError(f"NPZ archive member {name} must be a NumPy array")
     return value
 
 
 def _integer_scalar(archive: NpzFile, name: str) -> int:
     value = _require_member(archive, name)
     if value.shape != () or value.dtype.kind not in "iu":
-        raise ValueError(f"score archive member {name} must be an integer scalar")
+        raise ValueError(f"NPZ archive member {name} must be an integer scalar")
     return int(value.item())
 
 
 def _string_scalar(archive: NpzFile, name: str) -> str:
     value = _require_member(archive, name)
     if value.shape != () or value.dtype.kind != "U":
-        raise ValueError(f"score archive member {name} must be a Unicode string scalar")
+        raise ValueError(f"NPZ archive member {name} must be a Unicode string scalar")
     return str(value.item())
 
 
 def _string_vector(archive: NpzFile, name: str) -> list[str]:
     value = _require_member(archive, name)
     if value.ndim != 1 or value.dtype.kind != "U":
-        raise ValueError(f"score archive member {name} must be a Unicode string vector")
+        raise ValueError(f"NPZ archive member {name} must be a Unicode string vector")
     return cast("list[str]", value.tolist())
+
+
+def _numeric_scalar(archive: NpzFile, name: str) -> float:
+    """Load one finite real numeric scalar."""
+    value = _require_member(archive, name)
+    if value.shape != () or value.dtype.kind not in "fiu":
+        raise ValueError(f"NPZ archive member {name} must be a numeric scalar")
+    result = float(value.item())
+    if not np.isfinite(result):
+        raise ValueError(f"NPZ archive member {name} must be finite")
+    return result
+
+
+def _boolean_vector(archive: NpzFile, name: str, n_respondents: int) -> BoolArray:
+    """Load one aligned one-dimensional boolean vector."""
+    value = _require_member(archive, name)
+    if value.ndim != 1 or value.dtype.kind != "b":
+        raise ValueError(f"NPZ archive member {name} must be a boolean vector")
+    if len(value) != n_respondents:
+        raise ValueError(f"NPZ archive member {name} must match n_respondents")
+    return cast("BoolArray", value)
 
 
 def _load_errors(
@@ -193,10 +221,10 @@ def _read_score_archive(archive: NpzFile) -> ScoreArchive:
         raise ValueError("score archive member names must be unique")
 
     schema_version = _integer_scalar(archive, "schema_version")
-    if schema_version != _SCORE_ARCHIVE_SCHEMA_VERSION:
+    if schema_version != _ARCHIVE_SCHEMA_VERSION:
         raise ValueError(
             f"unsupported score archive schema version: {schema_version}; "
-            f"expected {_SCORE_ARCHIVE_SCHEMA_VERSION}"
+            f"expected {_ARCHIVE_SCHEMA_VERSION}"
         )
 
     result_type = _validate_result_type(_string_scalar(archive, "result_type"))
@@ -215,6 +243,104 @@ def _read_score_archive(archive: NpzFile) -> ScoreArchive:
         "scores": scores,
         "respondent_ids": respondent_ids,
         "errors": errors,
+    }
+
+
+def _validate_response_time_metric(value: object) -> ResponseTimeMetric:
+    """Return a supported archived response-time metric."""
+    if not isinstance(value, str) or value not in {
+        "mean",
+        "median",
+        "sd",
+        "min",
+        "consistency",
+        "mixture",
+    }:
+        raise ValueError("response-time archive contains an unsupported metric")
+    return cast("ResponseTimeMetric", value)
+
+
+def _validate_response_time_direction(value: object) -> ResponseTimeFlagDirection:
+    """Return a supported archived response-time flag direction."""
+    if not isinstance(value, str) or value not in {"high", "low"}:
+        raise ValueError("response-time archive flag_direction must be 'high' or 'low'")
+    return cast("ResponseTimeFlagDirection", value)
+
+
+def _read_response_time_archive(archive: NpzFile) -> ResponseTimeArchive:
+    """Validate one open NPZ archive and extract its response-time payload."""
+    if len(archive.files) != len(set(archive.files)):
+        raise ValueError("response-time archive member names must be unique")
+
+    allowed_members = {
+        "schema_version",
+        "result_type",
+        "n_respondents",
+        "metric",
+        "flag_direction",
+        "threshold",
+        "scores",
+        "flags",
+        "respondent_ids",
+    }
+    unexpected = set(archive.files) - allowed_members
+    if unexpected:
+        raise ValueError(f"response-time archive contains unexpected member: {min(unexpected)}")
+
+    schema_version = _integer_scalar(archive, "schema_version")
+    if schema_version != _ARCHIVE_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported response-time archive schema version: {schema_version}; "
+            f"expected {_ARCHIVE_SCHEMA_VERSION}"
+        )
+
+    result_type = _string_scalar(archive, "result_type")
+    if result_type != "response_time":
+        raise ValueError("response-time archive result_type must be 'response_time'")
+
+    n_respondents = _integer_scalar(archive, "n_respondents")
+    if n_respondents < 1:
+        raise ValueError("response-time archive n_respondents must be positive")
+
+    metric = _validate_response_time_metric(_string_scalar(archive, "metric"))
+    direction = _validate_response_time_direction(_string_scalar(archive, "flag_direction"))
+    expected_direction = "high" if metric == "mixture" else "low"
+    if direction != expected_direction:
+        raise ValueError(
+            f"response-time metric {metric!r} requires {expected_direction!r} flag_direction"
+        )
+
+    threshold = _numeric_scalar(archive, "threshold")
+    scores = validate_score_array(
+        _require_member(archive, "scores"),
+        name="response-time archive scores",
+    )
+    if len(scores) != n_respondents:
+        raise ValueError("response-time archive scores must match n_respondents")
+    flags = _boolean_vector(archive, "flags", n_respondents)
+
+    expected_flags = np.empty_like(flags)
+    inclusive_compare = np.greater_equal if direction == "high" else np.less_equal
+    exclusive_compare = np.greater if direction == "high" else np.less
+    inclusive_compare(scores, threshold, out=expected_flags)
+    if not np.array_equal(flags, expected_flags):
+        exclusive_compare(scores, threshold, out=expected_flags)
+        if not np.array_equal(flags, expected_flags):
+            raise ValueError(
+                "response-time archive flags are inconsistent with its threshold and direction"
+            )
+
+    respondent_ids = _load_respondent_ids(archive, n_respondents)
+    return {
+        "schema_version": schema_version,
+        "result_type": "response_time",
+        "n_respondents": n_respondents,
+        "metric": metric,
+        "flag_direction": direction,
+        "threshold": threshold,
+        "scores": scores,
+        "flags": flags,
+        "respondent_ids": respondent_ids,
     }
 
 
@@ -280,7 +406,7 @@ def save_score_archive(
         validated_ids = _validate_respondent_ids(list(respondent_ids), n_respondents)
 
     payload = {
-        "schema_version": np.asarray(_SCORE_ARCHIVE_SCHEMA_VERSION, dtype=np.int64),
+        "schema_version": np.asarray(_ARCHIVE_SCHEMA_VERSION, dtype=np.int64),
         "result_type": np.asarray(validated_result_type, dtype=np.str_),
         "n_respondents": np.asarray(n_respondents, dtype=np.int64),
         "index_names": np.asarray(score_names, dtype=np.str_),
@@ -327,3 +453,35 @@ def load_score_archive(path: str | Path) -> ScoreArchive:
         raise ValueError("score archive must be an NPZ archive")
     with loaded as archive:
         return _read_score_archive(archive)
+
+
+def load_response_time_archive(path: str | Path) -> ResponseTimeArchive:
+    """
+    Load response-time results from a versioned, pickle-free NPZ archive.
+
+    The loader validates every schema field, the metric and suspicious-tail
+    pairing, vector shape and respondent alignment, optional identifiers, and
+    agreement between the stored flags and threshold. The returned score vector
+    can be passed directly to ``response_time_score_flags()`` to apply a new
+    fixed or percentile cutoff without recomputing the timing metric.
+
+    Parameters:
+    - path: Path to a response-time NPZ archive written by the CLI.
+
+    Returns:
+    - A ``ResponseTimeArchive`` containing scores, flags, cutoff metadata, and
+      optional respondent identifiers.
+
+    Example:
+        >>> from ier import load_response_time_archive, response_time_score_flags
+        >>> saved = load_response_time_archive("timing.npz")
+        >>> strict = response_time_score_flags(
+        ...     saved["scores"], cutoff_percentile=1,
+        ...     direction=saved["flag_direction"],
+        ... )
+    """
+    loaded = np.load(path, allow_pickle=False)
+    if isinstance(loaded, np.ndarray):
+        raise ValueError("response-time archive must be an NPZ archive")
+    with loaded as archive:
+        return _read_response_time_archive(archive)

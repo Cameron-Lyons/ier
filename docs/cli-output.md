@@ -146,5 +146,24 @@ unchanged.
 `response-time` archives include `metric`, `flag_direction`, `threshold`,
 respondent-aligned `scores`, and boolean `flags`.
 
+Load and reflag the retained scores through the public validated boundary:
+
+```python
+from ier import load_response_time_archive, response_time_score_flags
+
+saved = load_response_time_archive("timing.npz")
+revised = response_time_score_flags(
+    saved["scores"],
+    cutoff_percentile=1,
+    direction=saved["flag_direction"],
+)
+```
+
+`load_response_time_archive()` disables pickling and verifies schema version,
+metric and direction compatibility, finite cutoff metadata, aligned score and
+flag vectors, optional respondent identifiers, and agreement between stored
+flags and their cutoff rule. It accepts both inclusive fixed-threshold flags and
+tie-exclusive percentile flags.
+
 Consumers should reject unsupported future `schema_version` values rather than
 assuming their layout is unchanged.

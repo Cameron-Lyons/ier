@@ -256,17 +256,30 @@ units), not Likert item responses. They are intentionally **not** registered in
 respondents. Call them directly or use the dedicated CLI command:
 
 ```python
-from ier import response_time, response_time_flag, response_time_score_flags
+from ier import (
+    load_response_time_archive,
+    response_time,
+    response_time_flag,
+    response_time_score_flags,
+)
 
 median_rt = response_time(times, metric="median")
 flags = response_time_flag(times, cutoff_percentile=5)
 stricter_flags = response_time_score_flags(median_rt, cutoff_percentile=1)
+
+saved = load_response_time_archive("timing.npz")
+revised_flags = response_time_score_flags(
+    saved["scores"],
+    cutoff_percentile=1,
+    direction=saved["flag_direction"],
+)
 ```
 
 ```bash
 ier response-time timings.csv --metric median --percentile 5
 ier response-time timings.csv --metric consistency --threshold 0.05 --format csv
 ier response-time timings.csv --metric mixture --components 2 --random-seed 42
+ier response-time timings.csv --metric median --format npz --output timing.npz
 ```
 
 Direct timing metrics and consistency scores use low-tail flagging. Mixture
@@ -274,7 +287,8 @@ probabilities use high-tail flagging. Fixed thresholds include equality; derived
 percentile cutoffs exclude ties, matching the other public flagging workflows.
 Retained direct scores use `direction="low"` by default; pass `direction="high"`
 for mixture probabilities. This sensitivity path never recomputes row summaries
-or refits the mixture.
+or refits the mixture. The NPZ loader also validates that archived flags agree
+with their stored threshold and suspicious-tail direction before reuse.
 Mixture fitting excludes respondents whose median time is missing, infinite, or
 non-positive. Its posterior normalization remains stable when ordinary Gaussian
 density calculations underflow for an extreme valid observation.

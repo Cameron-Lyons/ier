@@ -7,6 +7,7 @@ from ._registry import index_catalog as index_catalog
 from ._validation import MatrixLike as MatrixLike
 from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
+from .archive import load_response_time_archive as load_response_time_archive
 from .archive import load_score_archive as load_score_archive
 from .archive import save_score_archive as save_score_archive
 from .composite import composite as composite
@@ -63,7 +64,9 @@ from .types import IndexMetadata as IndexMetadata
 from .types import IndexScoreMap as IndexScoreMap
 from .types import InfrequencyMissingPolicy as InfrequencyMissingPolicy
 from .types import IntArray as IntArray
+from .types import ResponseTimeArchive as ResponseTimeArchive
 from .types import ResponseTimeFlagDirection as ResponseTimeFlagDirection
+from .types import ResponseTimeMetric as ResponseTimeMetric
 from .types import ScoreArchive as ScoreArchive
 from .types import ScoreArchiveResultType as ScoreArchiveResultType
 from .types import ScreenIndexSummary as ScreenIndexSummary
@@ -115,6 +118,7 @@ __all__ = [
     "longstring_pattern",
     "longstring_scores",
     "load_score_archive",
+    "load_response_time_archive",
     "lz",
     "lz_flag",
     "mad",
@@ -140,6 +144,8 @@ __all__ = [
     "response_time_consistency",
     "response_time_flag",
     "ResponseTimeFlagDirection",
+    "ResponseTimeArchive",
+    "ResponseTimeMetric",
     "response_time_mixture",
     "response_time_score_flags",
     "screen",
