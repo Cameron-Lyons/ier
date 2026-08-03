@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.24] - 2026-08-03
+
+### Added
+
+- `load_score_archive()` restores ordered raw registered-index vectors,
+  respondent IDs, and soft failures from versioned screen NPZ output and
+  composite NPZ output written with `--include-components`. Loaded vectors feed
+  directly into `screen_scores()` or `composite_scores()`.
+- The public `ScoreArchive` type documents the validated loader result, and a
+  reproducible benchmark compares validated archive loading with direct NumPy
+  member access.
+
+### Changed
+
+- Score archive loading always disables pickling and rejects unsupported schema
+  versions, incompatible result types, missing or undeclared score members,
+  invalid registry names, unsafe object arrays, non-finite scores, misaligned
+  vectors, duplicate metadata, and invalid respondent identifiers.
+- On a 500,000-respondent, 15-index archive, validated loading takes 11.4 ms
+  versus 9.9 ms for direct unvalidated access, with the same 57.9 MiB peak traced
+  allocation and no added dependency.
+
 ## [2.19.23] - 2026-08-03
 
 ### Added

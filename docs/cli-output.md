@@ -47,6 +47,24 @@ with np.load("screening.npz", allow_pickle=False) as result:
     irv_flags = result["flag__irv"]
 ```
 
+For validated score reuse, prefer the public loader:
+
+```python
+from ier import load_score_archive, screen_scores
+
+saved = load_score_archive("screening.npz")
+updated = screen_scores(saved["scores"], percentile=99)
+print(saved["respondent_ids"])
+print(saved["errors"])
+```
+
+`load_score_archive()` always disables pickling and validates schema version,
+result type, declared score members, registered index names, vector shapes,
+respondent alignment, optional IDs, and soft-failure metadata. It accepts screen
+archives and composite archives written with `--include-components`. Aggregate-only
+composite and response-time archives do not contain reusable registered-index
+vectors and are rejected with a contextual error.
+
 ### Common schema
 
 All archives use schema version `1` and include:

@@ -4,8 +4,10 @@
     options:
       members:
         - IndexOptions
+        - ScoreArchive
         - __version__
         - index_catalog
+        - load_score_archive
         - screen
         - screen_scores
         - composite

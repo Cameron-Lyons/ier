@@ -11,6 +11,7 @@ For a comprehensive methods review, see
 - Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()` and `composite_scores()` decision layers
+- Validated, pickle-free `load_score_archive()` persistence workflow
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format
@@ -191,6 +192,11 @@ Use `composite_scores(details["indices"], ...)` with the raw component mapping
 from `composite_summary()` to compare weights, mean/sum/max reductions,
 standardization, or completeness rules without recalculating any index. Direction
 correction remains automatic and inputs are not mutated.
+
+Use `load_score_archive("screening.npz")` to restore registered score vectors,
+respondent IDs, and soft failures from versioned screen output. Detailed
+composite archives written with `--include-components` are supported as well;
+schema, registry, alignment, and pickle-free safety checks run before reuse.
 
 Composite scores are standardized per index by default. Pass
 `ier composite --no-standardize` to combine directed scores in their original

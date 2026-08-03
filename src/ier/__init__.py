@@ -7,6 +7,7 @@ from ._registry import index_catalog as index_catalog
 from ._validation import MatrixLike as MatrixLike
 from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
+from .archive import load_score_archive as load_score_archive
 from .composite import composite as composite
 from .composite import composite_flag as composite_flag
 from .composite import composite_probability as composite_probability
@@ -60,6 +61,8 @@ from .types import IndexMetadata as IndexMetadata
 from .types import IndexScoreMap as IndexScoreMap
 from .types import InfrequencyMissingPolicy as InfrequencyMissingPolicy
 from .types import IntArray as IntArray
+from .types import ScoreArchive as ScoreArchive
+from .types import ScoreArchiveResultType as ScoreArchiveResultType
 from .types import ScreenIndexSummary as ScreenIndexSummary
 from .types import ScreenResult as ScreenResult
 from .u3_poly import midpoint_responding as midpoint_responding
@@ -108,6 +111,7 @@ __all__ = [
     "longstring",
     "longstring_pattern",
     "longstring_scores",
+    "load_score_archive",
     "lz",
     "lz_flag",
     "mad",
@@ -137,6 +141,8 @@ __all__ = [
     "screen_scores",
     "ScreenIndexSummary",
     "ScreenResult",
+    "ScoreArchive",
+    "ScoreArchiveResultType",
     "semantic_ant",
     "semantic_ant_flag",
     "semantic_syn",
