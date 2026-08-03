@@ -7,6 +7,7 @@ from ._registry import index_catalog as index_catalog
 from ._validation import MatrixLike as MatrixLike
 from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
+from .archive import load_archive as load_archive
 from .archive import load_response_time_archive as load_response_time_archive
 from .archive import load_score_archive as load_score_archive
 from .archive import save_response_time_archive as save_response_time_archive
@@ -69,6 +70,7 @@ from .types import ResponseTimeArchive as ResponseTimeArchive
 from .types import ResponseTimeFlagDirection as ResponseTimeFlagDirection
 from .types import ResponseTimeMetric as ResponseTimeMetric
 from .types import ResponseTimeThresholdSource as ResponseTimeThresholdSource
+from .types import ResultArchive as ResultArchive
 from .types import ScoreArchive as ScoreArchive
 from .types import ScoreArchiveResultType as ScoreArchiveResultType
 from .types import ScreenIndexSummary as ScreenIndexSummary
@@ -119,8 +121,9 @@ __all__ = [
     "longstring",
     "longstring_pattern",
     "longstring_scores",
-    "load_score_archive",
+    "load_archive",
     "load_response_time_archive",
+    "load_score_archive",
     "lz",
     "lz_flag",
     "mad",
@@ -149,12 +152,13 @@ __all__ = [
     "ResponseTimeArchive",
     "ResponseTimeMetric",
     "ResponseTimeThresholdSource",
+    "ResultArchive",
     "response_time_mixture",
     "response_time_score_flags",
     "screen",
     "screen_scores",
-    "save_score_archive",
     "save_response_time_archive",
+    "save_score_archive",
     "ScreenIndexSummary",
     "ScreenResult",
     "ScoreArchive",

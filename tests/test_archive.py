@@ -8,6 +8,7 @@ import pytest
 from ier import (
     composite_scores,
     composite_summary,
+    load_archive,
     load_response_time_archive,
     load_score_archive,
     response_time_score_flags,
@@ -167,6 +168,49 @@ def test_response_time_mixture_archive_preserves_high_tail(tmp_path: Path) -> No
     assert loaded["flag_direction"] == "high"
     assert loaded["respondent_ids"] is None
     np.testing.assert_array_equal(loaded["flags"], flags)
+
+
+def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Path) -> None:
+    score_path = tmp_path / "scores.npz"
+    timing_path = tmp_path / "timing.npz"
+    save_score_archive(
+        score_path,
+        {"irv": [0.1, 0.2], "longstring": [2.0, 5.0]},
+        respondent_ids=["case-a", "case-b"],
+    )
+    save_response_time_archive(
+        timing_path,
+        [0.5, 1.5],
+        [True, False],
+        threshold=1.0,
+        threshold_source="fixed",
+    )
+
+    score_archive = load_archive(score_path)
+    timing_archive = load_archive(timing_path)
+
+    assert score_archive["result_type"] == "screen"
+    assert list(score_archive["scores"]) == ["irv", "longstring"]
+    assert score_archive["respondent_ids"] == ["case-a", "case-b"]
+    assert timing_archive["result_type"] == "response_time"
+    assert timing_archive["threshold_source"] == "fixed"
+    np.testing.assert_array_equal(timing_archive["flags"], [True, False])
+
+
+def test_generic_archive_loader_rejects_plain_and_unknown_results(tmp_path: Path) -> None:
+    plain = tmp_path / "plain.npy"
+    unknown = tmp_path / "unknown.npz"
+    np.save(plain, np.asarray([1.0, 2.0]))
+    np.savez(
+        unknown,
+        schema_version=np.asarray(1, dtype=np.int64),
+        result_type=np.asarray("unknown", dtype=np.str_),
+    )
+
+    with pytest.raises(ValueError, match="must be an NPZ archive"):
+        load_archive(plain)
+    with pytest.raises(ValueError, match="screen.*composite.*response_time"):
+        load_archive(unknown)
 
 
 def _response_time_payload() -> dict[str, np.ndarray]:

@@ -54,6 +54,25 @@ with np.load("screening.npz", allow_pickle=False) as result:
     irv_flags = result["flag__irv"]
 ```
 
+For validated type auto-detection and compact metadata inspection, use either
+the generic Python loader or the matching command:
+
+```python
+from ier import load_archive
+
+saved = load_archive("results.npz")
+print(saved["result_type"], saved["n_respondents"])
+```
+
+```bash
+ier archive-info results.npz
+ier archive-info results.npz --format json --output archive-metadata.json
+```
+
+The text and strict-JSON summaries omit respondent vectors. Score archives list
+stored indices and soft failures; response-time archives report the metric,
+tail direction, cutoff provenance, and aggregate flag rate.
+
 For validated score reuse, prefer the public save/load pair. The writer creates
 a compact score-only archive; full CLI archives retain the additional flags and
 decision metadata documented below.

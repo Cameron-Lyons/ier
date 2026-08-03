@@ -70,6 +70,96 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(code, 0)
 
+    def test_archive_info_auto_detects_score_metadata_in_text_and_json(self) -> None:
+        archive = self.root / "scores.npz"
+        save_score_archive(
+            archive,
+            {
+                "irv": [0.9, 0.5, 0.1],
+                "longstring": [2.0, 4.0, 8.0],
+            },
+            respondent_ids=["case-a", "case-b", "case-c"],
+            errors={"mad": "missing item configuration"},
+        )
+        output = self.root / "archive.json"
+        stdout = StringIO()
+
+        with (
+            patch("ier.cli._load_input", side_effect=AssertionError("matrix input loaded")),
+            patch("sys.stdout", stdout),
+        ):
+            text_code = main(["archive-info", str(archive)])
+            json_code = main(
+                [
+                    "archive-info",
+                    str(archive),
+                    "--format",
+                    "json",
+                    "--output",
+                    str(output),
+                ]
+            )
+
+        self.assertEqual(text_code, 0)
+        self.assertEqual(json_code, 0)
+        self.assertIn("result type: screen", stdout.getvalue())
+        self.assertIn("indices (2): irv, longstring", stdout.getvalue())
+        self.assertIn("respondent identifiers: yes", stdout.getvalue())
+        self.assertIn("mad: missing item configuration", stdout.getvalue())
+        self.assertEqual(
+            json.loads(output.read_text(encoding="utf-8")),
+            {
+                "schema_version": 1,
+                "result_type": "screen",
+                "n_respondents": 3,
+                "has_respondent_ids": True,
+                "n_indices": 2,
+                "indices": ["irv", "longstring"],
+                "errors": {"mad": "missing item configuration"},
+            },
+        )
+
+    def test_archive_info_reports_response_time_cutoff_and_flags(self) -> None:
+        archive = self.root / "timing.npz"
+        output = self.root / "timing-info.json"
+        save_response_time_archive(
+            archive,
+            [0.5, 1.0, 1.5],
+            [True, True, False],
+            threshold=1.0,
+            threshold_source="fixed",
+            respondent_ids=["fast", "tie", "slow"],
+        )
+
+        code = main(
+            [
+                "archive-info",
+                str(archive),
+                "--format",
+                "json",
+                "--output",
+                str(output),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            json.loads(output.read_text(encoding="utf-8")),
+            {
+                "schema_version": 2,
+                "result_type": "response_time",
+                "n_respondents": 3,
+                "has_respondent_ids": True,
+                "metric": "median",
+                "flag_direction": "low",
+                "threshold": 1.0,
+                "threshold_source": "fixed",
+                "percentile": None,
+                "n_flagged": 2,
+                "flag_rate": 2 / 3,
+            },
+        )
+
     def test_screen_reflag_reuses_selected_scores_across_text_json_and_csv(self) -> None:
         archive = self.root / "retained-scores.npz"
         save_score_archive(

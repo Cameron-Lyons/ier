@@ -17,6 +17,7 @@ from ier import (
     composite_scores,
     composite_summary,
     index_catalog,
+    load_archive,
     load_response_time_archive,
     load_score_archive,
     response_time,
@@ -30,6 +31,7 @@ from ier._cli_npz import _require_npz_output_path
 from ier._cli_results import (
     flag_response_time_scores,
     valid_score_counts,
+    write_archive_info_result,
     write_composite_result,
     write_index_catalog_result,
     write_response_time_result,
@@ -196,6 +198,22 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=10,
         help="For text format: show the top N respondents (default: 10)",
+    )
+
+
+def _add_metadata_output_options(parser: argparse.ArgumentParser) -> None:
+    """Add compact text and JSON output controls for metadata commands."""
+    parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text summary)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write to a path, optionally .gz; use '-' for stdout",
     )
 
 
@@ -380,6 +398,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     sub = parser.add_subparsers(dest="command", required=True)
+
+    archive_info_parser = sub.add_parser(
+        "archive-info",
+        help="Inspect a validated result archive without choosing its type first.",
+    )
+    archive_info_parser.add_argument(
+        "archive",
+        type=Path,
+        help="Validated screen, composite, or response-time .npz archive",
+    )
+    _add_metadata_output_options(archive_info_parser)
 
     screen_parser = sub.add_parser("screen", help="Run multi-index screening on a matrix.")
     screen_parser.add_argument(
@@ -569,6 +598,9 @@ def _run_command(args: argparse.Namespace) -> int:
     """Execute one parsed CLI command, allowing user-facing failures to bubble to main()."""
     if args.command == "indices":
         return write_index_catalog_result(args, index_catalog())
+
+    if args.command == "archive-info":
+        return write_archive_info_result(args, load_archive(args.archive))
 
     if args.command in {"screen", "composite"}:
         validate_worker_count(args.workers)

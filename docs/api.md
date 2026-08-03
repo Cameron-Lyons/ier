@@ -5,12 +5,14 @@
       members:
         - IndexOptions
         - ResponseTimeArchive
+        - ResultArchive
         - ResponseTimeFlagDirection
         - ResponseTimeMetric
         - ResponseTimeThresholdSource
         - ScoreArchive
         - __version__
         - index_catalog
+        - load_archive
         - load_score_archive
         - load_response_time_archive
         - save_response_time_archive

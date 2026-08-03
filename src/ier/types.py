@@ -99,6 +99,9 @@ class ResponseTimeArchive(TypedDict):
     respondent_ids: list[str] | None
 
 
+ResultArchive: TypeAlias = ScoreArchive | ResponseTimeArchive
+
+
 class CompositeSummary(TypedDict):
     """Return value for composite_summary()."""
 

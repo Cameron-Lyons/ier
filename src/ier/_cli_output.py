@@ -22,7 +22,7 @@ from ier._cli_composite import (
 )
 
 if TYPE_CHECKING:
-    from ier.types import IndexCatalog, ResponseTimeThresholdSource, ScreenResult
+    from ier.types import IndexCatalog, ResponseTimeThresholdSource, ResultArchive, ScreenResult
 
 
 _JSON_ARRAY_CHUNK_SIZE = 4096
@@ -195,6 +195,77 @@ def _write_index_catalog_csv(handle: TextIO, catalog: IndexCatalog) -> None:
                 "required_options": ",".join(metadata["required_options"]),
             }
         )
+
+
+def _archive_info_payload(archive: ResultArchive) -> dict[str, object]:
+    """Build one compact JSON-ready summary from a validated result archive."""
+    payload: dict[str, object] = {
+        "schema_version": archive["schema_version"],
+        "result_type": archive["result_type"],
+        "n_respondents": archive["n_respondents"],
+        "has_respondent_ids": archive["respondent_ids"] is not None,
+    }
+    if archive["result_type"] == "response_time":
+        n_flagged = int(np.sum(archive["flags"]))
+        payload.update(
+            {
+                "metric": archive["metric"],
+                "flag_direction": archive["flag_direction"],
+                "threshold": archive["threshold"],
+                "threshold_source": archive["threshold_source"],
+                "percentile": archive["percentile"],
+                "n_flagged": n_flagged,
+                "flag_rate": n_flagged / archive["n_respondents"],
+            }
+        )
+    else:
+        payload.update(
+            {
+                "n_indices": len(archive["scores"]),
+                "indices": list(archive["scores"]),
+                "errors": archive["errors"],
+            }
+        )
+    return payload
+
+
+def _emit_archive_info_text(archive: ResultArchive) -> str:
+    """Render a compact human-readable summary of a validated result archive."""
+    lines = [
+        f"result type: {archive['result_type']}",
+        f"schema version: {archive['schema_version']}",
+        f"respondents: {archive['n_respondents']}",
+        f"respondent identifiers: {'yes' if archive['respondent_ids'] is not None else 'no'}",
+    ]
+    if archive["result_type"] == "response_time":
+        source = archive["threshold_source"]
+        if source == "percentile":
+            percentile = archive["percentile"]
+            assert percentile is not None
+            threshold_label = f"percentile={percentile:g}"
+        else:
+            threshold_label = "legacy" if source is None else source
+        n_flagged = int(np.sum(archive["flags"]))
+        lines.extend(
+            (
+                f"metric: {archive['metric']}",
+                f"flag direction: {archive['flag_direction']}",
+                f"threshold: {archive['threshold']:g} ({threshold_label})",
+                f"flagged: {n_flagged}/{archive['n_respondents']} "
+                f"({n_flagged / archive['n_respondents']:.1%})",
+            )
+        )
+    else:
+        lines.append(f"indices ({len(archive['scores'])}): {', '.join(archive['scores'])}")
+        lines.append(f"soft failures: {len(archive['errors'])}")
+        for name, message in archive["errors"].items():
+            lines.append(f"  {name}: {message}")
+    return "\n".join(lines)
+
+
+def _write_archive_info_json(handle: TextIO, archive: ResultArchive) -> None:
+    """Write strict JSON metadata for a validated result archive."""
+    _write_json_value(handle, _archive_info_payload(archive))
 
 
 def _screen_threshold_text(result: ScreenResult, name: str) -> str:

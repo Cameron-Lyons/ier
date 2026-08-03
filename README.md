@@ -12,6 +12,7 @@ For a comprehensive methods review, see
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
 - Validated, pickle-free score and response-time archive persistence
+- Auto-detecting archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded item-correlation discovery for high-dimensional psychometric synonym analyses
 - Validated per-index weights across all composite scoring helpers
@@ -133,6 +134,7 @@ ier composite data.csv --indices irv longstring --include-components --format js
 ier composite data.csv --format csv --output scores.csv
 ier composite-recombine composite.npz --weight irv=2 --method mean --format json
 ier composite-recombine composite.npz --indices irv longstring --no-standardize
+ier archive-info composite.npz --format json
 ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
 ier screen responses.csv.gz --format json --output screening.json.gz
@@ -243,6 +245,13 @@ after verifying the same fixed-inclusive or percentile-exclusive decision
 contract enforced by the loader. Existing writer calls without provenance retain
 the legacy schema; pass `threshold_source` and, for derived cutoffs, `percentile`
 to produce the richer schema used by current CLI output.
+
+When the archive type is not known in advance, `load_archive()` reads the
+declared result type and applies the complete score or response-time validator
+in one pass. `ier archive-info results.npz` exposes the same auto-detection as a
+compact text summary; add `--format json` for structured metadata. The command
+reports dimensions and identifier presence plus stored index/failure metadata
+or timing cutoff provenance and flag rates without printing respondent vectors.
 
 Composite scores are standardized per index by default. Pass
 `ier composite --no-standardize` to combine directed scores in their original

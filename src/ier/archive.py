@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         ResponseTimeFlagDirection,
         ResponseTimeMetric,
         ResponseTimeThresholdSource,
+        ResultArchive,
         ScoreArchive,
         ScoreArchiveResultType,
     )
@@ -137,6 +138,14 @@ def _require_member(archive: NpzFile, name: str) -> np.ndarray:
     if not isinstance(value, np.ndarray):
         raise ValueError(f"NPZ archive member {name} must be a NumPy array")
     return value
+
+
+def _open_npz_archive(path: str | Path, *, label: str) -> NpzFile:
+    """Open one pickle-disabled NPZ archive with a contextual container error."""
+    loaded = np.load(path, allow_pickle=False)
+    if isinstance(loaded, np.ndarray):
+        raise ValueError(f"{label} archive must be an NPZ archive")
+    return cast("NpzFile", loaded)
 
 
 def _integer_scalar(archive: NpzFile, name: str) -> int:
@@ -704,11 +713,37 @@ def load_score_archive(path: str | Path) -> ScoreArchive:
         ...     weights={"irv": 2.0},
         ... )
     """
-    loaded = np.load(path, allow_pickle=False)
-    if isinstance(loaded, np.ndarray):
-        raise ValueError("score archive must be an NPZ archive")
-    with loaded as archive:
+    with _open_npz_archive(path, label="score") as archive:
         return _read_score_archive(archive)
+
+
+def load_archive(path: str | Path) -> ResultArchive:
+    """
+    Load and auto-detect any supported reusable result archive.
+
+    Pickling is always disabled. The archive's declared ``result_type`` selects
+    the complete score or response-time validator, so callers can accept screen,
+    composite, and timing results without inspecting raw NPZ members or guessing
+    which specialized loader to call.
+
+    Parameters:
+    - path: Path to a supported versioned NPZ result archive.
+
+    Returns:
+    - A fully validated ``ScoreArchive`` or ``ResponseTimeArchive``.
+
+    Example:
+        >>> from ier import load_archive
+        >>> saved = load_archive("results.npz")
+        >>> print(saved["result_type"], saved["n_respondents"])
+    """
+    with _open_npz_archive(path, label="result") as archive:
+        result_type = _string_scalar(archive, "result_type")
+        if result_type == "response_time":
+            return _read_response_time_archive(archive)
+        if result_type in {"screen", "composite"}:
+            return _read_score_archive(archive)
+        raise ValueError("archive result_type must be 'screen', 'composite', or 'response_time'")
 
 
 def load_response_time_archive(path: str | Path) -> ResponseTimeArchive:
@@ -736,8 +771,5 @@ def load_response_time_archive(path: str | Path) -> ResponseTimeArchive:
         ...     direction=saved["flag_direction"],
         ... )
     """
-    loaded = np.load(path, allow_pickle=False)
-    if isinstance(loaded, np.ndarray):
-        raise ValueError("response-time archive must be an NPZ archive")
-    with loaded as archive:
+    with _open_npz_archive(path, label="response-time") as archive:
         return _read_response_time_archive(archive)
