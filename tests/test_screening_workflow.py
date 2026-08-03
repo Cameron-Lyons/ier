@@ -226,6 +226,25 @@ class TestScreen(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "min_flags"):
                 screen(self.data, min_flags=value)
 
+    def test_parallel_screen_matches_sequential_results_and_order(self) -> None:
+        indices = ["irv", "longstring", "markov", "guttman", "individual_reliability"]
+        options = IndexOptions(reliability_n_splits=10, reliability_random_seed=123)
+        sequential = screen(self.data, indices=indices, options=options)
+        parallel = screen(self.data, indices=indices, options=options, workers=4)
+
+        self.assertEqual(parallel["indices_used"], indices)
+        self.assertEqual(parallel["thresholds"], sequential["thresholds"])
+        self.assertEqual(parallel["summary"], sequential["summary"])
+        for name in indices:
+            np.testing.assert_array_equal(parallel["scores"][name], sequential["scores"][name])
+            np.testing.assert_array_equal(parallel["flags"][name], sequential["flags"][name])
+        np.testing.assert_array_equal(parallel["flag_counts"], sequential["flag_counts"])
+        np.testing.assert_array_equal(parallel["consensus_flags"], sequential["consensus_flags"])
+
+    def test_invalid_worker_count_raises(self) -> None:
+        with self.assertRaisesRegex(ValueError, "workers must be a positive integer"):
+            screen(self.data, workers=0)
+
     def test_straightliner_flagged(self) -> None:
         result = screen(self.data)
         self.assertGreater(result["flag_counts"][0], 0)

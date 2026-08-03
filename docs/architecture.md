@@ -29,6 +29,10 @@ _validation / _flagging    ← shared input checks and threshold helpers
   aborting the whole screen. Public orchestration APIs also accept `strict=True`
   to raise a contextual error as soon as a selected index fails. Composite
   callers still raise if *no* index succeeds under the default soft policy.
+- **Opt-in parallelism.** Registry orchestration evaluates indices sequentially
+  by default. `workers>1` uses a lazily imported standard-library thread pool,
+  then records scores and failures in selection order. This keeps default import
+  cost and resource use stable while allowing NumPy-heavy scorers to overlap.
 
 ## Command-line boundaries
 

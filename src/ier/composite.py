@@ -25,6 +25,7 @@ from ier._registry import (
     resolve_index_options,
     score_registered_indices,
     validate_index_names,
+    validate_worker_count,
 )
 from ier._validation import MatrixLike, validate_matrix_input
 from ier.types import CompositeMethod, CompositeSummary
@@ -107,6 +108,7 @@ def composite(
     options: IndexOptions | None = None,
     return_diagnostics: bool = False,
     strict: bool = False,
+    workers: int = 1,
 ) -> np.ndarray | tuple[np.ndarray, dict[str, str]]:
     """
     Calculate a composite IER index combining multiple detection methods.
@@ -139,6 +141,9 @@ def composite(
     - return_diagnostics: If True, also return per-index soft-failure messages.
     - strict: If True, raise when any selected index fails instead of collecting
               diagnostics (default False).
+    - workers: Number of indices to score concurrently. The default of 1 preserves
+               sequential execution; values above 1 trade additional peak memory
+               for throughput on larger matrices.
 
     Returns:
     - A numpy array of composite scores for each individual. Higher scores indicate
@@ -153,6 +158,7 @@ def composite(
         >>> scores = composite(data, options=IndexOptions())
         >>> print(scores)
     """
+    workers = validate_worker_count(workers)
     x_array = validate_matrix_input(x, check_type=False)
     resolved = resolve_index_options(options)
     selected_indices = _resolve_composite_indices(indices, method, resolved)
@@ -164,6 +170,7 @@ def composite(
         resolved,
         apply_composite_direction=True,
         strict=strict,
+        workers=workers,
     )
     result = _combine_scores(index_scores, diagnostics, combine_method, standardize)
 
@@ -183,12 +190,14 @@ def composite_flag(
     options: IndexOptions | None = None,
     return_diagnostics: bool = False,
     strict: bool = False,
+    workers: int = 1,
 ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, dict[str, str]]:
     """
     Calculate composite IER scores and flag potential careless responders.
 
     Configure with ``options=IndexOptions(...)``. Missing index config soft-fails
     by default; set ``strict=True`` to require every selected index to succeed.
+    Set ``workers`` above 1 to score independent indices concurrently.
     Explicit thresholds include scores equal to the cutoff; percentile cutoffs
     flag only scores strictly above the sample percentile.
 
@@ -204,6 +213,7 @@ def composite_flag(
         options=options,
         return_diagnostics=return_diagnostics,
         strict=strict,
+        workers=workers,
     )
     if return_diagnostics:
         if not isinstance(composite_result, tuple):
@@ -229,13 +239,16 @@ def composite_summary(
     *,
     options: IndexOptions | None = None,
     strict: bool = False,
+    workers: int = 1,
 ) -> CompositeSummary:
     """
     Calculate composite scores with detailed summary statistics.
 
     Configure with ``options=IndexOptions(...)``. Set ``strict=True`` to require
-    every selected index to succeed.
+    every selected index to succeed. Set ``workers`` above 1 to score independent
+    indices concurrently.
     """
+    workers = validate_worker_count(workers)
     x_array = validate_matrix_input(x, check_type=False)
     resolved = resolve_index_options(options)
     selected_indices = _resolve_composite_indices(indices, method, resolved)
@@ -246,6 +259,7 @@ def composite_summary(
         selected_indices,
         resolved,
         strict=strict,
+        workers=workers,
     )
     composite_inputs = {
         name: INDEX_REGISTRY[name].composite_multiplier * scores
@@ -278,6 +292,7 @@ def composite_probability(
     *,
     options: IndexOptions | None = None,
     strict: bool = False,
+    workers: int = 1,
 ) -> np.ndarray:
     """
     Compute an uncalibrated logistic composite IER score.
@@ -287,7 +302,8 @@ def composite_probability(
     values are sample-relative scores, not calibrated probabilities of IER.
 
     Configure with ``options=IndexOptions(...)``. Set ``strict=True`` to require
-    every selected index to succeed.
+    every selected index to succeed. Set ``workers`` above 1 to score independent
+    indices concurrently.
     """
     z_scores_result = composite(
         x,
@@ -296,6 +312,7 @@ def composite_probability(
         standardize=True,
         options=options,
         strict=strict,
+        workers=workers,
     )
     z_scores = z_scores_result[0] if isinstance(z_scores_result, tuple) else z_scores_result
 

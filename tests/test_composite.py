@@ -56,6 +56,46 @@ class TestComposite(unittest.TestCase):
         result = composite(data, standardize=False)
         self.assertEqual(len(result), 2)
 
+    def test_parallel_workers_propagate_across_composite_apis(self) -> None:
+        data = np.array(
+            [
+                [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
+                [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+                [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
+                [2, 4, 1, 5, 3, 2, 5, 1, 4, 3],
+            ],
+            dtype=float,
+        )
+        indices = ["irv", "longstring", "person_total"]
+
+        sequential = composite(data, indices=indices)
+        parallel = composite(data, indices=indices, workers=3)
+        np.testing.assert_allclose(parallel, sequential, equal_nan=True)
+
+        sequential_scores, sequential_flags = composite_flag(data, indices=indices)
+        parallel_scores, parallel_flags = composite_flag(data, indices=indices, workers=3)
+        np.testing.assert_allclose(parallel_scores, sequential_scores, equal_nan=True)
+        np.testing.assert_array_equal(parallel_flags, sequential_flags)
+
+        sequential_summary = composite_summary(data, indices=indices)
+        parallel_summary = composite_summary(data, indices=indices, workers=3)
+        self.assertEqual(parallel_summary["indices_used"], indices)
+        self.assertEqual(parallel_summary["errors"], sequential_summary["errors"])
+        np.testing.assert_allclose(
+            parallel_summary["composite"],
+            sequential_summary["composite"],
+            equal_nan=True,
+        )
+        for name in indices:
+            np.testing.assert_array_equal(
+                parallel_summary["indices"][name],
+                sequential_summary["indices"][name],
+            )
+
+        sequential_probability = composite_probability(data, indices=indices)
+        parallel_probability = composite_probability(data, indices=indices, workers=3)
+        np.testing.assert_allclose(parallel_probability, sequential_probability, equal_nan=True)
+
     def test_with_evenodd(self) -> None:
         """Test composite with evenodd index."""
         data = [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], [3, 3, 3, 3, 3, 3, 3, 3, 3, 3]]

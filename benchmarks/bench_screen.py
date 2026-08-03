@@ -3,6 +3,7 @@
 Usage:
     uv run python benchmarks/bench_screen.py
     uv run python benchmarks/bench_screen.py --respondents 2000 --items 50 --repeats 5
+    uv run python benchmarks/bench_screen.py --respondents 20000 --items 80 --workers 4
 """
 
 from __future__ import annotations
@@ -32,23 +33,27 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()
+
+    if args.workers < 1:
+        parser.error("workers must be a positive integer")
 
     data = _make_data(args.respondents, args.items, args.seed)
     options = IndexOptions(scale_min=1, scale_max=5)
 
     for _ in range(args.warmup):
-        screen(data, options=options)
+        screen(data, options=options, workers=args.workers)
 
     timings: list[float] = []
     result = None
     for _ in range(args.repeats):
         start = time.perf_counter()
-        result = screen(data, options=options)
+        result = screen(data, options=options, workers=args.workers)
         timings.append(time.perf_counter() - start)
 
     assert result is not None
-    print(f"shape={data.shape} indices={result['n_indices']}")
+    print(f"shape={data.shape} indices={result['n_indices']} workers={args.workers}")
     print(
         "screen seconds: "
         f"median={statistics.median(timings):.4f} "

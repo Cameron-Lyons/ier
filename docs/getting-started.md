@@ -146,6 +146,21 @@ ier screen responses.csv.gz --format json --output screening.json.gz
 CSV output is forward-only for plain files, gzip files, and standard output, so
 large respondent-level exports do not retain the complete document in memory.
 
+Independent indices can be scored concurrently for larger matrices:
+
+```python
+result = screen(responses, workers=4)
+scores = composite(responses, workers=4)
+```
+
+```bash
+ier screen responses.npy --workers 4 --format json --output screening.json
+```
+
+The default `workers=1` path remains sequential. Parallel scoring retains the
+requested index and failure order but may use more temporary memory, so benchmark
+representative data before choosing a worker count.
+
 For fast, lossless NumPy workflows, write a versioned, pickle-free archive:
 
 ```bash

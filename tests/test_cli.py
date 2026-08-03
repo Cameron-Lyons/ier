@@ -59,6 +59,57 @@ class TestCli(unittest.TestCase):
         )
         self.assertEqual(code, 0)
 
+    def test_parallel_workers_across_screen_and_composite_commands(self) -> None:
+        screen_out = self.root / "parallel-screen.json"
+        composite_out = self.root / "parallel-composite.csv"
+
+        screen_code = main(
+            [
+                "screen",
+                str(self.csv_path),
+                "--indices",
+                "irv",
+                "longstring",
+                "--workers",
+                "2",
+                "--format",
+                "json",
+                "--output",
+                str(screen_out),
+            ]
+        )
+        composite_code = main(
+            [
+                "composite",
+                str(self.csv_path),
+                "--indices",
+                "irv",
+                "longstring",
+                "--workers",
+                "2",
+                "--format",
+                "csv",
+                "--output",
+                str(composite_out),
+            ]
+        )
+
+        self.assertEqual(screen_code, 0)
+        self.assertEqual(composite_code, 0)
+        self.assertEqual(json.loads(screen_out.read_text(encoding="utf-8"))["n_indices"], 2)
+        self.assertEqual(len(composite_out.read_text(encoding="utf-8").splitlines()), 4)
+
+    def test_invalid_worker_count_returns_structured_error(self) -> None:
+        missing = self.root / "missing.csv"
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(["screen", str(missing), "--workers", "0"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("error: workers must be a positive integer", stderr.getvalue())
+        self.assertNotIn("No such file", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_screen_reports_soft_errors(self) -> None:
         code = main(
             [
