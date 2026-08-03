@@ -327,8 +327,8 @@ Plotting remains optional and reports a centralized install hint from
 - Longest-run and repeating-pattern throughput and memory: `benchmarks/bench_longstring.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
-- Response-time mixture EM, reusable calibrated scoring, in-memory cutoff reuse,
-  and archive-backed CLI cutoff reuse:
+- Component-bounded response-time mixture EM and calibrated scoring, in-memory
+  cutoff reuse, and archive-backed CLI cutoff reuse:
   `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - In-memory and archive-backed composite sensitivity analysis:

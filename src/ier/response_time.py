@@ -440,23 +440,21 @@ def _fit_gaussian_mixture_model(
 
     means += rng.normal(0, 0.01, size=k)
 
-    resp = np.empty((n, k))
+    normalizers = np.empty(n)
+    responsibilities = np.empty(n)
     scratch = np.empty(n)
     prev_ll = -np.inf
 
     for _ in range(max_iter):
-        ll = _mixture_expectation(data, weights, means, variances, resp, scratch)
-
-        for j in range(k):
-            nj = resp[:, j].sum()
-            if nj < _MIN_COMPONENT_MASS:
-                continue
-            weights[j] = nj / n
-            means[j] = (resp[:, j] @ data) / nj
-            np.subtract(data, means[j], out=scratch)
-            np.square(scratch, out=scratch)
-            variances[j] = (resp[:, j] @ scratch) / nj
-            variances[j] = max(variances[j], _MIN_VARIANCE)
+        ll = _mixture_fit_step(
+            data,
+            weights,
+            means,
+            variances,
+            normalizers,
+            responsibilities,
+            scratch,
+        )
 
         if abs(ll - prev_ll) < tol:
             break
@@ -468,6 +466,101 @@ def _fit_gaussian_mixture_model(
         variances=variances,
         log_transform=log_transform,
     )
+
+
+def _mixture_fit_step(
+    data: np.ndarray,
+    weights: np.ndarray,
+    means: np.ndarray,
+    variances: np.ndarray,
+    normalizers: np.ndarray,
+    responsibilities: np.ndarray,
+    scratch: np.ndarray,
+) -> float:
+    """Run one EM step using only respondent-sized workspaces."""
+    normalizers.fill(0.0)
+    for component in range(len(weights)):
+        _gaussian_joint_density(
+            data,
+            weights[component],
+            means[component],
+            variances[component],
+            responsibilities,
+        )
+        np.add(normalizers, responsibilities, out=normalizers)
+
+    regular = np.isfinite(normalizers) & (normalizers > 0.0)
+    log_likelihood = float(np.sum(np.log(normalizers[regular])))
+
+    underflow = ~regular
+    underflow_count = int(np.count_nonzero(underflow))
+    if underflow_count:
+        underflow_data = data[underflow]
+        row_maximum = np.full(underflow_count, -np.inf)
+        underflow_scratch = scratch[:underflow_count]
+        for component in range(len(weights)):
+            _gaussian_log_joint(
+                underflow_data,
+                weights[component],
+                means[component],
+                variances[component],
+                underflow_scratch,
+            )
+            np.maximum(row_maximum, underflow_scratch, out=row_maximum)
+
+        log_normalizers = np.zeros(underflow_count)
+        for component in range(len(weights)):
+            _gaussian_log_joint(
+                underflow_data,
+                weights[component],
+                means[component],
+                variances[component],
+                underflow_scratch,
+            )
+            np.subtract(underflow_scratch, row_maximum, out=underflow_scratch)
+            np.exp(underflow_scratch, out=underflow_scratch)
+            np.add(log_normalizers, underflow_scratch, out=log_normalizers)
+        log_likelihood += float(np.sum(row_maximum + np.log(log_normalizers)))
+
+    n = len(data)
+    for component in range(len(weights)):
+        _gaussian_joint_density(
+            data,
+            weights[component],
+            means[component],
+            variances[component],
+            responsibilities,
+        )
+        np.divide(
+            responsibilities,
+            normalizers,
+            out=responsibilities,
+            where=regular,
+        )
+        if underflow_count:
+            _gaussian_log_joint(
+                underflow_data,
+                weights[component],
+                means[component],
+                variances[component],
+                underflow_scratch,
+            )
+            np.subtract(underflow_scratch, row_maximum, out=underflow_scratch)
+            np.exp(underflow_scratch, out=underflow_scratch)
+            np.divide(underflow_scratch, log_normalizers, out=underflow_scratch)
+            responsibilities[underflow] = underflow_scratch
+
+        component_mass = responsibilities.sum()
+        if component_mass < _MIN_COMPONENT_MASS:
+            continue
+        weights[component] = component_mass / n
+        means[component] = (responsibilities @ data) / component_mass
+        np.subtract(data, means[component], out=scratch)
+        np.square(scratch, out=scratch)
+        variances[component] = (responsibilities @ scratch) / component_mass
+        variances[component] = max(variances[component], _MIN_VARIANCE)
+
+    return log_likelihood
 
 
 def _score_gaussian_mixture_data(

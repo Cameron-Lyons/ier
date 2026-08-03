@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.66] - 2026-08-03
+
+### Changed
+
+- Response-time mixture fitting now streams component probabilities through
+  respondent-sized buffers instead of retaining a respondent-by-component matrix.
+  EM initialization, likelihood convergence, centered variance updates, and the
+  stable log-domain fallback are preserved; fitting workspace no longer grows with
+  component count, the maintained benchmark covers the path, and no dependency is
+  added.
+
 ## [2.19.65] - 2026-08-03
 
 ### Changed
