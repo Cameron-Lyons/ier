@@ -405,9 +405,66 @@ def composite_index_names() -> set[str]:
 def validate_index_names(indices: list[str], allowed: set[str] | None = None) -> None:
     """Validate requested index names against the registry or a registry subset."""
     valid = set(INDEX_REGISTRY) if allowed is None else allowed
+    seen: set[str] = set()
     for name in indices:
         if name not in valid:
             raise ValueError(f"invalid index '{name}'. Valid options: {sorted(valid)}")
+        if name in seen:
+            raise ValueError(f"duplicate index '{name}' is not supported")
+        seen.add(name)
+
+
+IndexScoreResult = tuple[np.ndarray | None, str | None, Exception | None]
+
+
+def validate_worker_count(workers: int) -> int:
+    """Return a validated positive number of index-scoring workers."""
+    if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
+        raise ValueError("workers must be a positive integer")
+    return workers
+
+
+def _score_registered_index(
+    name: str,
+    x: np.ndarray,
+    options: IndexOptions,
+) -> IndexScoreResult:
+    """Compute one index and retain supported failures for ordered handling."""
+    spec = INDEX_REGISTRY[name]
+    required_error = spec.required_error(options) if spec.required_error is not None else None
+    if required_error is not None:
+        return None, required_error, None
+
+    try:
+        score = spec.scorer(x, options)
+    except (ValueError, RuntimeError, TypeError) as error:
+        return None, str(error), error
+    return score, None, None
+
+
+def _record_index_result(
+    name: str,
+    result: IndexScoreResult,
+    scores: dict[str, np.ndarray],
+    errors: dict[str, str],
+    *,
+    apply_composite_direction: bool,
+    strict: bool,
+) -> None:
+    """Record one result in selection order or raise its contextual failure."""
+    score, error_message, cause = result
+    if error_message is not None:
+        if strict:
+            failure = ValueError(f"index '{name}' failed: {error_message}")
+            if cause is not None:
+                raise failure from cause
+            raise failure
+        errors[name] = error_message
+        return
+
+    assert score is not None
+    spec = INDEX_REGISTRY[name]
+    scores[name] = spec.composite_multiplier * score if apply_composite_direction else score
 
 
 def score_registered_indices(
@@ -417,33 +474,42 @@ def score_registered_indices(
     *,
     apply_composite_direction: bool = False,
     strict: bool = False,
+    workers: int = 1,
 ) -> tuple[dict[str, np.ndarray], dict[str, str]]:
-    """Compute registered indices, collecting or raising per-index failures."""
+    """Compute registered indices, optionally in parallel, preserving selection order."""
     if not isinstance(strict, bool):
         raise ValueError("strict must be a boolean")
+    workers = validate_worker_count(workers)
+    validate_index_names(indices)
 
     scores: dict[str, np.ndarray] = {}
     errors: dict[str, str] = {}
 
-    for name in indices:
-        spec = INDEX_REGISTRY[name]
-        required_error = spec.required_error(options) if spec.required_error is not None else None
-        if required_error is not None:
-            if strict:
-                raise ValueError(f"index '{name}' failed: {required_error}")
-            errors[name] = required_error
-            continue
+    if workers == 1 or len(indices) < 2:
+        for name in indices:
+            _record_index_result(
+                name,
+                _score_registered_index(name, x, options),
+                scores,
+                errors,
+                apply_composite_direction=apply_composite_direction,
+                strict=strict,
+            )
+        return scores, errors
 
-        try:
-            score = spec.scorer(x, options)
-        except (ValueError, RuntimeError, TypeError) as err:
-            if strict:
-                raise ValueError(f"index '{name}' failed: {err}") from err
-            errors[name] = str(err)
-            continue
+    # Keep the default import path lean; concurrency is an explicit opt-in.
+    from concurrent.futures import ThreadPoolExecutor  # noqa: PLC0415
 
-        if apply_composite_direction:
-            score = spec.composite_multiplier * score
-        scores[name] = score
+    with ThreadPoolExecutor(max_workers=min(workers, len(indices))) as executor:
+        futures = [executor.submit(_score_registered_index, name, x, options) for name in indices]
+        for name, future in zip(indices, futures, strict=True):
+            _record_index_result(
+                name,
+                future.result(),
+                scores,
+                errors,
+                apply_composite_direction=apply_composite_direction,
+                strict=strict,
+            )
 
     return scores, errors

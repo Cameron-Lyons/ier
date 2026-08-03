@@ -43,6 +43,7 @@ from ier._cli_output import (
     _write_screen_csv,
 )
 from ier._flagging import resolve_threshold, threshold_flags
+from ier._registry import validate_worker_count
 
 
 def _parse_int_list(raw: str | None) -> list[int] | None:
@@ -193,6 +194,12 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         "--strict",
         action="store_true",
         help="Fail if any requested index cannot be computed",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Score independent indices concurrently (default: 1)",
     )
     parser.add_argument("--psychsyn-critval", type=float, default=0.6)
     parser.add_argument("--psychant-critval", type=float, default=-0.6)
@@ -388,6 +395,9 @@ def _run_command(args: argparse.Namespace) -> int:
         _write_output(text, args.output)
         return 0
 
+    if args.command in {"screen", "composite"}:
+        validate_worker_count(args.workers)
+
     if args.format == "npz":
         _require_npz_output_path(args.output)
 
@@ -464,6 +474,7 @@ def _run_command(args: argparse.Namespace) -> int:
             min_flags=args.min_flags,
             thresholds=_parse_thresholds(args.threshold),
             strict=args.strict,
+            workers=args.workers,
         )
         if args.format == "json":
             text = _emit_screen_json(result, respondent_ids)
@@ -485,6 +496,7 @@ def _run_command(args: argparse.Namespace) -> int:
         method=args.method,
         options=options,
         strict=args.strict,
+        workers=args.workers,
     )
     if not isinstance(scores_result, np.ndarray):
         print("error: unexpected composite return type", file=sys.stderr)

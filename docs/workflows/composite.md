@@ -13,6 +13,10 @@ scores = composite(
     options=opts,
 )
 ranks = composite_probability(data, indices=["irv", "longstring"], options=opts)
+
+# Available on composite(), composite_flag(), composite_summary(), and
+# composite_probability().
+parallel_scores = composite(data, indices=["irv", "longstring"], workers=4)
 ```
 
 ## Important caveats
@@ -60,6 +64,10 @@ indices continue. Pass `strict=True` to `composite()`, `composite_flag()`,
 `composite_summary()`, or `composite_probability()` when every selected index
 must succeed.
 
+All composite helpers accept `workers`. The default of `1` evaluates indices
+sequentially; larger values retain index and diagnostic order while trading
+higher temporary memory for potential throughput improvements.
+
 ## CLI
 
 Blank fields in comma-, tab-, or semicolon-delimited input are loaded as missing
@@ -68,6 +76,7 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 ```bash
 ier composite data.csv --indices irv longstring --method mean
 ier composite data.csv --indices irv mad --strict
+ier composite data.csv --indices irv longstring --workers 4
 ier composite data.csv --format json --output composite.json
 ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
 ier composite data.npy --indices irv longstring --format json

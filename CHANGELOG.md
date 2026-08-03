@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2026-08-02
+
+### Added
+
+- `screen()` and all composite APIs now accept an opt-in `workers` count, and
+  the corresponding CLI commands accept `--workers`. Independent indices run
+  concurrently through the Python standard library while results and failures
+  retain selection order, and duplicate index selections are rejected rather
+  than being scored ambiguously. Four workers reduce default screening time
+  from 86.4 to 42.8 ms for 20,000 respondents × 80 items and from 531.0 to
+  282.5 ms for 100,000 × 80, without changing the single-worker default or
+  dependencies.
+
 ## [2.11.1] - 2026-08-02
 
 ### Changed

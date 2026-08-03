@@ -59,6 +59,9 @@ print("Consensus flags:", result["consensus_flags"])
 
 scores = composite(data, indices=["irv", "longstring", "person_total", "markov"])
 print("Composite:", scores)
+
+# Opt in to concurrent index scoring for larger matrices.
+large_result = screen(data, workers=4)
 ```
 
 ## CLI
@@ -68,6 +71,7 @@ ier screen data.csv --scale-min 1 --scale-max 5
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier screen data.csv --indices irv mad --strict
+ier screen data.csv --workers 4
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --format npz --output screening.npz
@@ -89,6 +93,12 @@ remove a named header column from scoring and preserve its unique, nonblank valu
 in text, JSON, CSV, and NPZ output. Use `--item-columns q1,q2,...` to select and order
 the numeric item matrix while ignoring unselected metadata columns; repeat the
 option to build the selection in groups.
+
+`screen()` and all composite helpers accept `workers=N`; the corresponding CLI
+commands use `--workers N`. The default is sequential (`1`) for predictable
+resource use. Higher values preserve index and failure ordering and can improve
+large multi-index workloads, but they may increase peak memory. The standard
+library provides the worker pool, so this adds no dependency.
 
 Uncompressed `.npy` files are memory-mapped read-only for fast, low-overhead
 loading of large headerless real numeric matrices. Because binary arrays have no

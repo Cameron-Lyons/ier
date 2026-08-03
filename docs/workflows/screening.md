@@ -71,6 +71,24 @@ strict mode. The first failed index raises a contextual `ValueError`:
 result = screen(data, indices=["irv", "mad"], options=options, strict=True)
 ```
 
+## Parallel index scoring
+
+Each selected index reads the same validated matrix independently. Larger
+multi-index runs can opt into standard-library worker threads:
+
+```python
+result = screen(data, workers=4)
+```
+
+```bash
+ier screen responses.npy --workers 4 --format npz --output screening.npz
+```
+
+The default is `workers=1`. Parallel results, soft failures, and strict failures
+retain selection order. Additional workers can improve throughput when NumPy
+kernels release the interpreter lock, but their temporary workspaces may overlap
+and raise peak memory. Benchmark representative matrix sizes and worker counts.
+
 ## Missing responses
 
 Missing-response rate is available as an opt-in registry index:

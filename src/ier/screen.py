@@ -17,6 +17,7 @@ from ier._registry import (
     resolve_index_options,
     score_registered_indices,
     validate_index_names,
+    validate_worker_count,
 )
 from ier._validation import MatrixLike, validate_matrix_input
 from ier.types import ScreenIndexSummary, ScreenResult
@@ -58,6 +59,7 @@ def screen(
     min_flags: int = 2,
     thresholds: Mapping[str, float] | None = None,
     strict: bool = False,
+    workers: int = 1,
 ) -> ScreenResult:
     """
     Screen respondents across multiple IER detection indices.
@@ -87,6 +89,9 @@ def screen(
                   cutoff are flagged; indices without an override use percentiles.
     - strict: If True, raise when any selected index fails instead of recording
               the failure in ``errors`` (default False).
+    - workers: Number of indices to score concurrently. The default of 1 preserves
+               sequential execution; values above 1 trade additional peak memory
+               for throughput on larger matrices.
 
     Returns:
     - Dictionary with:
@@ -113,6 +118,7 @@ def screen(
         >>> print(result["flag_counts"])
         >>> print(result["consensus_flags"])
     """
+    workers = validate_worker_count(workers)
     if isinstance(min_flags, bool) or not isinstance(min_flags, int) or min_flags < 1:
         raise ValueError("min_flags must be a positive integer")
     percentile = validate_percentile(percentile)
@@ -127,7 +133,13 @@ def screen(
 
     fixed_thresholds = _resolve_screen_thresholds(thresholds, indices)
     resolved = resolve_index_options(options)
-    scores, errors = score_registered_indices(x_array, indices, resolved, strict=strict)
+    scores, errors = score_registered_indices(
+        x_array,
+        indices,
+        resolved,
+        strict=strict,
+        workers=workers,
+    )
 
     flags: dict[str, np.ndarray] = {}
     applied_thresholds: dict[str, float | None] = {}
