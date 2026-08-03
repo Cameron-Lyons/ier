@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.20] - 2026-08-03
+
+### Added
+
+- A reproducible shared flagging benchmark covering fixed and percentile cutoffs,
+  missing scores, throughput, and peak temporary allocation.
+
+### Changed
+
+- Shared flagging now compares complete score vectors directly and derives sample
+  cutoffs with a NaN-aware percentile reduction, avoiding repeated validity masks
+  and filtered-score copies. On a one-million-score benchmark with 10% missing
+  values, fixed-cutoff median time falls from 2.46 to 0.15 ms and peak temporary
+  allocation from 9.6 to 1.0 MiB; percentile flagging falls from 10.74 to 8.55 ms
+  and from 13.7 to 10.1 MiB, without adding a dependency.
+
 ## [2.19.19] - 2026-08-03
 
 ### Changed

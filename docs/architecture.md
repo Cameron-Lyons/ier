@@ -228,4 +228,5 @@ Plotting remains optional and reports a centralized install hint from
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
 - Response-time mixture EM and end-to-end scoring: `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
+- Shared fixed and percentile flagging throughput and memory: `benchmarks/bench_flagging.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.
