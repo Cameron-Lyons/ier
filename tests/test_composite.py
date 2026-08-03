@@ -15,6 +15,7 @@ from ier.composite import (
     composite_probability,
     composite_summary,
 )
+from ier.irv import irv
 
 
 class TestComposite(unittest.TestCase):
@@ -45,6 +46,22 @@ class TestComposite(unittest.TestCase):
         data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3], [5, 4, 3, 2, 1]]
         result = composite(data, indices=["irv", "longstring"])
         self.assertEqual(len(result), 3)
+
+    def test_irv_sections_flow_through_raw_composites(self) -> None:
+        data = np.array(
+            [[1, 2, 5, 5, 4, 1], [3, 3, 3, 1, 3, 5], [5, 4, 3, 2, 1, 2]],
+            dtype=float,
+        )
+        expected = -irv(data, split=True, split_points=[0, 2, 6])
+
+        result = composite(
+            data,
+            indices=["irv"],
+            options=IndexOptions(irv_split_points=[0, 2, 6]),
+            standardize=False,
+        )
+
+        np.testing.assert_allclose(result, expected, rtol=0.0, atol=1e-15)
 
     def test_sum_method(self) -> None:
         """Test composite with sum method."""

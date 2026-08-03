@@ -94,10 +94,20 @@ def irv(
     else:
         chunks = np.array_split(x_array, num_split, axis=1)
 
-    if chunks:
-        irvs_splits = [row_std(chunk, ignore_nan=na_rm) for chunk in chunks if chunk.size > 0]
-        if irvs_splits:
-            split_result: np.ndarray = np.mean(irvs_splits, axis=0)
-            return split_result
+    split_result: np.ndarray | None = None
+    n_chunks = 0
+    for chunk in chunks:
+        if chunk.size == 0:
+            continue
+        chunk_result = row_std(chunk, ignore_nan=na_rm)
+        if split_result is None:
+            split_result = chunk_result
+        else:
+            split_result += chunk_result
+        n_chunks += 1
+
+    if split_result is not None:
+        np.divide(split_result, n_chunks, out=split_result)
+        return split_result
 
     return row_std(x_array, ignore_nan=na_rm)

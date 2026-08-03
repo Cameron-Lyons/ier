@@ -53,10 +53,17 @@ def main() -> None:
     parser.add_argument("--missing-rate", type=float, default=0.1)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
+    parser.add_argument("--irv-splits", type=int, default=20)
     parser.add_argument("--seed", type=int, default=20260803)
     args = parser.parse_args()
 
-    if args.respondents < 1 or args.items < 1 or args.repeats < 1 or args.warmup < 0:
+    if (
+        args.respondents < 1
+        or args.items < 1
+        or args.repeats < 1
+        or args.warmup < 0
+        or args.irv_splits < 1
+    ):
         parser.error("respondents, items, and repeats must be positive; warmup must be nonnegative")
     if not 0.0 <= args.missing_rate < 1.0:
         parser.error("missing-rate must be at least 0 and less than 1")
@@ -68,6 +75,7 @@ def main() -> None:
 
     scorers: dict[str, Callable[[], Score]] = {
         "irv": lambda: irv(data),
+        "irv_sections": lambda: irv(data, split=True, num_split=args.irv_splits),
         "acquiescence": lambda: acquiescence(data, scale_min=1, scale_max=5),
         "u3_poly": lambda: u3_poly(data, scale_min=1, scale_max=5),
         "midpoint_responding": lambda: midpoint_responding(data, scale_min=1, scale_max=5),

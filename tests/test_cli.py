@@ -19,6 +19,7 @@ from ier import (
     composite_probability,
     composite_scores,
     composite_summary,
+    irv,
     lz,
     save_response_time_archive,
     save_score_archive,
@@ -70,6 +71,36 @@ class TestCli(unittest.TestCase):
             ]
         )
         self.assertEqual(code, 0)
+
+    def test_irv_section_options_match_direct_scores(self) -> None:
+        data = np.loadtxt(self.csv_path, delimiter=",", skiprows=1)
+
+        for option, expected in [
+            (["--irv-num-split", "2"], irv(data, split=True, num_split=2)),
+            (
+                ["--irv-split-points", "0,2,5"],
+                irv(data, split=True, split_points=[0, 2, 5]),
+            ),
+        ]:
+            with self.subTest(option=option):
+                output = self.root / f"irv-{option[0][2:]}.json"
+                code = main(
+                    [
+                        "screen",
+                        str(self.csv_path),
+                        "--indices",
+                        "irv",
+                        *option,
+                        "--format",
+                        "json",
+                        "--output",
+                        str(output),
+                    ]
+                )
+
+                self.assertEqual(code, 0)
+                payload = json.loads(output.read_text(encoding="utf-8"))
+                np.testing.assert_allclose(payload["scores"]["irv"], expected, rtol=0.0, atol=1e-15)
 
     def test_archive_info_auto_detects_score_metadata_in_text_and_json(self) -> None:
         archive = self.root / "scores.npz"
