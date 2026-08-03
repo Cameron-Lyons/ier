@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.53] - 2026-08-03
+
+### Added
+
+- The `screen` and `composite` commands now load respondent-by-item skip-logic
+  masks through `--missing-applicable-mask`. The dedicated loader accepts 0/1
+  delimited or gzip text and safe pickle-free Boolean or numeric `.npy`
+  matrices, rejects nonbinary values before loading the response matrix, and
+  validates large masks in bounded row batches. Boolean NumPy masks remain
+  read-only memory maps, shape errors retain the established soft/strict index
+  policy, direct and command-line missing-rate scores remain aligned, and no
+  dependency is added.
+
 ## [2.19.52] - 2026-08-03
 
 ### Added

@@ -93,7 +93,9 @@ registry scoring to a fixed required-item subset, or pass the same subset as
 provide a Boolean `missing_applicable_mask` through `IndexOptions` or
 `applicable_mask` directly. False cells are excluded from both the numerator and
 denominator; rows without applicable selected items return `NaN` and are not
-flagged. The CLI exposes fixed subsets through `--missing-item-indices`.
+flagged. The CLI exposes fixed subsets through `--missing-item-indices` and
+respondent-specific 0/1 or Boolean mask files through
+`--missing-applicable-mask`.
 
 `infrequency` preserves its historical missing-response behavior with
 `missing="pass"`: unanswered checks do not count as failures and remain in a

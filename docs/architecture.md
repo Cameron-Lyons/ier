@@ -138,10 +138,11 @@ When comparing to R packages, align NA policy first.
 
 The opt-in `missing_rate` index separates observed missingness from survey
 applicability. A fixed `missing_item_indices` subset works through registry and
-command-line scoring. Python callers can additionally provide a Boolean
-respondent-by-item applicability mask; its false cells do not contribute to
-either the missing count or denominator. A zero denominator yields `NaN`, which
-the shared flagging policy leaves unflagged.
+command-line scoring. Respondent-by-item applicability masks work through both
+Python and command-line workflows; the latter validates file values in bounded
+row batches and preserves read-only memory mapping for Boolean NumPy inputs.
+False cells do not contribute to either the missing count or denominator. A
+zero denominator yields `NaN`, which the shared flagging policy leaves unflagged.
 
 Attention-check scoring keeps its legacy missing-as-pass behavior by default but
 also supports missing-as-failure, available-case omission, and strict propagation.

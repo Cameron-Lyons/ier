@@ -126,6 +126,7 @@ ier screen data.csv --indices irv longstring missing_rate --min-valid-indices 2
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --workers 4
 ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
+ier screen data.csv --indices missing_rate --missing-applicable-mask applicable.npy
 ier screen data.csv --indices infrequency \
   --infrequency-item-indices 3,7 \
   --infrequency-expected-responses 5,1 --infrequency-missing fail
@@ -194,10 +195,12 @@ not modify NumPy's process-wide state.
 
 Missing-response scoring is opt-in because planned omissions are often valid.
 Use `IndexOptions(missing_item_indices=[...])` or CLI
-`--missing-item-indices 0,1,...` for a fixed required-item subset. Python
-workflows can additionally provide a respondent-by-item Boolean
-`missing_applicable_mask`; false cells are excluded from the missing-rate
-denominator.
+`--missing-item-indices 0,1,...` for a fixed required-item subset. For
+respondent-specific branching, provide a Boolean `missing_applicable_mask` in
+Python or load one with CLI `--missing-applicable-mask PATH`; false cells are
+excluded from the missing-rate numerator and denominator. Mask files accept
+0/1 delimited text, transparent gzip text, or safe pickle-free `.npy` matrices.
+Boolean NumPy masks remain read-only memory maps.
 
 `screen()` and all composite helpers accept `workers=N`; the corresponding CLI
 commands use `--workers N`. The default is sequential (`1`) for predictable

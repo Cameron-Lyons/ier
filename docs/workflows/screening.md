@@ -330,6 +330,20 @@ options = IndexOptions(missing_applicable_mask=applicable)
 result = screen(data, indices=["missing_rate"], options=options, min_flags=1)
 ```
 
+The CLI accepts the same respondent-specific mask from a separate file:
+
+```bash
+ier screen responses.csv --indices missing_rate \
+  --missing-applicable-mask applicable.npy
+```
+
+Mask rows and columns must match the scored response matrix, including any
+`--item-columns` selection. Files may contain Boolean `.npy` arrays or 0/1
+delimited text; gzip text is supported. NumPy files are loaded pickle-free,
+and Boolean arrays remain read-only memory maps. Invalid values fail before the
+response matrix is loaded, while a valid but mismatched shape follows the
+normal soft/strict index-error policy.
+
 Rows without any applicable selected items receive `NaN` and are not flagged.
 `missing_rate_flag()` accepts the same `applicable_mask` argument for direct
 flagging.

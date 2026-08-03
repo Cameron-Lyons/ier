@@ -15,6 +15,8 @@ import numpy as np
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+_CLI_VALIDATION_BATCH_ELEMENTS = 262_144
+
 
 def _row_starts_with_non_numeric_value(row: list[str]) -> bool:
     """Return whether the first non-empty cell cannot be parsed as a number."""
@@ -262,6 +264,40 @@ def _load_numeric_vector(path: Path, label: str) -> np.ndarray:
     if 1 not in values.shape:
         raise ValueError(f"expected a non-empty one-dimensional {label} in {path}")
     return values.reshape(-1)
+
+
+def _load_boolean_matrix(path: Path, label: str) -> np.ndarray:
+    """Load one non-empty Boolean matrix from safe NumPy or 0/1 text data."""
+    if path == Path("-"):
+        raise ValueError(f"{label} cannot use standard input")
+    if path.name.casefold().endswith(".npy.gz"):
+        raise ValueError(f"compressed .npy {label} is not supported; use uncompressed .npy")
+
+    if path.suffix.casefold() == ".npy":
+        values = _load_npy_array(path, label)
+    else:
+        values, _ = _load_input(path, None)
+
+    if values.ndim != 2 or values.shape[0] == 0 or values.shape[1] == 0:
+        raise ValueError(f"expected a non-empty two-dimensional {label} in {path}")
+    if values.dtype.kind == "b":
+        return values
+    if not np.issubdtype(values.dtype, np.number) or np.issubdtype(
+        values.dtype, np.complexfloating
+    ):
+        raise ValueError(
+            f"expected a Boolean or real numeric {label} in {path}, got {values.dtype}"
+        )
+
+    batch_rows = max(1, _CLI_VALIDATION_BATCH_ELEMENTS // values.shape[1])
+    for start in range(0, len(values), batch_rows):
+        block = values[start : start + batch_rows]
+        binary = np.equal(block, 0)
+        binary |= np.equal(block, 1)
+        if not np.all(binary):
+            raise ValueError(f"{label} must contain only 0 or 1")
+
+    return values.astype(np.bool_, copy=False)
 
 
 def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
