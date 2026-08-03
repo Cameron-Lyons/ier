@@ -26,7 +26,7 @@ from ier import (
     screen,
     screen_scores,
 )
-from ier._cli_input import _load_input
+from ier._cli_input import _load_input, _load_numeric_vector
 from ier._cli_npz import _require_npz_output_path
 from ier._cli_results import (
     flag_response_time_scores,
@@ -129,6 +129,11 @@ def _report_soft_errors(errors: dict[str, str]) -> None:
         print(f"warning: index '{name}' was skipped: {message}", file=sys.stderr)
 
 
+def _load_optional_numeric_vector(path: Path | None, label: str) -> np.ndarray | None:
+    """Load an optional numeric parameter vector from a CLI path."""
+    return None if path is None else _load_numeric_vector(path, label)
+
+
 def _options_from_args(args: argparse.Namespace) -> IndexOptions:
     return IndexOptions(
         na_rm=args.na_rm,
@@ -148,6 +153,16 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
         onset_min_items=args.onset_min_items,
         reliability_n_splits=args.reliability_n_splits,
         reliability_random_seed=args.reliability_random_seed,
+        lz_difficulty=_load_optional_numeric_vector(
+            args.lz_difficulty,
+            "LZ difficulty vector",
+        ),
+        lz_discrimination=_load_optional_numeric_vector(
+            args.lz_discrimination,
+            "LZ discrimination vector",
+        ),
+        lz_theta=_load_optional_numeric_vector(args.lz_theta, "LZ theta vector"),
+        lz_model=args.lz_model,
         semantic_item_pairs=_parse_pair_list(args.semantic_item_pairs),
         infrequency_item_indices=_parse_int_list(args.infrequency_item_indices),
         infrequency_expected_responses=_parse_float_list(args.infrequency_expected_responses),
@@ -364,6 +379,33 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--onset-min-items", type=int, default=20)
     parser.add_argument("--reliability-n-splits", type=int, default=100)
     parser.add_argument("--reliability-random-seed", type=int, default=None)
+    parser.add_argument(
+        "--lz-difficulty",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Calibrated LZ item difficulties as a one-row, one-column, or .npy vector",
+    )
+    parser.add_argument(
+        "--lz-discrimination",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Calibrated 2PL LZ item discriminations as a vector file",
+    )
+    parser.add_argument(
+        "--lz-theta",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Calibrated LZ respondent abilities as a vector file",
+    )
+    parser.add_argument(
+        "--lz-model",
+        choices=["1pl", "2pl"],
+        default="2pl",
+        help="LZ IRT model when scoring through the registry (default: 2pl)",
+    )
     parser.add_argument(
         "--semantic-item-pairs",
         default=None,
@@ -676,6 +718,7 @@ def _run_command(args: argparse.Namespace) -> int:
             valid_score_counts(selected_scores) if args.include_components else None,
         )
 
+    options = None if args.command == "response-time" else _options_from_args(args)
     matrix, respondent_ids = _load_input(
         args.data,
         args.delimiter,
@@ -708,7 +751,7 @@ def _run_command(args: argparse.Namespace) -> int:
             percentile,
         )
 
-    options = _options_from_args(args)
+    assert options is not None
     if args.command == "screen":
         result = screen(
             matrix,

@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.50] - 2026-08-03
+
+### Added
+
+- The `screen` and `composite` commands now accept calibrated LZ parameter
+  files through `--lz-difficulty`, `--lz-discrimination`, and `--lz-theta`,
+  with `--lz-model` selecting 1PL or 2PL scoring. Parameter files may be
+  one-row or one-column delimited text, transparent gzip text, or safe
+  pickle-free NumPy vectors; uncompressed NumPy arrays remain read-only memory
+  maps. The shared loader rejects matrices, complex or object arrays,
+  compressed NumPy binaries, and standard-input reuse with contextual errors.
+  Direct, screening, and raw composite scores remain exactly aligned, omitted
+  files preserve per-parameter fallback estimation, and no dependency is
+  added.
+
 ## [2.19.49] - 2026-08-03
 
 ### Added

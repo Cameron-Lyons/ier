@@ -89,12 +89,24 @@ options = IndexOptions(
 result = screen(data, indices=["lz"], options=options, min_flags=1)
 ```
 
+The same calibrated path is available from the command line:
+
+```bash
+ier screen data.csv --indices lz \
+  --lz-difficulty difficulty.npy \
+  --lz-discrimination discrimination.csv \
+  --lz-theta theta.csv.gz --lz-model 2pl
+```
+
 Difficulty and discrimination arrays must match the item count; theta must
 match the respondent count. For `lz_model="1pl"`, discrimination is fixed at
 one and `lz_discrimination` is ignored. Any omitted array retains the existing
 fallback estimate. Independently calibrated parameters are preferable when the
 usual LZ distributional interpretation matters; estimates derived from the
 same response matrix are convenient fallbacks, not equivalent validation.
+Parameter files may be a single row or column of delimited text, gzip text, or
+a one-dimensional `.npy` array. NumPy vectors are loaded pickle-free and
+memory-mapped read-only. Parameter paths cannot reuse standard input.
 
 ## Consensus completeness
 
@@ -370,6 +382,8 @@ ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
 ier screen data.csv --indices infrequency \
   --infrequency-item-indices 3,7 \
   --infrequency-expected-responses 5,1 --infrequency-missing fail
+ier screen data.csv --indices lz --lz-difficulty difficulty.npy \
+  --lz-discrimination discrimination.csv --lz-theta theta.npy --lz-model 2pl
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier response-time timings.csv --metric median --threshold 1.0
 ier screen data.csv.gz --format json --output screening.json.gz

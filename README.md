@@ -16,7 +16,7 @@ For a comprehensive methods review, see
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
 - Contracted, active-row-compacted LZ estimation for complete and missing responses
-- Externally calibrated LZ parameters across screening and composite workflows
+- Externally calibrated LZ parameters across Python and CLI scoring workflows
 - Allocation-bounded split-half reliability with stable raw-moment correlations
 - Exact low-allocation two-point correlations for common even-odd factor designs
 - Batched dense, sparse, and grouped missing-response Markov entropy scoring
@@ -127,6 +127,9 @@ ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
 ier screen data.csv --indices infrequency \
   --infrequency-item-indices 3,7 \
   --infrequency-expected-responses 5,1 --infrequency-missing fail
+ier screen data.csv --indices lz \
+  --lz-difficulty difficulty.npy --lz-discrimination discrimination.csv \
+  --lz-theta theta.npy --lz-model 2pl
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --format npz --output screening.npz
@@ -160,6 +163,11 @@ remove a named header column from scoring and preserve its unique, nonblank valu
 in text, JSON, CSV, and NPZ output. Use `--item-columns q1,q2,...` to select and order
 the numeric item matrix while ignoring unselected metadata columns; repeat the
 option to build the selection in groups.
+
+Calibrated LZ parameter paths accept one-row or one-column delimited text,
+gzip-compressed text, and one-dimensional `.npy` arrays. NumPy parameter arrays
+are loaded pickle-free and memory-mapped read-only. Each omitted parameter keeps
+its fallback estimate; `--lz-model 1pl` fixes discrimination at one.
 
 Missing-response scoring is opt-in because planned omissions are often valid.
 Use `IndexOptions(missing_item_indices=[...])` or CLI

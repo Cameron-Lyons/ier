@@ -73,7 +73,8 @@ The `lz` component accepts `lz_difficulty`, `lz_discrimination`, `lz_theta`,
 and `lz_model` through `IndexOptions`, matching the direct `lz()` API. Supplying
 independently calibrated values avoids fallback estimation from the response
 matrix and preserves the same low-score direction correction during
-combination.
+combination. The command-line equivalents are `--lz-difficulty`,
+`--lz-discrimination`, `--lz-theta`, and `--lz-model`.
 
 Screening-only response-style indices (`u3_poly`, `midpoint`, `acquiescence`,
 `onset`) are excluded from composite combination because they measure different
@@ -244,6 +245,9 @@ ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --indices irv longstring --include-components --format json
 ier composite data.csv --indices irv mad --strict
 ier composite data.csv --indices irv longstring --workers 4
+ier composite data.csv --indices lz --no-standardize \
+  --lz-difficulty difficulty.npy --lz-discrimination discrimination.csv \
+  --lz-theta theta.npy --lz-model 2pl
 ier composite data.csv --format json --output composite.json
 ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
 ier composite data.npy --indices irv longstring --format json
@@ -256,6 +260,12 @@ ier composite-recombine composite.npz --method max --include-components \
 Uncompressed `.npy` matrices are memory-mapped read-only. They must be non-empty,
 two-dimensional, and real numeric; header selection and delimiter options do not
 apply to this binary format.
+
+LZ parameter files may instead contain one numeric row or column in plain or
+gzip-compressed delimited text, or a one-dimensional `.npy` array. Binary
+vectors are also pickle-free, read-only memory maps. Parameter paths cannot use
+standard input because the response matrix already owns that forward-only
+stream.
 
 CSV rows and JSON respondent arrays are written forward-only to plain files,
 gzip files, or standard output without retaining the complete export in memory.

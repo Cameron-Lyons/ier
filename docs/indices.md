@@ -54,7 +54,8 @@ random stream. It does not reset or advance NumPy's process-wide random state.
 
 `IndexOptions` exposes calibrated LZ parameters as `lz_difficulty`,
 `lz_discrimination`, and `lz_theta`, with `lz_model` selecting `"1pl"` or
-`"2pl"`. Any omitted array retains the direct function's fallback estimate.
+`"2pl"`. The CLI equivalents accept parameter vector files. Any omitted array
+or file retains the direct function's fallback estimate.
 
 `psychsyn(..., diag=True)` and `psychant(..., diag=True)` return each score with
 the number of selected item pairs actually available for that respondent.
