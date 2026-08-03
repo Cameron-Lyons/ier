@@ -14,6 +14,7 @@ from unittest.mock import patch
 import numpy as np
 
 from ier import (
+    PsychsynModel,
     ResponseTimeMixtureModel,
     acquiescence,
     composite,
@@ -21,14 +22,18 @@ from ier import (
     composite_probability,
     composite_scores,
     composite_summary,
+    fit_psychsyn_model,
     fit_response_time_mixture,
     irv,
+    load_psychsyn_model,
     load_response_time_mixture_model,
     lz,
     missing_rate,
     psychant,
     psychsyn,
+    psychsyn_model_scores,
     response_time_mixture_scores,
+    save_psychsyn_model,
     save_response_time_archive,
     save_response_time_mixture_model,
     save_score_archive,
@@ -358,6 +363,51 @@ class TestCli(unittest.TestCase):
         )
         self.assertNotIn("n_respondents", payload)
         self.assertNotIn("has_respondent_ids", payload)
+
+    def test_archive_info_reports_psychsyn_model_metadata_without_pair_payload(self) -> None:
+        archive = self.root / "psychant-model.npz"
+        output = self.root / "psychant-model-info.json"
+        model = PsychsynModel(
+            np.asarray([[1, 0], [2, 0], [2, 1]]),
+            n_items=4,
+            critval=-0.7,
+            anto=True,
+        )
+        save_psychsyn_model(archive, model)
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            text_code = main(["archive-info", str(archive)])
+            json_code = main(
+                [
+                    "archive-info",
+                    str(archive),
+                    "--format",
+                    "json",
+                    "--output",
+                    str(output),
+                ]
+            )
+
+        self.assertEqual(text_code, 0)
+        self.assertEqual(json_code, 0)
+        self.assertIn("result type: psychsyn_model", stdout.getvalue())
+        self.assertIn("mode: antonym", stdout.getvalue())
+        self.assertIn("items: 4", stdout.getvalue())
+        self.assertIn("pairs: 3", stdout.getvalue())
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(
+            payload,
+            {
+                "schema_version": 1,
+                "result_type": "psychsyn_model",
+                "n_items": 4,
+                "n_pairs": 3,
+                "critval": -0.7,
+                "mode": "antonym",
+            },
+        )
+        self.assertNotIn("item_pairs", payload)
 
     def test_screen_reflag_reuses_selected_scores_across_text_json_and_csv(self) -> None:
         archive = self.root / "retained-scores.npz"
@@ -1380,6 +1430,179 @@ class TestCli(unittest.TestCase):
         np.testing.assert_array_equal(loaded.weights, expected.weights)
         np.testing.assert_array_equal(loaded.means, expected.means)
         np.testing.assert_array_equal(loaded.variances, expected.variances)
+
+    def test_psychsyn_fit_and_score_reuse_named_column_calibration(self) -> None:
+        reference = self.root / "reference-responses.csv"
+        reference.write_text(
+            "participant,group,i1,i2,i3,unused\n"
+            "a,A,1,1,1,6\nb,A,2,2,2,5\nc,A,3,3,3,4\n"
+            "d,B,4,4,4,3\ne,B,5,5,5,2\nf,B,6,6,6,1\n",
+            encoding="utf-8",
+        )
+        model_path = self.root / "psychsyn-model.npz"
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            fit_code = main(
+                [
+                    "psychsyn-fit",
+                    str(reference),
+                    str(model_path),
+                    "--id-column",
+                    "participant",
+                    "--item-columns",
+                    "i1,i2,i3",
+                    "--critval",
+                    "0.99",
+                ]
+            )
+
+        fitted = load_psychsyn_model(model_path)
+        expected_fit = fit_psychsyn_model(
+            np.asarray(
+                [
+                    [1.0, 1.0, 1.0],
+                    [2.0, 2.0, 2.0],
+                    [3.0, 3.0, 3.0],
+                    [4.0, 4.0, 4.0],
+                    [5.0, 5.0, 5.0],
+                    [6.0, 6.0, 6.0],
+                ]
+            ),
+            critval=0.99,
+        )
+        self.assertEqual(fit_code, 0)
+        self.assertIn("saved psychometric synonym model with 3 pairs", stdout.getvalue())
+        np.testing.assert_array_equal(fitted.item_pairs, expected_fit.item_pairs)
+
+        later_path = self.root / "later-responses.csv"
+        later_path.write_text(
+            "participant,i1,i2,i3\ncase-a,1,2,3\ncase-b,4,1,3\ncase-c,2,4,1\n",
+            encoding="utf-8",
+        )
+        later = np.asarray([[1.0, 2.0, 3.0], [4.0, 1.0, 3.0], [2.0, 4.0, 1.0]])
+        expected_scores = psychsyn_model_scores(later, fitted)
+        output = self.root / "psychsyn-scores.json"
+
+        with patch(
+            "ier.cli.fit_psychsyn_model",
+            side_effect=AssertionError("unexpected pair rediscovery"),
+        ):
+            score_code = main(
+                [
+                    "psychsyn-score",
+                    str(later_path),
+                    str(model_path),
+                    "--id-column",
+                    "participant",
+                    "--threshold",
+                    "0",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(output),
+                ]
+            )
+
+        self.assertEqual(score_code, 0)
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(payload["indices_used"], ["psychsyn"])
+        self.assertEqual(payload["respondent_ids"], ["case-a", "case-b", "case-c"])
+        np.testing.assert_allclose(payload["scores"]["psychsyn"], expected_scores)
+        np.testing.assert_array_equal(
+            payload["flags"]["psychsyn"],
+            expected_scores <= 0.0,
+        )
+
+    def test_psychsyn_antonym_fit_uses_negative_default_and_routes_score_name(self) -> None:
+        reference = self.root / "reference-antonyms.csv"
+        patterns = np.asarray(
+            [
+                [1, 1, 1],
+                [1, 1, -1],
+                [1, -1, 1],
+                [1, -1, -1],
+                [-1, 1, 1],
+                [-1, 1, -1],
+                [-1, -1, 1],
+                [-1, -1, -1],
+            ],
+            dtype=float,
+        )
+        with reference.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["participant", "a", "b", "c", "d", "e", "f"])
+            for row_index, row in enumerate(patterns):
+                writer.writerow([f"r{row_index}", *row, *-row])
+        model_path = self.root / "psychant-model.npz"
+
+        fit_code = main(
+            [
+                "psychsyn-fit",
+                str(reference),
+                str(model_path),
+                "--id-column",
+                "participant",
+                "--antonym",
+            ]
+        )
+
+        model = load_psychsyn_model(model_path)
+        self.assertEqual(fit_code, 0)
+        self.assertTrue(model.anto)
+        self.assertEqual(model.critval, -0.6)
+        self.assertEqual(model.n_pairs, 3)
+
+        later = self.root / "later-antonyms.csv"
+        later.write_text(
+            "participant,a,b,c,d,e,f\ncase-a,1,2,3,3,2,1\ncase-b,1,3,2,1,2,3\n",
+            encoding="utf-8",
+        )
+        output = self.root / "psychant-scores.json"
+        score_code = main(
+            [
+                "psychsyn-score",
+                str(later),
+                str(model_path),
+                "--id-column",
+                "participant",
+                "--threshold",
+                "0",
+                "--format",
+                "json",
+                "--output",
+                str(output),
+            ]
+        )
+
+        self.assertEqual(score_code, 0)
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        self.assertEqual(payload["indices_used"], ["psychant"])
+        self.assertEqual(payload["respondent_ids"], ["case-a", "case-b"])
+
+    def test_psychsyn_model_commands_report_invalid_archives_and_paths(self) -> None:
+        invalid = self.root / "invalid-psychsyn-model.npz"
+        np.savez(invalid, values=np.asarray([1.0, 2.0]))
+        stderr = StringIO()
+
+        with (
+            patch("sys.stderr", stderr),
+            patch("ier.cli._load_input", side_effect=AssertionError("loaded input")),
+        ):
+            score_code = main(["psychsyn-score", str(self.csv_path), str(invalid)])
+            fit_code = main(
+                [
+                    "psychsyn-fit",
+                    str(self.csv_path),
+                    str(self.root / "psychsyn-model.bin"),
+                ]
+            )
+
+        self.assertEqual(score_code, 1)
+        self.assertEqual(fit_code, 1)
+        self.assertIn("unexpected member: values", stderr.getvalue())
+        self.assertIn("must end in .npz", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_response_time_uses_saved_model_without_refitting(self) -> None:
         reference = np.asarray(

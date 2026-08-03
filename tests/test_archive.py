@@ -6,15 +6,20 @@ import numpy as np
 import pytest
 
 from ier import (
+    PsychsynModel,
     composite_scores,
     composite_summary,
+    fit_psychsyn_model,
     fit_response_time_mixture,
     load_archive,
+    load_psychsyn_model,
     load_response_time_archive,
     load_response_time_mixture_model,
     load_score_archive,
+    psychsyn_model_scores,
     response_time_mixture_scores,
     response_time_score_flags,
+    save_psychsyn_model,
     save_response_time_archive,
     save_response_time_mixture_model,
     save_score_archive,
@@ -314,6 +319,161 @@ def test_response_time_mixture_model_writer_validates_before_replacing(
             object(),  # type: ignore[arg-type]
         )
     assert not (tmp_path / "other.npz").exists()
+
+
+def test_psychsyn_model_archive_round_trip_supports_fixed_scoring(tmp_path: Path) -> None:
+    reference = np.asarray(
+        [
+            [1.0, 1.0, 1.0, 6.0],
+            [2.0, 2.0, 2.0, 5.0],
+            [3.0, 3.0, 3.0, 4.0],
+            [4.0, 4.0, 4.0, 3.0],
+            [5.0, 5.0, 5.0, 2.0],
+            [6.0, 6.0, 6.0, 1.0],
+        ]
+    )
+    later = np.asarray([[1.0, 2.0, 3.0, 4.0], [4.0, 1.0, 3.0, 2.0]])
+    model = fit_psychsyn_model(reference, critval=0.99)
+    destination = tmp_path / "psychsyn-model.npz"
+
+    save_psychsyn_model(destination, model)
+    loaded = load_psychsyn_model(destination)
+
+    assert loaded.n_items == 4
+    assert loaded.n_pairs == 3
+    assert loaded.critval == 0.99
+    assert loaded.anto is False
+    assert not loaded.item_pairs.flags.writeable
+    np.testing.assert_array_equal(loaded.item_pairs, model.item_pairs)
+    np.testing.assert_array_equal(
+        psychsyn_model_scores(later, loaded),
+        psychsyn_model_scores(later, model),
+    )
+    with np.load(destination, allow_pickle=False) as raw:
+        assert set(raw.files) == {
+            "schema_version",
+            "result_type",
+            "n_items",
+            "critval",
+            "anto",
+            "item_pairs",
+        }
+        assert raw["item_pairs"].dtype.kind in "iu"
+
+    empty_path = tmp_path / "empty-psychsyn-model.npz"
+    save_psychsyn_model(
+        empty_path,
+        PsychsynModel(np.empty((0, 2), dtype=np.int64), n_items=4),
+    )
+    empty = load_psychsyn_model(empty_path)
+    assert empty.n_pairs == 0
+    assert empty.item_pairs.shape == (0, 2)
+    assert not empty.item_pairs.flags.writeable
+
+
+def _psychsyn_model_payload() -> dict[str, np.ndarray]:
+    return {
+        "schema_version": np.asarray(1, dtype=np.int64),
+        "result_type": np.asarray("psychsyn_model", dtype=np.str_),
+        "n_items": np.asarray(4, dtype=np.int64),
+        "critval": np.asarray(0.6, dtype=np.float64),
+        "anto": np.asarray(False, dtype=np.bool_),
+        "item_pairs": np.asarray([[1, 0], [2, 0], [2, 1]], dtype=np.int64),
+    }
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"schema_version": np.asarray(2)}, "unsupported.*schema version"),
+        ({"result_type": np.asarray("screen")}, "result_type"),
+        ({"n_items": np.asarray(1)}, "at least 2"),
+        ({"n_items": np.asarray(4.0)}, "integer scalar"),
+        ({"n_items": np.asarray(np.iinfo(np.uint64).max)}, "platform index range"),
+        ({"critval": np.asarray(np.nan)}, "must be finite"),
+        ({"anto": np.asarray(0)}, "Boolean scalar"),
+        ({"item_pairs": np.asarray([1, 0])}, "two-column integer array"),
+        ({"item_pairs": np.asarray([[1.0, 0.0]])}, "two-column integer array"),
+        ({"item_pairs": np.asarray([[4, 0]])}, "outside the fitted item range"),
+        ({"item_pairs": np.asarray([[1, 1]])}, "cannot pair an item with itself"),
+        ({"item_pairs": np.asarray([[1, 0], [0, 1]])}, "duplicate pairs"),
+        ({"unexpected": np.asarray(1)}, "unexpected member"),
+    ],
+)
+def test_malformed_psychsyn_model_archive_is_rejected(
+    tmp_path: Path,
+    updates: dict[str, np.ndarray],
+    message: str,
+) -> None:
+    payload = _psychsyn_model_payload()
+    payload.update(updates)
+    destination = tmp_path / "malformed-psychsyn-model.npz"
+    np.savez(destination, **payload)
+
+    with pytest.raises(ValueError, match=message):
+        load_psychsyn_model(destination)
+
+
+def test_psychsyn_model_requires_complete_pickle_free_npz(tmp_path: Path) -> None:
+    missing_payload = _psychsyn_model_payload()
+    missing_payload.pop("item_pairs")
+    missing = tmp_path / "missing-psychsyn-model.npz"
+    np.savez(missing, **missing_payload)
+
+    object_payload = _psychsyn_model_payload()
+    object_payload["item_pairs"] = np.asarray([[object(), object()]], dtype=object)
+    unsafe = tmp_path / "unsafe-psychsyn-model.npz"
+    np.savez(unsafe, **object_payload)
+
+    plain = tmp_path / "psychsyn-model.npy"
+    np.save(plain, np.asarray([1.0, 2.0]))
+
+    with pytest.raises(ValueError, match="missing required member: item_pairs"):
+        load_psychsyn_model(missing)
+    with pytest.raises(ValueError, match="not pickle-free"):
+        load_psychsyn_model(unsafe)
+    with pytest.raises(ValueError, match="must be an NPZ archive"):
+        load_psychsyn_model(plain)
+
+
+def test_psychsyn_model_writer_validates_before_replacing(tmp_path: Path) -> None:
+    model = PsychsynModel(
+        np.asarray([[1, 0], [2, 0], [2, 1]]),
+        n_items=3,
+        critval=0.6,
+    )
+    destination = tmp_path / "psychsyn-model.npz"
+    save_psychsyn_model(destination, model)
+    original = destination.read_bytes()
+
+    model.item_pairs.setflags(write=True)
+    model.item_pairs[0] = [1, 1]
+    with pytest.raises(ValueError, match="cannot pair an item with itself"):
+        save_psychsyn_model(destination, model)
+
+    assert destination.read_bytes() == original
+    with pytest.raises(ValueError, match="must end in .npz"):
+        save_psychsyn_model(tmp_path / "model.bin", model)
+    with pytest.raises(TypeError, match="model must be"):
+        save_psychsyn_model(tmp_path / "other.npz", object())  # type: ignore[arg-type]
+    assert not (tmp_path / "other.npz").exists()
+
+
+def test_generic_archive_loader_inspects_psychsyn_model(tmp_path: Path) -> None:
+    model = PsychsynModel(np.asarray([[1, 0], [2, 0]]), n_items=3, critval=-0.7, anto=True)
+    destination = tmp_path / "psychant-model.npz"
+    save_psychsyn_model(destination, model)
+
+    loaded = load_archive(destination)
+
+    assert loaded["result_type"] == "psychsyn_model"
+    assert loaded["schema_version"] == 1
+    assert loaded["n_items"] == 3
+    assert loaded["n_pairs"] == 2
+    assert loaded["critval"] == -0.7
+    assert loaded["anto"] is True
+    np.testing.assert_array_equal(loaded["item_pairs"], model.item_pairs)
+    assert not loaded["item_pairs"].flags.writeable
 
 
 def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Path) -> None:

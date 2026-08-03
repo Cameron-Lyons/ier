@@ -9,6 +9,7 @@
         - MarkovSummary
         - PsychsynSummary
         - PsychsynModel
+        - PsychsynModelArchive
         - ResponseTimeArchive
         - ResponseTimeMixtureModel
         - ResponseTimeMixtureModelArchive
@@ -20,10 +21,12 @@
         - __version__
         - index_catalog
         - load_archive
+        - load_psychsyn_model
         - load_score_archive
         - load_response_time_archive
         - load_response_time_mixture_model
         - save_response_time_archive
+        - save_psychsyn_model
         - save_response_time_mixture_model
         - save_score_archive
         - screen

@@ -28,7 +28,10 @@ _PSYCHSYN_CORRELATION_BLOCK_ELEMENTS = 262_144
 def _readonly_item_pairs(values: np.ndarray, n_items: int) -> np.ndarray:
     """Return validated, independently owned psychometric item pairs."""
     try:
-        numeric = np.asarray(values, dtype=float)
+        raw = np.asarray(values)
+        if raw.dtype.kind == "c":
+            raise ValueError
+        numeric = np.asarray(raw, dtype=float)
     except (TypeError, ValueError) as error:
         raise ValueError("item_pairs must be a numeric two-column array") from error
     if numeric.ndim != 2 or numeric.shape[1] != 2:
@@ -36,9 +39,9 @@ def _readonly_item_pairs(values: np.ndarray, n_items: int) -> np.ndarray:
     if not np.all(np.isfinite(numeric)) or np.any(numeric != np.floor(numeric)):
         raise ValueError("item_pairs must contain only finite integer indices")
 
-    pairs = np.asarray(numeric, dtype=np.intp)
-    if np.any((pairs < 0) | (pairs >= n_items)):
+    if np.any((numeric < 0) | (numeric >= n_items)):
         raise ValueError("item_pairs contains indices outside the fitted item range")
+    pairs = np.asarray(numeric, dtype=np.intp)
     if np.any(pairs[:, 0] == pairs[:, 1]):
         raise ValueError("item_pairs cannot pair an item with itself")
     if len(pairs):
@@ -81,6 +84,8 @@ class PsychsynModel:
             raise ValueError("n_items must be an integer")
         if self.n_items < 2:
             raise ValueError("n_items must be at least 2")
+        if self.n_items > np.iinfo(np.intp).max:
+            raise ValueError("n_items must fit in the platform index range")
         critval = _validate_psychsyn_options(self.critval, self.anto)
         item_pairs = _readonly_item_pairs(self.item_pairs, self.n_items)
         object.__setattr__(self, "critval", critval)

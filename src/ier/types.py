@@ -115,7 +115,21 @@ class ResponseTimeMixtureModelArchive(TypedDict):
     variances: FloatArray
 
 
-InspectableArchive: TypeAlias = ResultArchive | ResponseTimeMixtureModelArchive
+class PsychsynModelArchive(TypedDict):
+    """Validated psychometric pair model loaded through generic detection."""
+
+    schema_version: int
+    result_type: Literal["psychsyn_model"]
+    n_items: int
+    n_pairs: int
+    critval: float
+    anto: bool
+    item_pairs: IntArray
+
+
+InspectableArchive: TypeAlias = (
+    ResultArchive | ResponseTimeMixtureModelArchive | PsychsynModelArchive
+)
 
 
 class MahadSummary(TypedDict):

@@ -15,6 +15,7 @@ import numpy as np
 from ier._flagging import resolve_threshold, validate_percentile
 from ier._registry import composite_index_names, validate_index_names
 from ier._validation import validate_score_array, validate_score_vectors
+from ier.psychsyn import PsychsynModel
 from ier.response_time import ResponseTimeMixtureModel
 
 if TYPE_CHECKING:
@@ -37,6 +38,7 @@ if TYPE_CHECKING:
 _ARCHIVE_SCHEMA_VERSION = 1
 _RESPONSE_TIME_ARCHIVE_SCHEMA_VERSION = 2
 _RESPONSE_TIME_MIXTURE_MODEL_SCHEMA_VERSION = 1
+_PSYCHSYN_MODEL_SCHEMA_VERSION = 1
 
 
 def _validate_result_type(value: object) -> ScoreArchiveResultType:
@@ -631,6 +633,91 @@ def load_response_time_mixture_model(path: str | Path) -> ResponseTimeMixtureMod
         return _read_response_time_mixture_model(archive)
 
 
+def _read_psychsyn_model(archive: NpzFile) -> PsychsynModel:
+    """Validate one open NPZ archive and reconstruct its pair calibration."""
+    if len(archive.files) != len(set(archive.files)):
+        raise ValueError("psychometric pair model member names must be unique")
+
+    allowed_members = {
+        "schema_version",
+        "result_type",
+        "n_items",
+        "critval",
+        "anto",
+        "item_pairs",
+    }
+    unexpected = set(archive.files) - allowed_members
+    if unexpected:
+        raise ValueError(f"psychometric pair model contains unexpected member: {min(unexpected)}")
+
+    schema_version = _integer_scalar(archive, "schema_version")
+    if schema_version != _PSYCHSYN_MODEL_SCHEMA_VERSION:
+        raise ValueError(
+            "unsupported psychometric pair model schema version: "
+            f"{schema_version}; expected {_PSYCHSYN_MODEL_SCHEMA_VERSION}"
+        )
+    result_type = _string_scalar(archive, "result_type")
+    if result_type != "psychsyn_model":
+        raise ValueError("psychometric pair model result_type must be 'psychsyn_model'")
+
+    item_pairs = _require_member(archive, "item_pairs")
+    if item_pairs.ndim != 2 or item_pairs.shape[1] != 2 or item_pairs.dtype.kind not in "iu":
+        raise ValueError("NPZ archive member item_pairs must be a two-column integer array")
+    return PsychsynModel(
+        item_pairs=item_pairs,
+        n_items=_integer_scalar(archive, "n_items"),
+        critval=_numeric_scalar(archive, "critval"),
+        anto=_boolean_scalar(archive, "anto"),
+    )
+
+
+def save_psychsyn_model(path: str | Path, model: PsychsynModel) -> None:
+    """Save a psychometric pair calibration as a versioned NPZ archive.
+
+    Validation and pair copying finish before the destination is opened. The
+    pickle-free archive is streamed to a same-directory temporary path and
+    atomically replaces the destination only after all members are written.
+
+    Parameters:
+    - path: Explicit destination ending in ``.npz``.
+    - model: Calibration returned by ``fit_psychsyn_model()``.
+    """
+    destination = Path(path)
+    if destination.suffix.casefold() != ".npz":
+        raise ValueError("psychometric pair model output path must end in .npz")
+    if not isinstance(model, PsychsynModel):
+        raise TypeError("model must be a PsychsynModel")
+
+    snapshot = PsychsynModel(
+        item_pairs=model.item_pairs,
+        n_items=model.n_items,
+        critval=model.critval,
+        anto=model.anto,
+    )
+    payload = {
+        "schema_version": np.asarray(_PSYCHSYN_MODEL_SCHEMA_VERSION, dtype=np.int64),
+        "result_type": np.asarray("psychsyn_model", dtype=np.str_),
+        "n_items": np.asarray(snapshot.n_items, dtype=np.int64),
+        "critval": np.asarray(snapshot.critval, dtype=np.float64),
+        "anto": np.asarray(snapshot.anto, dtype=np.bool_),
+        "item_pairs": snapshot.item_pairs,
+    }
+    _write_npz_archive(destination, payload)
+
+
+def load_psychsyn_model(path: str | Path) -> PsychsynModel:
+    """Load and validate a versioned, pickle-free pair calibration archive.
+
+    The returned model owns a read-only pair array and can be passed directly to
+    ``psychsyn_model_scores()`` for fixed-calibration scoring.
+
+    Parameters:
+    - path: Path to an archive written by ``save_psychsyn_model()``.
+    """
+    with _open_npz_archive(path, label="psychometric pair model") as archive:
+        return _read_psychsyn_model(archive)
+
+
 def save_score_archive(
     path: str | Path,
     scores: Mapping[str, ArrayLike],
@@ -841,7 +928,7 @@ def load_archive(path: str | Path) -> InspectableArchive:
     Load and auto-detect any supported result or model archive.
 
     Pickling is always disabled. The archive's declared ``result_type`` selects
-    the complete score, response-time, or mixture-model validator, so callers can
+    the complete score, response-time, or model validator, so callers can
     inspect supported archives without opening raw NPZ members or guessing which
     specialized loader to call. Generic model results retain validated read-only
     parameter arrays; the dedicated model loader returns the scoring dataclass.
@@ -850,7 +937,7 @@ def load_archive(path: str | Path) -> InspectableArchive:
     - path: Path to a supported versioned NPZ result archive.
 
     Returns:
-    - A fully validated score, response-time, or mixture-model archive mapping.
+    - A fully validated score, response-time, or model archive mapping.
 
     Example:
         >>> from ier import load_archive
@@ -864,20 +951,31 @@ def load_archive(path: str | Path) -> InspectableArchive:
         if result_type in {"screen", "composite"}:
             return _read_score_archive(archive)
         if result_type == "response_time_mixture_model":
-            model = _read_response_time_mixture_model(archive)
+            mixture_model = _read_response_time_mixture_model(archive)
             return {
                 "schema_version": _RESPONSE_TIME_MIXTURE_MODEL_SCHEMA_VERSION,
                 "result_type": "response_time_mixture_model",
-                "n_components": model.n_components,
-                "fast_component": model.fast_component,
-                "log_transform": model.log_transform,
-                "weights": model.weights,
-                "means": model.means,
-                "variances": model.variances,
+                "n_components": mixture_model.n_components,
+                "fast_component": mixture_model.fast_component,
+                "log_transform": mixture_model.log_transform,
+                "weights": mixture_model.weights,
+                "means": mixture_model.means,
+                "variances": mixture_model.variances,
+            }
+        if result_type == "psychsyn_model":
+            pair_model = _read_psychsyn_model(archive)
+            return {
+                "schema_version": _PSYCHSYN_MODEL_SCHEMA_VERSION,
+                "result_type": "psychsyn_model",
+                "n_items": pair_model.n_items,
+                "n_pairs": pair_model.n_pairs,
+                "critval": pair_model.critval,
+                "anto": pair_model.anto,
+                "item_pairs": pair_model.item_pairs,
             }
         raise ValueError(
             "archive result_type must be 'screen', 'composite', 'response_time', "
-            "or 'response_time_mixture_model'"
+            "'response_time_mixture_model', or 'psychsyn_model'"
         )
 
 

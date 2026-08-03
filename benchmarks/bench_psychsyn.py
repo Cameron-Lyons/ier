@@ -4,6 +4,8 @@ Missing responses are distributed across the matrix so the benchmark exercises
 pairwise-complete item discovery and respondent scoring. Independent data with
 a high cutoff isolates the bounded no-pair discovery path. Each scenario also
 measures scoring with one retained item-pair calibration.
+The retained path is round-tripped through the public archive boundary, and
+model load latency plus archive size are reported separately.
 
 Usage:
     uv run python benchmarks/bench_psychsyn.py
@@ -21,11 +23,19 @@ import gc
 import statistics
 import time
 import tracemalloc
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import fit_psychsyn_model, psychsyn, psychsyn_model_scores
+from ier import (
+    fit_psychsyn_model,
+    load_psychsyn_model,
+    psychsyn,
+    psychsyn_model_scores,
+    save_psychsyn_model,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -91,7 +101,17 @@ def main() -> None:
     if args.missing_rate:
         data[rng.random(data.shape) < args.missing_rate] = np.nan
 
-    model = fit_psychsyn_model(data, critval=args.critval)
+    fitted_model = fit_psychsyn_model(data, critval=args.critval)
+    load_timings: list[float] = []
+    with TemporaryDirectory() as directory:
+        model_path = Path(directory) / "psychsyn-model.npz"
+        save_psychsyn_model(model_path, fitted_model)
+        archive_bytes = model_path.stat().st_size
+        model = fitted_model
+        for _ in range(args.repeats):
+            started = time.perf_counter()
+            model = load_psychsyn_model(model_path)
+            load_timings.append(time.perf_counter() - started)
     for _ in range(args.warmup):
         psychsyn(data, critval=args.critval)
         psychsyn_model_scores(data, model)
@@ -116,6 +136,10 @@ def main() -> None:
     print(
         f"fixed model: median={fixed_seconds:.4f}s peak={fixed_peak:.1f} MiB "
         f"speedup={direct_seconds / fixed_seconds:.1f}x"
+    )
+    print(
+        f"model archive: size={archive_bytes / 1024:.1f} KiB "
+        f"load_median={statistics.median(load_timings):.4f}s"
     )
 
 
