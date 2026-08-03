@@ -34,6 +34,10 @@ ier response-time timings.csv --format npz --output timing.npz
 
 NPZ output requires `--output` with a `.npz` suffix. It cannot target standard
 output or an additional `.gz` layer; the NPZ container is already a ZIP archive.
+Every writer completes the archive in a temporary directory beside the target
+before an atomic replacement. Handled write failures leave existing content
+intact and clean up partial output; successful replacement retains existing
+permission bits.
 Load every archive with pickling disabled:
 
 ```python
@@ -67,7 +71,8 @@ print(saved["errors"])
 
 `save_score_archive()` validates the destination, result type, registered index
 names, aligned vectors, optional IDs, and soft failures before opening the file.
-It streams compatible arrays without constructing a respondent-by-index matrix.
+It streams compatible arrays without constructing a respondent-by-index matrix;
+the shared atomic boundary protects the destination from later I/O failures.
 `load_score_archive()` always disables pickling and validates the complete
 schema. It accepts compact public archives, screen CLI archives, and composite
 CLI archives written with `--include-components`. Aggregate-only composite and
@@ -149,13 +154,26 @@ respondent-aligned `scores`, and boolean `flags`.
 Load and reflag the retained scores through the public validated boundary:
 
 ```python
-from ier import load_response_time_archive, response_time_score_flags
+from ier import (
+    load_response_time_archive,
+    response_time_score_flags,
+    save_response_time_archive,
+)
 
 saved = load_response_time_archive("timing.npz")
 revised = response_time_score_flags(
     saved["scores"],
-    cutoff_percentile=1,
+    threshold=1.0,
     direction=saved["flag_direction"],
+)
+save_response_time_archive(
+    "revised-timing.npz",
+    saved["scores"],
+    revised,
+    threshold=1.0,
+    metric=saved["metric"],
+    flag_direction=saved["flag_direction"],
+    respondent_ids=saved["respondent_ids"],
 )
 ```
 
@@ -164,6 +182,11 @@ metric and direction compatibility, finite cutoff metadata, aligned score and
 flag vectors, optional respondent identifiers, and agreement between stored
 flags and their cutoff rule. It accepts both inclusive fixed-threshold flags and
 tie-exclusive percentile flags.
+
+`save_response_time_archive()` writes the same CLI-compatible schema and checks
+all scores, Boolean flags, cutoff metadata, direction rules, and optional
+identifiers before opening the destination. It streams the validated vectors
+without stacking or adding a runtime dependency.
 
 Consumers should reject unsupported future `schema_version` values rather than
 assuming their layout is unchanged.

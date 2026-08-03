@@ -261,6 +261,7 @@ from ier import (
     response_time,
     response_time_flag,
     response_time_score_flags,
+    save_response_time_archive,
 )
 
 median_rt = response_time(times, metric="median")
@@ -270,8 +271,17 @@ stricter_flags = response_time_score_flags(median_rt, cutoff_percentile=1)
 saved = load_response_time_archive("timing.npz")
 revised_flags = response_time_score_flags(
     saved["scores"],
-    cutoff_percentile=1,
+    threshold=1.0,
     direction=saved["flag_direction"],
+)
+save_response_time_archive(
+    "revised-timing.npz",
+    saved["scores"],
+    revised_flags,
+    threshold=1.0,
+    metric=saved["metric"],
+    flag_direction=saved["flag_direction"],
+    respondent_ids=saved["respondent_ids"],
 )
 ```
 
@@ -288,7 +298,9 @@ percentile cutoffs exclude ties, matching the other public flagging workflows.
 Retained direct scores use `direction="low"` by default; pass `direction="high"`
 for mixture probabilities. This sensitivity path never recomputes row summaries
 or refits the mixture. The NPZ loader also validates that archived flags agree
-with their stored threshold and suspicious-tail direction before reuse.
+with their stored threshold and suspicious-tail direction before reuse. The
+matching writer performs the same checks before creating a CLI-compatible
+archive.
 Mixture fitting excludes respondents whose median time is missing, infinite, or
 non-positive. Its posterior normalization remains stable when ordinary Gaussian
 density calculations underflow for an extreme valid observation.

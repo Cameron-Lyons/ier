@@ -9,6 +9,7 @@ from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
 from .archive import load_response_time_archive as load_response_time_archive
 from .archive import load_score_archive as load_score_archive
+from .archive import save_response_time_archive as save_response_time_archive
 from .archive import save_score_archive as save_score_archive
 from .composite import composite as composite
 from .composite import composite_flag as composite_flag
@@ -151,6 +152,7 @@ __all__ = [
     "screen",
     "screen_scores",
     "save_score_archive",
+    "save_response_time_archive",
     "ScreenIndexSummary",
     "ScreenResult",
     "ScoreArchive",

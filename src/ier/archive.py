@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
+from stat import S_IMODE
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, cast
 from zipfile import ZIP_STORED, ZipFile
 
@@ -91,14 +94,33 @@ def _validate_respondent_ids(values: list[str], n_respondents: int) -> list[str]
     return values
 
 
-def _write_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
-    """Stream typed arrays into one uncompressed, pickle-free NPZ archive."""
-    if any(value.dtype.hasobject for value in payload.values()):
-        raise ValueError("NPZ archive cannot contain object arrays")
+def _stream_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
+    """Stream typed arrays directly into one uncompressed NPZ archive."""
     with ZipFile(path, mode="w", compression=ZIP_STORED, allowZip64=True) as archive:
         for name, value in payload.items():
             with archive.open(f"{name}.npy", mode="w", force_zip64=True) as member:
                 np.save(member, value, allow_pickle=False)
+
+
+def _write_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
+    """Atomically stream one typed, pickle-free NPZ archive into place."""
+    if any(value.dtype.hasobject for value in payload.values()):
+        raise ValueError("NPZ archive cannot contain object arrays")
+
+    destination = path.resolve(strict=False) if path.is_symlink() else path
+    existing_mode: int | None = None
+    with suppress(FileNotFoundError):
+        existing_mode = S_IMODE(destination.stat().st_mode)
+
+    with TemporaryDirectory(
+        prefix=f".{destination.name}.",
+        dir=destination.parent,
+    ) as directory:
+        staged_path = Path(directory) / destination.name
+        _stream_npz_archive(staged_path, payload)
+        if existing_mode is not None:
+            staged_path.chmod(existing_mode)
+        staged_path.replace(destination)
 
 
 def _require_member(archive: NpzFile, name: str) -> np.ndarray:
@@ -136,24 +158,43 @@ def _string_vector(archive: NpzFile, name: str) -> list[str]:
 
 
 def _numeric_scalar(archive: NpzFile, name: str) -> float:
-    """Load one finite real numeric scalar."""
-    value = _require_member(archive, name)
-    if value.shape != () or value.dtype.kind not in "fiu":
-        raise ValueError(f"NPZ archive member {name} must be a numeric scalar")
-    result = float(value.item())
+    """Load one finite real numeric scalar from an archive."""
+    return _finite_numeric_scalar(
+        _require_member(archive, name),
+        name=f"NPZ archive member {name}",
+    )
+
+
+def _finite_numeric_scalar(value: object, *, name: str) -> float:
+    """Validate and return one finite real numeric scalar."""
+    try:
+        array = np.asarray(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be a numeric scalar") from error
+    if array.shape != () or array.dtype.kind not in "fiu":
+        raise ValueError(f"{name} must be a numeric scalar")
+    result = float(array.item())
     if not np.isfinite(result):
-        raise ValueError(f"NPZ archive member {name} must be finite")
+        raise ValueError(f"{name} must be finite")
     return result
 
 
-def _boolean_vector(archive: NpzFile, name: str, n_respondents: int) -> BoolArray:
-    """Load one aligned one-dimensional boolean vector."""
-    value = _require_member(archive, name)
-    if value.ndim != 1 or value.dtype.kind != "b":
-        raise ValueError(f"NPZ archive member {name} must be a boolean vector")
-    if len(value) != n_respondents:
-        raise ValueError(f"NPZ archive member {name} must match n_respondents")
-    return cast("BoolArray", value)
+def _validate_boolean_vector(
+    values: ArrayLike,
+    n_respondents: int,
+    *,
+    name: str,
+) -> BoolArray:
+    """Validate one aligned one-dimensional boolean vector."""
+    try:
+        array = np.asarray(values)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be a boolean vector") from error
+    if array.ndim != 1 or array.dtype.kind != "b":
+        raise ValueError(f"{name} must be a boolean vector")
+    if len(array) != n_respondents:
+        raise ValueError(f"{name} must match n_respondents")
+    return cast("BoolArray", array)
 
 
 def _load_errors(
@@ -267,6 +308,64 @@ def _validate_response_time_direction(value: object) -> ResponseTimeFlagDirectio
     return cast("ResponseTimeFlagDirection", value)
 
 
+def _validate_response_time_values(
+    scores: ArrayLike,
+    flags: ArrayLike,
+    metric: object,
+    direction: object,
+    threshold: object,
+    *,
+    expected_respondents: int | None = None,
+) -> tuple[
+    np.ndarray,
+    BoolArray,
+    ResponseTimeMetric,
+    ResponseTimeFlagDirection,
+    float,
+]:
+    """Validate one complete reusable response-time result."""
+    validated_metric = _validate_response_time_metric(metric)
+    validated_direction = _validate_response_time_direction(direction)
+    expected_direction = "high" if validated_metric == "mixture" else "low"
+    if validated_direction != expected_direction:
+        raise ValueError(
+            f"response-time metric {validated_metric!r} requires "
+            f"{expected_direction!r} flag_direction"
+        )
+
+    validated_threshold = _finite_numeric_scalar(
+        threshold,
+        name="response-time archive threshold",
+    )
+    validated_scores = validate_score_array(scores, name="response-time archive scores")
+    if expected_respondents is not None and len(validated_scores) != expected_respondents:
+        raise ValueError("response-time archive scores must match n_respondents")
+    validated_flags = _validate_boolean_vector(
+        flags,
+        len(validated_scores),
+        name="response-time archive flags",
+    )
+
+    expected_flags = np.empty_like(validated_flags)
+    inclusive_compare = np.greater_equal if validated_direction == "high" else np.less_equal
+    exclusive_compare = np.greater if validated_direction == "high" else np.less
+    inclusive_compare(validated_scores, validated_threshold, out=expected_flags)
+    if not np.array_equal(validated_flags, expected_flags):
+        exclusive_compare(validated_scores, validated_threshold, out=expected_flags)
+        if not np.array_equal(validated_flags, expected_flags):
+            raise ValueError(
+                "response-time archive flags are inconsistent with its threshold and direction"
+            )
+
+    return (
+        validated_scores,
+        validated_flags,
+        validated_metric,
+        validated_direction,
+        validated_threshold,
+    )
+
+
 def _read_response_time_archive(archive: NpzFile) -> ResponseTimeArchive:
     """Validate one open NPZ archive and extract its response-time payload."""
     if len(archive.files) != len(set(archive.files)):
@@ -302,33 +401,14 @@ def _read_response_time_archive(archive: NpzFile) -> ResponseTimeArchive:
     if n_respondents < 1:
         raise ValueError("response-time archive n_respondents must be positive")
 
-    metric = _validate_response_time_metric(_string_scalar(archive, "metric"))
-    direction = _validate_response_time_direction(_string_scalar(archive, "flag_direction"))
-    expected_direction = "high" if metric == "mixture" else "low"
-    if direction != expected_direction:
-        raise ValueError(
-            f"response-time metric {metric!r} requires {expected_direction!r} flag_direction"
-        )
-
-    threshold = _numeric_scalar(archive, "threshold")
-    scores = validate_score_array(
+    scores, flags, metric, direction, threshold = _validate_response_time_values(
         _require_member(archive, "scores"),
-        name="response-time archive scores",
+        _require_member(archive, "flags"),
+        _string_scalar(archive, "metric"),
+        _string_scalar(archive, "flag_direction"),
+        _numeric_scalar(archive, "threshold"),
+        expected_respondents=n_respondents,
     )
-    if len(scores) != n_respondents:
-        raise ValueError("response-time archive scores must match n_respondents")
-    flags = _boolean_vector(archive, "flags", n_respondents)
-
-    expected_flags = np.empty_like(flags)
-    inclusive_compare = np.greater_equal if direction == "high" else np.less_equal
-    exclusive_compare = np.greater if direction == "high" else np.less
-    inclusive_compare(scores, threshold, out=expected_flags)
-    if not np.array_equal(flags, expected_flags):
-        exclusive_compare(scores, threshold, out=expected_flags)
-        if not np.array_equal(flags, expected_flags):
-            raise ValueError(
-                "response-time archive flags are inconsistent with its threshold and direction"
-            )
 
     respondent_ids = _load_respondent_ids(archive, n_respondents)
     return {
@@ -415,6 +495,78 @@ def save_score_archive(
     }
     for name, values in validated_scores.items():
         payload[f"score__{name}"] = values
+    if validated_ids is not None:
+        payload["respondent_ids"] = np.asarray(validated_ids, dtype=np.str_)
+    _write_npz_archive(destination, payload)
+
+
+def save_response_time_archive(
+    path: str | Path,
+    scores: ArrayLike,
+    flags: ArrayLike,
+    *,
+    threshold: float,
+    metric: ResponseTimeMetric = "median",
+    flag_direction: ResponseTimeFlagDirection = "low",
+    respondent_ids: Sequence[str] | None = None,
+) -> None:
+    """
+    Save reusable response-time results as a versioned, pickle-free NPZ archive.
+
+    Scores, Boolean flags, metric/direction compatibility, the finite threshold,
+    and optional respondent identifiers are validated before the destination is
+    opened. Flags may follow either the inclusive fixed-cutoff rule or the
+    tie-exclusive percentile rule.
+
+    Parameters:
+    - path: Explicit destination ending in ``.npz``.
+    - scores: Per-respondent direct timing scores or mixture probabilities.
+    - flags: Aligned Boolean decisions produced from the recorded threshold.
+    - threshold: Resolved finite cutoff in the score's units.
+    - metric: Timing metric represented by the score vector.
+    - flag_direction: Suspicious tail, ``"low"`` or ``"high"``.
+    - respondent_ids: Optional aligned, unique, nonblank string identifiers.
+
+    Example:
+        >>> from ier import response_time_score_flags, save_response_time_archive
+        >>> scores = [0.5, 1.2, 2.0]
+        >>> flags = response_time_score_flags(scores, threshold=1.0)
+        >>> save_response_time_archive(
+        ...     "timing.npz", scores, flags, threshold=1.0, metric="median"
+        ... )
+    """
+    destination = Path(path)
+    if destination.suffix.casefold() != ".npz":
+        raise ValueError("response-time archive output path must end in .npz")
+
+    validated_scores, validated_flags, validated_metric, validated_direction, cutoff = (
+        _validate_response_time_values(
+            scores,
+            flags,
+            metric,
+            flag_direction,
+            threshold,
+        )
+    )
+    validated_ids: list[str] | None = None
+    if respondent_ids is not None:
+        if isinstance(respondent_ids, (str, bytes)):
+            raise TypeError("respondent_ids must be a sequence of strings")
+        validated_ids = _validate_respondent_ids(
+            list(respondent_ids),
+            len(validated_scores),
+        )
+
+    payload = {
+        "schema_version": np.asarray(_ARCHIVE_SCHEMA_VERSION, dtype=np.int64),
+        "result_type": np.asarray("response_time", dtype=np.str_),
+        "n_respondents": np.asarray(len(validated_scores), dtype=np.int64),
+        "metric": np.asarray(validated_metric, dtype=np.str_),
+        "flag_direction": np.asarray(validated_direction, dtype=np.str_),
+        "threshold": np.asarray(cutoff, dtype=np.float64),
+        "scores": validated_scores,
+        "flags": validated_flags,
+    }
     if validated_ids is not None:
         payload["respondent_ids"] = np.asarray(validated_ids, dtype=np.str_)
     _write_npz_archive(destination, payload)

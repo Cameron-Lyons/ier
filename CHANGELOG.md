@@ -5,6 +5,38 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.29] - 2026-08-03
+
+### Changed
+
+- Every public and command-line NPZ writer now stages a complete archive beside
+  its destination and replaces the target atomically. Write failures retain
+  existing content, clean up partial temporary output, and preserve an existing
+  file's permission bits on successful replacement. Final symbolic links remain
+  in place while their targets receive the completed archive.
+- On a 500,000-respondent, 15-index archive, validated atomic saving takes
+  16.6 ms versus 12.5 ms for direct in-place serialization, with the same
+  4.0 MiB peak traced allocation. The response-time equivalent takes 1.6 ms
+  versus 1.1 ms and 4.0 versus 3.9 MiB, without adding a dependency.
+
+## [2.19.28] - 2026-08-03
+
+### Added
+
+- `save_response_time_archive()` writes prepared response-time scores, Boolean
+  flags, resolved cutoff metadata, and optional respondent identifiers as the
+  same versioned, pickle-free NPZ schema produced by the CLI.
+
+### Changed
+
+- Public and command-line response-time persistence now share one validation
+  and streaming boundary. It rejects unsupported metric/direction pairs,
+  non-finite cutoffs, malformed or inconsistent flags, invalid score vectors,
+  and invalid identifiers before opening the destination.
+- On a 500,000-respondent archive, validated response-time saving takes 1.4 ms
+  versus 1.2 ms for direct unvalidated serialization, with the same 3.9 MiB peak
+  traced allocation and no added dependency.
+
 ## [2.19.27] - 2026-08-03
 
 ### Added
