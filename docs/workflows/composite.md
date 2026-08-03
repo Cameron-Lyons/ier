@@ -133,6 +133,8 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 ```bash
 ier composite data.csv --indices irv longstring --method mean
 ier composite data.csv --indices irv longstring --no-standardize
+ier composite data.csv --indices irv longstring --percentile 95 --format csv
+ier composite data.csv --indices irv longstring --threshold 1.5 --format json
 ier composite data.csv --indices irv longstring --weight irv=2 --weight longstring=0.5
 ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --indices irv longstring --include-components --format json
@@ -170,3 +172,11 @@ of appearing as score columns. Component values are the raw public index
 outputs, before composite direction correction, standardization, or weighting.
 JSON arrays and CSV rows remain streamed, while NPZ stores one typed array per
 successful index.
+
+Add one of `--threshold VALUE` or `--percentile VALUE` when the export should
+include a composite decision for each respondent. A fixed threshold is inclusive
+(`score >= threshold`); a sample-percentile threshold is strict
+(`score > resolved cutoff`) so ties at the percentile are not flagged. The two
+options are mutually exclusive. Text, JSON, and NPZ record the resolved cutoff
+and whether it was fixed or sample-derived, while CSV adds a `composite_flag`
+column. Without either option, output remains score-only.

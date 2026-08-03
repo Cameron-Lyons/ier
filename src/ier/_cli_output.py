@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Literal, TextIO
 
 import numpy as np
 
+from ier._cli_composite import validate_composite_components, validate_composite_flags
+
 if TYPE_CHECKING:
     from ier.types import IndexCatalog, ScreenResult
 
@@ -303,24 +305,6 @@ def _write_screen_csv(
         writer.writerow(row)
 
 
-def _validate_composite_components(
-    n_respondents: int,
-    component_scores: Mapping[str, np.ndarray] | None,
-    valid_index_counts: np.ndarray | None,
-) -> None:
-    """Validate optional respondent-aligned composite detail arrays."""
-    if (component_scores is None) != (valid_index_counts is None):
-        raise ValueError("component scores and valid index counts must be provided together")
-    if component_scores is None:
-        return
-    assert valid_index_counts is not None
-    if len(valid_index_counts) != n_respondents:
-        raise ValueError("valid index count length must match composite score length")
-    for name, values in component_scores.items():
-        if len(values) != n_respondents:
-            raise ValueError(f"component score length for {name} must match composite score length")
-
-
 def _emit_composite_text(
     scores: np.ndarray,
     method: str,
@@ -332,8 +316,12 @@ def _emit_composite_text(
     component_scores: Mapping[str, np.ndarray] | None = None,
     valid_index_counts: np.ndarray | None = None,
     standardized: bool = True,
+    flags: np.ndarray | None = None,
+    flag_threshold: float | None = None,
+    flag_percentile: float | None = None,
 ) -> str:
-    _validate_composite_components(len(scores), component_scores, valid_index_counts)
+    validate_composite_components(len(scores), component_scores, valid_index_counts)
+    validate_composite_flags(len(scores), flags, flag_threshold, flag_percentile)
     finite_rows = np.flatnonzero(np.isfinite(scores))
     order = finite_rows[np.argsort(scores[finite_rows])[::-1]][: max(top, 0)]
     labels = _respondent_label_values(len(scores), respondent_ids)
@@ -349,6 +337,13 @@ def _emit_composite_text(
         )
     if min_valid_indices is not None:
         lines.append(f"minimum valid indices: {min_valid_indices}")
+    if flags is not None:
+        assert flag_threshold is not None
+        threshold_source = "percentile" if flag_percentile is not None else "fixed"
+        lines.append(f"threshold: {flag_threshold:g} ({threshold_source})")
+        if flag_percentile is not None:
+            lines.append(f"percentile: {flag_percentile:g}")
+        lines.append(f"flagged: {int(np.sum(flags))}")
     if errors:
         lines.append("errors:")
         for name, message in sorted(errors.items()):
@@ -357,11 +352,15 @@ def _emit_composite_text(
     if detail_names:
         lines.append("indices: " + ", ".join(detail_names))
     columns = [label_name, "score"]
+    if flags is not None:
+        columns.append("flag")
     if component_scores is not None:
         columns.extend(["valid_indices", *detail_names])
     lines.append(f"top composite scores ({', '.join(columns)}):")
     for idx in order:
         fields = [str(labels[int(idx)]), f"{float(scores[idx]):.6f}"]
+        if flags is not None:
+            fields.append(str(int(bool(flags[idx]))))
         if component_scores is not None:
             assert valid_index_counts is not None
             fields.append(str(int(valid_index_counts[idx])))
@@ -380,6 +379,9 @@ def _emit_composite_json(
     component_scores: Mapping[str, np.ndarray] | None = None,
     valid_index_counts: np.ndarray | None = None,
     standardized: bool = True,
+    flags: np.ndarray | None = None,
+    flag_threshold: float | None = None,
+    flag_percentile: float | None = None,
 ) -> str:
     output = StringIO()
     _write_composite_json(
@@ -393,6 +395,9 @@ def _emit_composite_json(
         component_scores,
         valid_index_counts,
         standardized,
+        flags,
+        flag_threshold,
+        flag_percentile,
     )
     return output.getvalue()
 
@@ -408,9 +413,13 @@ def _write_composite_json(
     component_scores: Mapping[str, np.ndarray] | None = None,
     valid_index_counts: np.ndarray | None = None,
     standardized: bool = True,
+    flags: np.ndarray | None = None,
+    flag_threshold: float | None = None,
+    flag_percentile: float | None = None,
 ) -> None:
     """Write composite JSON while bounding respondent-array allocation."""
-    _validate_composite_components(len(scores), component_scores, valid_index_counts)
+    validate_composite_components(len(scores), component_scores, valid_index_counts)
+    validate_composite_flags(len(scores), flags, flag_threshold, flag_percentile)
     payload: dict[str, object] = {
         "method": method,
         "standardized": standardized,
@@ -422,6 +431,13 @@ def _write_composite_json(
         payload["weights"] = dict(weights)
     if min_valid_indices is not None:
         payload["min_valid_indices"] = min_valid_indices
+    if flags is not None:
+        assert flag_threshold is not None
+        payload["threshold"] = flag_threshold
+        payload["threshold_source"] = "percentile" if flag_percentile is not None else "fixed"
+        if flag_percentile is not None:
+            payload["percentile"] = flag_percentile
+        payload["flags"] = _JsonArray(np.asarray(flags), "boolean")
     if component_scores is not None:
         assert valid_index_counts is not None
         payload["indices_used"] = list(component_scores)
@@ -447,18 +463,25 @@ def _write_composite_csv(
     respondent_ids: list[str] | None = None,
     component_scores: Mapping[str, np.ndarray] | None = None,
     valid_index_counts: np.ndarray | None = None,
+    flags: np.ndarray | None = None,
 ) -> None:
     """Write respondent-aligned composite scores directly to a CSV stream."""
-    _validate_composite_components(len(scores), component_scores, valid_index_counts)
+    validate_composite_components(len(scores), component_scores, valid_index_counts)
+    if flags is not None and len(flags) != len(scores):
+        raise ValueError("composite flag length must match composite score length")
     detail_names = list(component_scores) if component_scores is not None else []
     writer = csv.writer(handle)
     header = ["respondent", "composite_score"]
+    if flags is not None:
+        header.append("composite_flag")
     if component_scores is not None:
         header.extend(["valid_index_count", *(f"{name}_score" for name in detail_names)])
     writer.writerow(header)
     labels = _respondent_label_values(len(scores), respondent_ids)
     for index, (label, score) in enumerate(zip(labels, scores, strict=True)):
         row: list[object] = [label, _csv_number(score)]
+        if flags is not None:
+            row.append(int(bool(flags[index])))
         if component_scores is not None:
             assert valid_index_counts is not None
             row.append(int(valid_index_counts[index]))

@@ -77,6 +77,8 @@ class TestCliJson(unittest.TestCase):
         self.assertEqual(composite_payload["scores"], [1.0, None, None, None, 5.0])
         self.assertEqual(composite_payload["respondent_ids"], identifiers)
         self.assertEqual(composite_payload["errors"], {})
+        self.assertNotIn("flags", composite_payload)
+        self.assertNotIn("threshold", composite_payload)
         self.assertNotIn("component_scores", composite_payload)
         self.assertNotIn("valid_index_counts", composite_payload)
 
@@ -145,12 +147,16 @@ class TestCliJson(unittest.TestCase):
                     "second": np.arange(5, dtype=float) * 2.0,
                 },
                 valid_index_counts=np.full(5, 2, dtype=np.int_),
+                flags=np.array([False, False, False, False, True]),
+                flag_threshold=3.0,
+                flag_percentile=75.0,
             )
 
         self.assertEqual(json.loads(output.getvalue())["n_respondents"], 5)
         component_payload = json.loads(component_output.getvalue())
         self.assertEqual(component_payload["component_scores"]["second"], [0.0, 2.0, 4.0, 6.0, 8.0])
         self.assertEqual(component_payload["valid_index_counts"], [2, 2, 2, 2, 2])
+        self.assertEqual(component_payload["flags"], [False, False, False, False, True])
         self.assertTrue(chunk_lengths)
         self.assertLessEqual(max(chunk_lengths), 2)
         self.assertIn(1, chunk_lengths)

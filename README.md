@@ -12,6 +12,7 @@ For a comprehensive methods review, see
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
+- Opt-in fixed or sample-percentile composite flags in every CLI output format
 - Opt-in minimum valid-index requirements for defensible composite coverage
 - Configurable multi-index consensus decisions for respondent-level screening
 - Fixed or sample-relative per-index screening thresholds
@@ -96,6 +97,8 @@ ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --format npz --output screening.npz
 ier composite data.csv --indices irv longstring
 ier composite data.csv --indices irv longstring --no-standardize
+ier composite data.csv --indices irv longstring --percentile 95 --format csv
+ier composite data.csv --indices irv longstring --threshold 1.5 --format json
 ier composite data.csv --indices irv longstring --weight irv=2 --weight longstring=0.5
 ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --indices irv longstring --include-components --format json
@@ -136,6 +139,11 @@ Composite scores are standardized per index by default. Pass
 `ier composite --no-standardize` to combine directed scores in their original
 units. Text, JSON, and NPZ record the effective setting; CSV remains a compact
 respondent table.
+
+Add either `--threshold VALUE` or `--percentile VALUE` to emit respondent-level
+composite flags without running the indices again. Fixed cutoffs flag scores at
+or above the value; percentile cutoffs flag only scores strictly above the
+sample cutoff. Omitting both options preserves score-only output.
 
 Set `min_valid_indices=N` to return `NaN` when fewer than `N` selected index
 scores are available for a respondent. This opt-in rule applies after scoring

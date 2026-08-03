@@ -65,6 +65,8 @@ class TestCliNpz(unittest.TestCase):
                     "longstring=0.5",
                     "--min-valid-indices",
                     "2",
+                    "--percentile",
+                    "50",
                     "--include-components",
                     "--output",
                     str(composite_out),
@@ -111,6 +113,10 @@ class TestCliNpz(unittest.TestCase):
         self.assertEqual(composite_result["weight_names"].tolist(), ["irv", "longstring"])
         self.assertEqual(composite_result["weights"].tolist(), [2.0, 0.5])
         self.assertEqual(composite_result["min_valid_indices"].item(), 2)
+        self.assertEqual(composite_result["threshold_source"].item(), "percentile")
+        self.assertEqual(composite_result["percentile"].item(), 50.0)
+        self.assertEqual(composite_result["flags"].dtype, np.bool_)
+        self.assertEqual(composite_result["flags"].shape, (3,))
         self.assertEqual(composite_result["error_names"].tolist(), [])
         self.assertEqual(composite_result["error_messages"].tolist(), [])
         self.assertEqual(composite_result["index_names"].tolist(), ["irv", "longstring"])
@@ -236,6 +242,8 @@ class TestCliNpz(unittest.TestCase):
             self.assertIn("mad_positive_items", archive["error_messages"][0])
             self.assertNotIn("index_names", archive.files)
             self.assertNotIn("valid_index_counts", archive.files)
+            self.assertNotIn("flags", archive.files)
+            self.assertNotIn("threshold", archive.files)
 
     def test_output_path_validation_precedes_input_loading(self) -> None:
         missing = self.root / "missing.csv"

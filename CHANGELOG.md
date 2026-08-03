@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.17.0] - 2026-08-02
+
+### Added
+
+- `ier composite` now accepts mutually exclusive `--threshold` and
+  `--percentile` options for opt-in respondent flagging. Fixed cutoffs include
+  equality, percentile cutoffs use strict upper-tail comparisons, and the
+  already-computed composite score vector is reused without rescoring indices.
+  Text, JSON, CSV, and NPZ expose the flags; structured metadata records the
+  resolved cutoff and its source, while default aggregate-only schemas remain
+  unchanged. At 100,000 respondents and five component indices, flagged CSV
+  used 0.274 MiB peak temporary allocation, JSON used 0.542 MiB, and NPZ used
+  0.900 MiB, without adding a dependency.
+
 ## [2.16.0] - 2026-08-02
 
 ### Added

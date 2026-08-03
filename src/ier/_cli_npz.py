@@ -8,6 +8,8 @@ from zipfile import ZIP_STORED, ZipFile
 
 import numpy as np
 
+from ier._cli_composite import validate_composite_components, validate_composite_flags
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -126,18 +128,13 @@ def _write_composite_npz(
     component_scores: Mapping[str, np.ndarray] | None = None,
     valid_index_counts: np.ndarray | None = None,
     standardized: bool = True,
+    flags: np.ndarray | None = None,
+    flag_threshold: float | None = None,
+    flag_percentile: float | None = None,
 ) -> None:
     """Write composite results as a versioned NumPy archive."""
-    if (component_scores is None) != (valid_index_counts is None):
-        raise ValueError("component scores and valid index counts must be provided together")
-    if valid_index_counts is not None and len(valid_index_counts) != len(scores):
-        raise ValueError("valid index count length must match composite score length")
-    if component_scores is not None:
-        for name, values in component_scores.items():
-            if len(values) != len(scores):
-                raise ValueError(
-                    f"component score length for {name} must match composite score length"
-                )
+    validate_composite_components(len(scores), component_scores, valid_index_counts)
+    validate_composite_flags(len(scores), flags, flag_threshold, flag_percentile)
 
     payload = _metadata("composite", len(scores))
     payload.update(
@@ -152,6 +149,16 @@ def _write_composite_npz(
         payload["weights"] = np.asarray(list(weights.values()), dtype=np.float64)
     if min_valid_indices is not None:
         payload["min_valid_indices"] = np.asarray(min_valid_indices, dtype=np.int64)
+    if flags is not None:
+        assert flag_threshold is not None
+        payload["threshold"] = np.asarray(flag_threshold, dtype=np.float64)
+        payload["threshold_source"] = np.asarray(
+            "percentile" if flag_percentile is not None else "fixed",
+            dtype=np.str_,
+        )
+        if flag_percentile is not None:
+            payload["percentile"] = np.asarray(flag_percentile, dtype=np.float64)
+        payload["flags"] = np.asarray(flags, dtype=np.bool_)
     if component_scores is not None:
         assert valid_index_counts is not None
         payload["index_names"] = np.asarray(list(component_scores), dtype=np.str_)
