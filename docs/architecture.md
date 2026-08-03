@@ -124,6 +124,10 @@ posterior or diagnostic probability without your own validation study. Its
 piecewise NumPy transform evaluates positive and negative scores separately,
 avoiding overflow while preserving finite-tail precision and exact infinite
 endpoints.
+The CLI computes this transform from the final aggregate vector only when
+`--include-probability` is requested. JSON and CSV then serialize it
+forward-only, while NPZ stores one additional typed vector; index scoring is not
+repeated and default output schemas remain unchanged.
 
 ## Response-time helpers
 

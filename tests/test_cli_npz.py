@@ -68,6 +68,7 @@ class TestCliNpz(unittest.TestCase):
                     "--percentile",
                     "50",
                     "--include-components",
+                    "--include-probability",
                     "--output",
                     str(composite_out),
                 ]
@@ -117,6 +118,11 @@ class TestCliNpz(unittest.TestCase):
         self.assertEqual(composite_result["percentile"].item(), 50.0)
         self.assertEqual(composite_result["flags"].dtype, np.bool_)
         self.assertEqual(composite_result["flags"].shape, (3,))
+        self.assertEqual(composite_result["probability_scale"].item(), "uncalibrated_logistic")
+        np.testing.assert_allclose(
+            composite_result["probabilities"],
+            1.0 / (1.0 + np.exp(-composite_result["scores"])),
+        )
         self.assertEqual(composite_result["error_names"].tolist(), [])
         self.assertEqual(composite_result["error_messages"].tolist(), [])
         self.assertEqual(composite_result["index_names"].tolist(), ["irv", "longstring"])
@@ -162,6 +168,7 @@ class TestCliNpz(unittest.TestCase):
         with np.load(out, allow_pickle=False) as result:
             self.assertFalse(result["standardized"].item())
             self.assertEqual(result["standardized"].dtype, np.bool_)
+            self.assertNotIn("probabilities", result.files)
 
     def test_output_preserves_non_finite_values(self) -> None:
         constant = self.root / "constant.csv"
@@ -244,6 +251,7 @@ class TestCliNpz(unittest.TestCase):
             self.assertNotIn("valid_index_counts", archive.files)
             self.assertNotIn("flags", archive.files)
             self.assertNotIn("threshold", archive.files)
+            self.assertNotIn("probabilities", archive.files)
 
     def test_output_path_validation_precedes_input_loading(self) -> None:
         missing = self.root / "missing.csv"

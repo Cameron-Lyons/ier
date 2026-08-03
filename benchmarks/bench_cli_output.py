@@ -5,6 +5,7 @@ Usage:
     uv run python benchmarks/bench_cli_output.py --format json --respondents 250000
     uv run python benchmarks/bench_cli_output.py --workflow composite --format all
     uv run python benchmarks/bench_cli_output.py --workflow composite --flagged
+    uv run python benchmarks/bench_cli_output.py --workflow composite --probability
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from ier._cli_output import (
     _write_screen_csv,
     _write_screen_json,
 )
+from ier.composite import _logistic_transform
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -87,12 +89,20 @@ def _make_composite_result(
     n_indices: int,
     *,
     flagged: bool,
-) -> tuple[np.ndarray, dict[str, np.ndarray], np.ndarray, np.ndarray | None]:
+    probability: bool,
+) -> tuple[
+    np.ndarray,
+    dict[str, np.ndarray],
+    np.ndarray,
+    np.ndarray | None,
+    np.ndarray | None,
+]:
     values = np.linspace(0.0, 1.0, n_respondents)
     component_scores = {f"score_{index}": values + index / n_indices for index in range(n_indices)}
     valid_index_counts = np.full(n_respondents, n_indices, dtype=np.int_)
     flags = values >= 0.95 if flagged else None
-    return values, component_scores, valid_index_counts, flags
+    probabilities = _logistic_transform(values) if probability else None
+    return values, component_scores, valid_index_counts, flags, probabilities
 
 
 def _write_composite_result(
@@ -102,6 +112,7 @@ def _write_composite_result(
     component_scores: dict[str, np.ndarray],
     valid_index_counts: np.ndarray,
     flags: np.ndarray | None,
+    probabilities: np.ndarray | None,
 ) -> None:
     if output_format == "csv":
         with _output_stream(destination) as handle:
@@ -111,6 +122,7 @@ def _write_composite_result(
                 component_scores=component_scores,
                 valid_index_counts=valid_index_counts,
                 flags=flags,
+                probabilities=probabilities,
             )
         return
     if output_format == "json":
@@ -123,6 +135,7 @@ def _write_composite_result(
                 valid_index_counts=valid_index_counts,
                 flags=flags,
                 flag_threshold=0.95 if flags is not None else None,
+                probabilities=probabilities,
             )
         return
     _write_composite_npz(
@@ -133,6 +146,7 @@ def _write_composite_result(
         valid_index_counts=valid_index_counts,
         flags=flags,
         flag_threshold=0.95 if flags is not None else None,
+        probabilities=probabilities,
     )
 
 
@@ -174,6 +188,11 @@ def main() -> None:
         help="Include fixed-threshold composite flags",
     )
     parser.add_argument(
+        "--probability",
+        action="store_true",
+        help="Include uncalibrated logistic composite values",
+    )
+    parser.add_argument(
         "--format",
         choices=["csv", "json", "npz", "all", "both"],
         default="all",
@@ -184,12 +203,19 @@ def main() -> None:
         parser.error("respondents, indices, and repeats must be positive")
     if args.flagged and args.workflow != "composite":
         parser.error("--flagged requires --workflow composite")
+    if args.probability and args.workflow != "composite":
+        parser.error("--probability requires --workflow composite")
 
     screen_result = (
         _make_screen_result(args.respondents, args.indices) if args.workflow == "screen" else None
     )
     composite_result = (
-        _make_composite_result(args.respondents, args.indices, flagged=args.flagged)
+        _make_composite_result(
+            args.respondents,
+            args.indices,
+            flagged=args.flagged,
+            probability=args.probability,
+        )
         if args.workflow == "composite"
         else None
     )
@@ -202,7 +228,7 @@ def main() -> None:
 
     print(
         f"workflow={args.workflow} respondents={args.respondents} "
-        f"indices={args.indices} flagged={args.flagged}"
+        f"indices={args.indices} flagged={args.flagged} probability={args.probability}"
     )
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)

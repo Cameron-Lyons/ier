@@ -79,6 +79,8 @@ class TestCliJson(unittest.TestCase):
         self.assertEqual(composite_payload["errors"], {})
         self.assertNotIn("flags", composite_payload)
         self.assertNotIn("threshold", composite_payload)
+        self.assertNotIn("probabilities", composite_payload)
+        self.assertNotIn("probability_scale", composite_payload)
         self.assertNotIn("component_scores", composite_payload)
         self.assertNotIn("valid_index_counts", composite_payload)
 
@@ -150,6 +152,7 @@ class TestCliJson(unittest.TestCase):
                 flags=np.array([False, False, False, False, True]),
                 flag_threshold=3.0,
                 flag_percentile=75.0,
+                probabilities=np.linspace(0.1, 0.9, 5),
             )
 
         self.assertEqual(json.loads(output.getvalue())["n_respondents"], 5)
@@ -157,6 +160,8 @@ class TestCliJson(unittest.TestCase):
         self.assertEqual(component_payload["component_scores"]["second"], [0.0, 2.0, 4.0, 6.0, 8.0])
         self.assertEqual(component_payload["valid_index_counts"], [2, 2, 2, 2, 2])
         self.assertEqual(component_payload["flags"], [False, False, False, False, True])
+        self.assertEqual(component_payload["probability_scale"], "uncalibrated_logistic")
+        np.testing.assert_allclose(component_payload["probabilities"], np.linspace(0.1, 0.9, 5))
         self.assertTrue(chunk_lengths)
         self.assertLessEqual(max(chunk_lengths), 2)
         self.assertIn(1, chunk_lengths)
