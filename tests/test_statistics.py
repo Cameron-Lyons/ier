@@ -2,10 +2,14 @@
 
 import math
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
+import ier._statistics as local_statistics
 from ier._statistics import (
+    _regularized_gamma_pair,
+    _regularized_gamma_pairs,
     chi_square_quantile,
     chi_square_quantiles,
     logistic_transform,
@@ -152,6 +156,98 @@ class TestChiSquareQuantile(unittest.TestCase):
         probabilities = np.linspace(0.001, 0.999, 100)
         quantiles = chi_square_quantiles(probabilities, 7)
         self.assertTrue(np.all(np.diff(quantiles) > 0.0))
+
+    def test_batched_solver_matches_scalar_across_tails_and_dimensions(self) -> None:
+        rng = np.random.default_rng(20260803)
+        tails = np.geomspace(1e-14, 0.49, 24)
+        probabilities = np.unique(
+            np.concatenate((tails, rng.uniform(1e-12, 1.0 - 1e-12, 40), 1.0 - tails))
+        ).reshape(11, 8)
+
+        for degrees_of_freedom in [1, 2, 3, 7, 80, 1000, 10_000]:
+            with self.subTest(degrees_of_freedom=degrees_of_freedom):
+                expected = np.array(
+                    [
+                        chi_square_quantile(float(probability), degrees_of_freedom)
+                        for probability in probabilities.flat
+                    ]
+                ).reshape(probabilities.shape)
+                with (
+                    patch.object(local_statistics, "_QUANTILE_BATCH_ELEMENTS", 17),
+                    patch.object(
+                        local_statistics,
+                        "_chi_square_quantile_batch",
+                        wraps=local_statistics._chi_square_quantile_batch,
+                    ) as batches,
+                ):
+                    actual = chi_square_quantiles(probabilities, degrees_of_freedom)
+
+                self.assertGreater(batches.call_count, 1)
+                self.assertTrue(all(len(call.args[0]) <= 17 for call in batches.call_args_list))
+                np.testing.assert_allclose(actual, expected, rtol=2e-12, atol=0.0)
+
+    def test_vector_gamma_tails_match_scalar_definition(self) -> None:
+        values = np.geomspace(1e-12, 10_000.0, 200)
+        for shape in [0.5, 1.0, 3.5, 40.0, 500.0]:
+            with self.subTest(shape=shape):
+                expected = np.array(
+                    [_regularized_gamma_pair(shape, float(value)) for value in values]
+                )
+                lower, upper = _regularized_gamma_pairs(shape, values)
+                np.testing.assert_allclose(lower, expected[:, 0], rtol=5e-13, atol=5e-15)
+                np.testing.assert_allclose(upper, expected[:, 1], rtol=5e-13, atol=5e-15)
+
+    def test_vector_boundaries_empty_input_and_validation(self) -> None:
+        actual = chi_square_quantiles(np.array([[0.0, 0.5, 1.0]]), 3)
+        self.assertEqual(actual[0, 0], 0.0)
+        self.assertTrue(np.isfinite(actual[0, 1]))
+        self.assertEqual(actual[0, 2], math.inf)
+        self.assertEqual(chi_square_quantiles(np.array(0.5), 3).shape, ())
+        self.assertEqual(chi_square_quantiles(np.empty((0, 2)), 3).shape, (0, 2))
+
+        with self.assertRaises(ValueError):
+            chi_square_quantiles(np.array([0.5]), 0)
+        for invalid in (-0.1, 1.1, math.nan, math.inf):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                chi_square_quantiles(np.array([0.5, invalid]), 3)
+
+    def test_nonconvergent_batch_points_use_scalar_fallback(self) -> None:
+        probabilities = np.array([0.01, 0.5, 0.99])
+        expected = np.array([chi_square_quantile(float(value), 7) for value in probabilities])
+
+        with (
+            patch.object(local_statistics, "_BATCH_QUANTILE_MAX_ITERATIONS", 0),
+            patch.object(
+                local_statistics,
+                "chi_square_quantile",
+                wraps=chi_square_quantile,
+            ) as scalar,
+        ):
+            actual = chi_square_quantiles(probabilities, 7)
+
+        self.assertEqual(scalar.call_count, len(probabilities))
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_batch_arithmetic_failure_uses_scalar_fallback(self) -> None:
+        probabilities = np.array([0.01, 0.5, 0.99])
+        expected = np.array([chi_square_quantile(float(value), 7) for value in probabilities])
+
+        with (
+            patch.object(
+                local_statistics,
+                "_chi_square_quantile_batch",
+                side_effect=ArithmeticError("batch failure"),
+            ),
+            patch.object(
+                local_statistics,
+                "chi_square_quantile",
+                wraps=chi_square_quantile,
+            ) as scalar,
+        ):
+            actual = chi_square_quantiles(probabilities, 7)
+
+        self.assertEqual(scalar.call_count, len(probabilities))
+        np.testing.assert_array_equal(actual, expected)
 
     def test_validation(self) -> None:
         with self.assertRaises(ValueError):
