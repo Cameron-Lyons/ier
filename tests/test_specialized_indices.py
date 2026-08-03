@@ -184,6 +184,75 @@ class TestIndividualReliability(unittest.TestCase):
             msg=f"Expected boolean dtype, got {flags.dtype}",
         )
 
+    def test_seeded_complete_and_missing_scores_are_stable(self) -> None:
+        """Streaming aggregation preserves the established seeded sequence."""
+        complete = np.array(
+            [
+                [1, 2, 1, 2, 1, 2],
+                [1, 5, 2, 4, 1, 5],
+                [3, 3, 3, 3, 3, 3],
+                [5, 4, 3, 2, 1, 2],
+            ],
+            dtype=float,
+        )
+        missing = complete.copy()
+        missing[0, 1] = np.nan
+        missing[1, 4] = np.nan
+        missing[3, 0] = np.nan
+
+        np.testing.assert_allclose(
+            individual_reliability(complete, n_splits=25, random_seed=17),
+            [
+                0.0833333333333335,
+                0.22658493155154946,
+                np.nan,
+                -0.11400136903312826,
+            ],
+            rtol=0,
+            atol=1e-15,
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            individual_reliability(missing, n_splits=25, random_seed=17),
+            [
+                0.16666666666666652,
+                0.1818181818181818,
+                np.nan,
+                0.16666666666666655,
+            ],
+            rtol=0,
+            atol=1e-15,
+            equal_nan=True,
+        )
+
+    def test_seeded_scoring_does_not_modify_global_random_state(self) -> None:
+        """A local seed must not change unrelated NumPy random draws."""
+        data = [[1, 2, 1, 2, 1, 2], [1, 5, 2, 4, 3, 3]]
+        original_state = np.random.get_state()
+        try:
+            np.random.seed(1234)
+            expected_next = np.random.random()
+
+            np.random.seed(1234)
+            individual_reliability(data, n_splits=10, random_seed=99)
+
+            self.assertEqual(np.random.random(), expected_next)
+        finally:
+            np.random.set_state(original_state)
+
+    def test_n_splits_must_be_a_positive_integer(self) -> None:
+        """Reject invalid split counts before allocating workspaces."""
+        data = [[1, 2, 1, 2], [2, 1, 2, 1]]
+        for n_splits in [True, 0, -1, 1.5]:
+            with (
+                self.subTest(n_splits=n_splits),
+                self.assertRaisesRegex(
+                    ValueError,
+                    "n_splits must be a positive integer",
+                ),
+            ):
+                individual_reliability(data, n_splits=n_splits)  # type: ignore[arg-type]
+
 
 class TestU3Poly(unittest.TestCase):
     """Tests for U3 polytomous and response pattern functions."""

@@ -5,8 +5,6 @@ This method estimates the reliability/consistency of each individual's
 responses using split-half or bootstrap approaches.
 """
 
-import warnings
-
 import numpy as np
 
 from ier._validation import MatrixLike, validate_matrix_input
@@ -27,7 +25,7 @@ def individual_reliability(
     Parameters:
     - x: A matrix of data where rows are individuals and columns are items.
     - n_splits: Number of random split-half iterations (default 100).
-    - random_seed: Optional seed for reproducibility.
+    - random_seed: Optional seed for an isolated reproducible random stream.
 
     Returns:
     - A numpy array of reliability estimates for each individual.
@@ -46,51 +44,88 @@ def individual_reliability(
     n_persons = x_array.shape[0]
     n_items = x_array.shape[1]
 
-    if random_seed is not None:
-        np.random.seed(random_seed)
+    if isinstance(n_splits, bool) or not isinstance(n_splits, int) or n_splits < 1:
+        raise ValueError("n_splits must be a positive integer")
 
-    correlations = np.zeros((n_persons, n_splits))
+    random_state = np.random.RandomState(random_seed) if random_seed is not None else None
+    correlation_sum = np.zeros(n_persons)
+    valid_split_counts = np.zeros(n_persons, dtype=np.intp)
     half = n_items // 2
+    has_missing = bool(np.isnan(x_array).any())
 
-    for split_idx in range(n_splits):
-        indices = np.random.permutation(n_items)
+    for _ in range(n_splits):
+        indices = (
+            np.random.permutation(n_items)
+            if random_state is None
+            else random_state.permutation(n_items)
+        )
         first_half = indices[:half]
         second_half = indices[half : 2 * half]
 
         half1 = x_array[:, first_half]
         half2 = x_array[:, second_half]
+        split_corr, usable = _paired_split_correlations(half1, half2, has_missing)
+        correlation_sum += split_corr
+        valid_split_counts += usable
 
-        valid = ~np.isnan(half1) & ~np.isnan(half2)
-        valid_counts = valid.sum(axis=1)
+    reliability = np.divide(
+        correlation_sum,
+        valid_split_counts,
+        out=np.full(n_persons, np.nan),
+        where=valid_split_counts > 0,
+    )
 
-        half1_masked = np.where(valid, half1, np.nan)
-        half2_masked = np.where(valid, half2, np.nan)
-
-        with np.errstate(invalid="ignore"):
-            mean1 = np.nanmean(half1_masked, axis=1, keepdims=True)
-            mean2 = np.nanmean(half2_masked, axis=1, keepdims=True)
-
-            centered1 = np.where(valid, half1 - mean1, 0.0)
-            centered2 = np.where(valid, half2 - mean2, 0.0)
-
-            cov = (centered1 * centered2).sum(axis=1)
-            std1 = np.sqrt((centered1**2).sum(axis=1))
-            std2 = np.sqrt((centered2**2).sum(axis=1))
-
-            split_corr = cov / (std1 * std2)
-
-        split_corr = np.where(valid_counts < 2, np.nan, split_corr)
-        split_corr = np.where((std1 == 0) | (std2 == 0), np.nan, split_corr)
-        correlations[:, split_idx] = split_corr
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        reliability = np.nanmean(correlations, axis=1)
-
-        with np.errstate(invalid="ignore"):
-            result: np.ndarray = (2 * reliability) / (1 + reliability)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        result: np.ndarray = (2 * reliability) / (1 + reliability)
 
     return result
+
+
+def _paired_split_correlations(
+    half1: np.ndarray,
+    half2: np.ndarray,
+    has_missing: bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return valid row correlations for one paired random split."""
+    enough_values: np.ndarray | None = None
+    if has_missing:
+        valid = ~np.isnan(half1) & ~np.isnan(half2)
+        valid_counts = valid.sum(axis=1)
+        nonempty = valid_counts > 0
+        mean1 = np.divide(
+            np.sum(half1, axis=1, where=valid),
+            valid_counts,
+            out=np.zeros(len(half1)),
+            where=nonempty,
+        )[:, None]
+        mean2 = np.divide(
+            np.sum(half2, axis=1, where=valid),
+            valid_counts,
+            out=np.zeros(len(half2)),
+            where=nonempty,
+        )[:, None]
+        centered1 = np.where(valid, half1 - mean1, 0.0)
+        centered2 = np.where(valid, half2 - mean2, 0.0)
+        enough_values = valid_counts >= 2
+    else:
+        centered1 = half1 - np.mean(half1, axis=1, keepdims=True)
+        centered2 = half2 - np.mean(half2, axis=1, keepdims=True)
+
+    covariance = np.einsum("ij,ij->i", centered1, centered2)
+    sum_squares1 = np.einsum("ij,ij->i", centered1, centered1)
+    sum_squares2 = np.einsum("ij,ij->i", centered2, centered2)
+    denominator = np.sqrt(sum_squares1 * sum_squares2)
+    usable = denominator > 0
+    if enough_values is not None:
+        usable &= enough_values
+
+    correlations = np.divide(
+        covariance,
+        denominator,
+        out=np.zeros(len(half1)),
+        where=usable,
+    )
+    return correlations, usable
 
 
 def individual_reliability_flag(
@@ -106,7 +141,7 @@ def individual_reliability_flag(
     - x: A matrix of data where rows are individuals and columns are items.
     - threshold: Reliability threshold below which to flag (default 0.3).
     - n_splits: Number of split-half iterations.
-    - random_seed: Optional seed for reproducibility.
+    - random_seed: Optional seed for an isolated reproducible random stream.
 
     Returns:
     - Boolean array where True indicates potentially careless responding.
