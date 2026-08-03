@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.27] - 2026-08-03
+
+### Added
+
+- `load_response_time_archive()` restores CLI response-time NPZ scores, flags,
+  cutoff metadata, and optional respondent identifiers for later sensitivity
+  analysis with `response_time_score_flags()`.
+- Public `ResponseTimeArchive` and `ResponseTimeMetric` types document the
+  validated result and supported persisted metrics.
+
+### Changed
+
+- Response-time loading always disables pickling and rejects unsupported or
+  incomplete schemas, unsafe arrays, invalid metric/direction pairs, non-finite
+  cutoffs, misaligned vectors, invalid identifiers, and flags inconsistent with
+  either the fixed or percentile cutoff contract.
+- On a 500,000-respondent archive, validated response-time loading takes 1.6 ms
+  versus 0.9 ms for direct unvalidated member access, with 5.4 MiB peak traced
+  allocation and no added dependency.
+
 ## [2.19.26] - 2026-08-03
 
 ### Added

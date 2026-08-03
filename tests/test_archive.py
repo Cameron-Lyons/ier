@@ -8,7 +8,9 @@ import pytest
 from ier import (
     composite_scores,
     composite_summary,
+    load_response_time_archive,
     load_score_archive,
+    response_time_score_flags,
     save_score_archive,
     screen,
     screen_scores,
@@ -106,6 +108,137 @@ def test_response_time_archive_is_not_a_registered_score_archive(tmp_path: Path)
 
     with pytest.raises(ValueError, match="result_type must be 'screen' or 'composite'"):
         load_score_archive(destination)
+
+
+def test_response_time_archive_round_trip_supports_reflagging(tmp_path: Path) -> None:
+    destination = tmp_path / "timing.npz"
+    scores = np.asarray([0.5, 1.0, 1.5, 2.0, np.nan])
+    threshold = 1.0
+    flags = scores < threshold
+    respondent_ids = ["case-1", "case-2", "case-3", "case-4", "case-5"]
+    _write_response_time_npz(
+        destination,
+        scores,
+        flags,
+        "median",
+        "low",
+        threshold,
+        respondent_ids,
+    )
+
+    loaded = load_response_time_archive(destination)
+    stricter = response_time_score_flags(
+        loaded["scores"],
+        threshold=0.75,
+        direction=loaded["flag_direction"],
+    )
+
+    assert loaded["schema_version"] == 1
+    assert loaded["result_type"] == "response_time"
+    assert loaded["n_respondents"] == 5
+    assert loaded["metric"] == "median"
+    assert loaded["flag_direction"] == "low"
+    assert loaded["threshold"] == threshold
+    assert loaded["respondent_ids"] == respondent_ids
+    np.testing.assert_array_equal(loaded["scores"], scores)
+    np.testing.assert_array_equal(loaded["flags"], flags)
+    np.testing.assert_array_equal(stricter, np.asarray([True, False, False, False, False]))
+
+
+def test_response_time_mixture_archive_preserves_high_tail(tmp_path: Path) -> None:
+    destination = tmp_path / "mixture.npz"
+    scores = np.asarray([0.01, 0.4, 0.8, 0.99])
+    flags = scores >= 0.8
+    _write_response_time_npz(
+        destination,
+        scores,
+        flags,
+        "mixture",
+        "high",
+        0.8,
+    )
+
+    loaded = load_response_time_archive(destination)
+
+    assert loaded["metric"] == "mixture"
+    assert loaded["flag_direction"] == "high"
+    assert loaded["respondent_ids"] is None
+    np.testing.assert_array_equal(loaded["flags"], flags)
+
+
+def _response_time_payload() -> dict[str, np.ndarray]:
+    return {
+        "schema_version": np.asarray(1, dtype=np.int64),
+        "result_type": np.asarray("response_time", dtype=np.str_),
+        "n_respondents": np.asarray(2, dtype=np.int64),
+        "metric": np.asarray("median", dtype=np.str_),
+        "flag_direction": np.asarray("low", dtype=np.str_),
+        "threshold": np.asarray(1.5, dtype=np.float64),
+        "scores": np.asarray([1.0, 2.0], dtype=np.float64),
+        "flags": np.asarray([True, False], dtype=np.bool_),
+    }
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"schema_version": np.asarray(2)}, "unsupported.*schema version"),
+        ({"result_type": np.asarray("screen")}, "result_type"),
+        ({"n_respondents": np.asarray(0)}, "must be positive"),
+        ({"metric": np.asarray("unknown")}, "unsupported metric"),
+        ({"flag_direction": np.asarray("sideways")}, "flag_direction"),
+        ({"flag_direction": np.asarray("high")}, "requires 'low'"),
+        (
+            {
+                "metric": np.asarray("mixture"),
+                "flag_direction": np.asarray("low"),
+            },
+            "requires 'high'",
+        ),
+        ({"threshold": np.asarray(np.inf)}, "threshold must be finite"),
+        ({"threshold": np.asarray([1.5])}, "numeric scalar"),
+        ({"scores": np.asarray([1.0])}, "scores must match n_respondents"),
+        ({"scores": np.asarray([1.0, np.inf])}, "finite values or NaN"),
+        ({"flags": np.asarray([1, 0])}, "boolean vector"),
+        ({"flags": np.asarray([True])}, "flags must match n_respondents"),
+        ({"flags": np.asarray([False, True])}, "flags are inconsistent"),
+        ({"unexpected": np.asarray(1)}, "unexpected member"),
+    ],
+)
+def test_malformed_response_time_archive_is_rejected(
+    tmp_path: Path,
+    updates: dict[str, np.ndarray],
+    message: str,
+) -> None:
+    payload = _response_time_payload()
+    payload.update(updates)
+    destination = tmp_path / "malformed-timing.npz"
+    np.savez(destination, **payload)
+
+    with pytest.raises(ValueError, match=message):
+        load_response_time_archive(destination)
+
+
+def test_response_time_archive_requires_complete_pickle_free_npz(tmp_path: Path) -> None:
+    missing_payload = _response_time_payload()
+    missing_payload.pop("scores")
+    missing = tmp_path / "missing-timing.npz"
+    np.savez(missing, **missing_payload)
+
+    object_payload = _response_time_payload()
+    object_payload["scores"] = np.asarray([object(), object()], dtype=object)
+    unsafe = tmp_path / "object-timing.npz"
+    np.savez(unsafe, **object_payload)
+
+    plain = tmp_path / "timing.npy"
+    np.save(plain, np.asarray([1.0, 2.0]))
+
+    with pytest.raises(ValueError, match="missing required member: scores"):
+        load_response_time_archive(missing)
+    with pytest.raises(ValueError, match="not pickle-free"):
+        load_response_time_archive(unsafe)
+    with pytest.raises(ValueError, match="must be an NPZ archive"):
+        load_response_time_archive(plain)
 
 
 def _base_payload() -> dict[str, np.ndarray]:

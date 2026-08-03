@@ -1,4 +1,4 @@
-"""Benchmark validated reusable-score NPZ loading.
+"""Benchmark validated score and response-time NPZ persistence.
 
 Usage:
     uv run python benchmarks/bench_archive.py
@@ -18,7 +18,12 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import index_catalog, load_score_archive, save_score_archive
+from ier import (
+    index_catalog,
+    load_response_time_archive,
+    load_score_archive,
+    save_score_archive,
+)
 from ier.archive import _write_npz_archive
 
 if TYPE_CHECKING:
@@ -48,6 +53,16 @@ def _raw_load(path: Path) -> dict[str, np.ndarray]:
     with np.load(path, allow_pickle=False) as archive:
         names = archive["index_names"].tolist()
         return {name: archive[f"score__{name}"] for name in names}
+
+
+def _raw_response_time_load(path: Path) -> dict[str, np.ndarray]:
+    with np.load(path, allow_pickle=False) as archive:
+        return {"scores": archive["scores"], "flags": archive["flags"]}
+
+
+def _validated_response_time_load(path: Path) -> dict[str, np.ndarray]:
+    loaded = load_response_time_archive(path)
+    return {"scores": loaded["scores"], "flags": loaded["flags"]}
 
 
 def _raw_save(path: Path, scores: dict[str, np.ndarray]) -> None:
@@ -108,16 +123,41 @@ def main() -> None:
     names = available_names[: args.indices]
     rng = np.random.default_rng(args.seed)
     scores = {name: rng.normal(size=args.respondents) for name in names}
+    timing_scores = rng.lognormal(size=args.respondents)
+    timing_threshold = float(np.percentile(timing_scores, 5))
+    timing_flags = timing_scores < timing_threshold
 
     with tempfile.TemporaryDirectory() as directory:
         raw_path = Path(directory) / "raw-scores.npz"
         validated_path = Path(directory) / "validated-scores.npz"
+        timing_path = Path(directory) / "timing.npz"
         _raw_save(raw_path, scores)
         save_score_archive(validated_path, scores)
+        _write_npz_archive(
+            timing_path,
+            {
+                "schema_version": np.asarray(1, dtype=np.int64),
+                "result_type": np.asarray("response_time", dtype=np.str_),
+                "n_respondents": np.asarray(args.respondents, dtype=np.int64),
+                "metric": np.asarray("median", dtype=np.str_),
+                "flag_direction": np.asarray("low", dtype=np.str_),
+                "threshold": np.asarray(timing_threshold, dtype=np.float64),
+                "scores": timing_scores,
+                "flags": timing_flags,
+            },
+        )
 
         raw_seconds, raw_peak, raw = _measure(lambda: _raw_load(validated_path), args.repeats)
         validated_seconds, validated_peak, validated = _measure(
             lambda: load_score_archive(validated_path)["scores"],
+            args.repeats,
+        )
+        raw_timing_seconds, raw_timing_peak, raw_timing = _measure(
+            lambda: _raw_response_time_load(timing_path),
+            args.repeats,
+        )
+        validated_timing_seconds, validated_timing_peak, validated_timing = _measure(
+            lambda: _validated_response_time_load(timing_path),
             args.repeats,
         )
         raw_save_seconds, raw_save_peak, validated_save_seconds, validated_save_peak = (
@@ -130,6 +170,8 @@ def main() -> None:
 
     for name in names:
         np.testing.assert_array_equal(validated[name], raw[name])
+    for name in ("scores", "flags"):
+        np.testing.assert_array_equal(validated_timing[name], raw_timing[name])
 
     print(
         f"respondents={args.respondents} indices={args.indices} "
@@ -139,6 +181,14 @@ def main() -> None:
     print(
         f"validated load: median={validated_seconds:.4f}s peak={validated_peak:.1f} MiB "
         f"overhead={validated_seconds / raw_seconds:.2f}x"
+    )
+    print(
+        f"raw response-time load: median={raw_timing_seconds:.4f}s peak={raw_timing_peak:.1f} MiB"
+    )
+    print(
+        f"validated response-time load: median={validated_timing_seconds:.4f}s "
+        f"peak={validated_timing_peak:.1f} MiB "
+        f"overhead={validated_timing_seconds / raw_timing_seconds:.2f}x"
     )
     print(f"raw save: median={raw_save_seconds:.4f}s peak={raw_save_peak:.1f} MiB")
     print(

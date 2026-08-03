@@ -20,6 +20,7 @@ ScoreArchiveResultType: TypeAlias = Literal["screen", "composite"]
 CompositeMethod: TypeAlias = Literal["mean", "sum", "max", "best_subset"]
 InfrequencyMissingPolicy: TypeAlias = Literal["pass", "fail", "omit", "propagate"]
 ResponseTimeFlagDirection: TypeAlias = Literal["high", "low"]
+ResponseTimeMetric: TypeAlias = Literal["mean", "median", "sd", "min", "consistency", "mixture"]
 
 
 class IndexMetadata(TypedDict):
@@ -79,6 +80,20 @@ class ScoreArchive(TypedDict):
     scores: IndexScoreMap
     respondent_ids: list[str] | None
     errors: IndexErrorMap
+
+
+class ResponseTimeArchive(TypedDict):
+    """Validated response-time scores loaded from a versioned NPZ archive."""
+
+    schema_version: int
+    result_type: Literal["response_time"]
+    n_respondents: int
+    metric: ResponseTimeMetric
+    flag_direction: ResponseTimeFlagDirection
+    threshold: float
+    scores: FloatArray
+    flags: BoolArray
+    respondent_ids: list[str] | None
 
 
 class CompositeSummary(TypedDict):
