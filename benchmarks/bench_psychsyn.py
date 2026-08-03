@@ -1,8 +1,8 @@
 """Benchmark psychometric synonym scoring and high-item pair discovery.
 
-Missing responses are confined to one item so correlation discovery still
-selects a dense set of pairs among the remaining items. Independent data with a
-high cutoff isolates the bounded no-pair discovery path.
+Missing responses are distributed across the matrix so the benchmark exercises
+pairwise-complete item discovery and respondent scoring. Independent data with
+a high cutoff isolates the bounded no-pair discovery path.
 
 Usage:
     uv run python benchmarks/bench_psychsyn.py
@@ -52,10 +52,8 @@ def main() -> None:
     else:
         latent = rng.normal(size=(args.respondents, 1))
         data = latent + rng.normal(scale=0.1, size=(args.respondents, args.items))
-    missing_count = round(args.respondents * args.missing_rate)
-    if missing_count:
-        missing_rows = rng.choice(args.respondents, size=missing_count, replace=False)
-        data[missing_rows, 0] = np.nan
+    if args.missing_rate:
+        data[rng.random(data.shape) < args.missing_rate] = np.nan
 
     for _ in range(args.warmup):
         psychsyn(data, critval=args.critval)

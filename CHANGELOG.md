@@ -5,6 +5,38 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.47] - 2026-08-03
+
+### Added
+
+- Psychometric synonym and antonym discovery now uses pairwise-complete item
+  correlations when responses are missing, matching the reference method's
+  missing-data policy instead of discarding every item that contains an
+  omission. Respondent scores likewise use all available selected pairs,
+  diagnostics report their actual counts, and seeded retries preserve those
+  counts while requiring the established minimum of three usable pairs.
+  Complete matrices retain the existing normalized-column fast path and locked
+  results. On scattered 5% missing-response benchmarks, the bounded kernel
+  scored all 780 pairs for 8,000 respondents by 40 items in 0.0681 seconds with
+  8.8 MiB peak traced allocation, and all 3,160 pairs for 20,000 respondents by
+  80 items in 0.6682 seconds with the same peak. Large-offset stability is
+  preserved, workspaces remain bounded, and no dependency is added.
+
+## [2.19.46] - 2026-08-03
+
+### Performance
+
+- Guttman error scoring now compares the exact work implied by cumulative
+  category passes with the triangular item-pair count and selects the cheaper
+  bounded kernel. On a 20,000-respondent, 80-item benchmark with 10% missing
+  responses, 64-category scoring improved from 0.2328 to 0.0440 seconds, a
+  5.29x speedup, while peak traced allocation fell from 20.4 to 12.5 MiB. The
+  48-category workload improved from 0.1754 to 0.0438 seconds, a 4.01x speedup.
+  The common five-category path remains on its existing cumulative counter with
+  unchanged timing and allocation. Raw and normalized results remain exactly
+  equal, missing comparisons retain their established semantics, batching stays
+  bounded, and no dependency is added.
+
 ## [2.19.45] - 2026-08-03
 
 ### Performance

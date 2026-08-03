@@ -3,6 +3,7 @@
 Usage:
     uv run python benchmarks/bench_guttman.py
     uv run python benchmarks/bench_guttman.py --respondents 200000 --items 100
+    uv run python benchmarks/bench_guttman.py --respondents 20000 --categories 64
 """
 
 from __future__ import annotations

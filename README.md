@@ -14,7 +14,7 @@ For a comprehensive methods review, see
 - Validated, pickle-free score and response-time archive persistence
 - Auto-detecting archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
-- Bounded item-correlation discovery for high-dimensional psychometric synonym analyses
+- Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
 - Contracted complete and bounded masked missing-response LZ estimation
 - Allocation-bounded split-half reliability with stable raw-moment correlations
 - Exact low-allocation two-point correlations for common even-odd factor designs
@@ -22,6 +22,7 @@ For a comprehensive methods review, see
 - Batched missing-response longest-run and repeating-pattern scoring
 - Batched dependency-free chi-square quantiles for large Mahalanobis Q-Q plots
 - Grouped missing-aware medians for response-time summaries and mixtures
+- Adaptive bounded Guttman counters for narrow and wide response scales
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format
