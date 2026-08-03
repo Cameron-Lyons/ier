@@ -113,6 +113,11 @@ respondent-by-item applicability mask; its false cells do not contribute to
 either the missing count or denominator. A zero denominator yields `NaN`, which
 the shared flagging policy leaves unflagged.
 
+Attention-check scoring keeps its legacy missing-as-pass behavior by default but
+also supports missing-as-failure, available-case omission, and strict propagation.
+The policy is carried through `IndexOptions`; unavailable scores reuse the same
+flagging and composite-coverage rules as every other registry index.
+
 ## Composite scores
 
 `composite()` z-combines selected indices with direction multipliers so that

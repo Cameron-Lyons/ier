@@ -37,6 +37,7 @@
         - semantic_ant
         - semantic_ant_flag
         - infrequency
+        - infrequency_flag
         - response_time
         - response_time_consistency
         - response_time_flag

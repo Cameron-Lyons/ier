@@ -15,7 +15,11 @@ References:
 
 import numpy as np
 
+from ier._flagging import validate_threshold
 from ier._validation import MatrixLike, validate_matrix_input
+from ier.types import InfrequencyMissingPolicy
+
+_MISSING_POLICIES = {"pass", "fail", "omit", "propagate"}
 
 
 def infrequency(
@@ -23,6 +27,7 @@ def infrequency(
     item_indices: list[int],
     expected_responses: list[float],
     proportion: bool = False,
+    missing: InfrequencyMissingPolicy = "pass",
 ) -> np.ndarray:
     """
     Count failed attention-check items per respondent.
@@ -32,13 +37,18 @@ def infrequency(
     - item_indices: Column indices (0-based) of the attention-check items.
     - expected_responses: Expected correct response for each attention-check item.
     - proportion: If True, return proportion of failed items instead of count.
+    - missing: Missing-response policy. ``"pass"`` preserves the legacy behavior
+               of treating missing checks as correct; ``"fail"`` treats them as
+               failures; ``"omit"`` excludes them from proportional denominators;
+               and ``"propagate"`` returns ``NaN`` when any check is missing.
 
     Returns:
-    - A numpy array of failure counts (or proportions) per respondent.
+    - A numpy array of failure counts (or proportions) per respondent. Under
+      ``missing="omit"``, rows without observed checks return ``NaN``.
 
     Raises:
-    - ValueError: If item_indices and expected_responses have different lengths,
-                  if item_indices is empty, or if indices are out of bounds.
+    - ValueError: If the policy, item selection, expected responses, or proportion
+                  control is invalid.
 
     Example:
         >>> data = [[5, 3, 1], [5, 5, 5], [1, 3, 5]]
@@ -49,6 +59,10 @@ def infrequency(
     x_array = validate_matrix_input(x, check_type=False)
     n_cols = x_array.shape[1]
 
+    if not isinstance(proportion, bool):
+        raise ValueError("proportion must be a boolean")
+    if not isinstance(missing, str) or missing not in _MISSING_POLICIES:
+        raise ValueError(f"missing must be one of: {sorted(_MISSING_POLICIES)}")
     if len(item_indices) == 0:
         raise ValueError("item_indices cannot be empty")
 
@@ -59,19 +73,54 @@ def infrequency(
         )
 
     for idx in item_indices:
+        if isinstance(idx, bool) or not isinstance(idx, (int, np.integer)):
+            raise ValueError("item_indices must contain integer column indices")
         if idx < 0 or idx >= n_cols:
             raise ValueError(f"item index {idx} out of bounds for data with {n_cols} columns")
+    if len(set(item_indices)) != len(item_indices):
+        raise ValueError("item_indices cannot contain duplicates")
+
+    try:
+        expected = np.asarray(expected_responses, dtype=float)
+    except (TypeError, ValueError) as error:
+        raise ValueError("expected_responses must contain finite numeric values") from error
+    if expected.ndim != 1 or not np.isfinite(expected).all():
+        raise ValueError("expected_responses must contain finite numeric values")
 
     failures = np.zeros(x_array.shape[0], dtype=float)
+    available_counts = np.zeros(len(x_array), dtype=np.intp) if missing == "omit" else None
+    unavailable = np.zeros(len(x_array), dtype=bool) if missing == "propagate" else None
 
-    for idx, expected in zip(item_indices, expected_responses, strict=True):
+    for idx, expected_value in zip(item_indices, expected, strict=True):
         col = x_array[:, idx]
+        mismatch = col != expected_value
+        if missing == "fail":
+            failures += mismatch
+            continue
+
         nan_mask = np.isnan(col)
-        mismatch = col != expected
-        failures += np.where(nan_mask, 0.0, mismatch.astype(float))
+        mismatch[nan_mask] = False
+        failures += mismatch
+        if available_counts is not None:
+            available_counts += ~nan_mask
+        if unavailable is not None:
+            unavailable |= nan_mask
 
     if proportion:
-        failures = failures / len(item_indices)
+        if available_counts is None:
+            failures /= len(item_indices)
+        else:
+            failures = np.divide(
+                failures,
+                available_counts,
+                out=np.full(len(failures), np.nan),
+                where=available_counts > 0,
+            )
+    elif available_counts is not None:
+        failures[available_counts == 0] = np.nan
+
+    if unavailable is not None:
+        failures[unavailable] = np.nan
 
     return failures
 
@@ -80,7 +129,9 @@ def infrequency_flag(
     x: MatrixLike,
     item_indices: list[int],
     expected_responses: list[float],
-    threshold: int = 1,
+    threshold: float = 1.0,
+    proportion: bool = False,
+    missing: InfrequencyMissingPolicy = "pass",
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Count failed attention-check items and flag respondents exceeding a threshold.
@@ -89,10 +140,12 @@ def infrequency_flag(
     - x: A matrix of data where rows are individuals and columns are item responses.
     - item_indices: Column indices (0-based) of the attention-check items.
     - expected_responses: Expected correct response for each attention-check item.
-    - threshold: Number of failed items at or above which to flag (default 1).
+    - threshold: Failure count or proportion at or above which to flag (default 1).
+    - proportion: If True, flag failure proportions instead of counts.
+    - missing: Missing-response policy passed to ``infrequency()``.
 
     Returns:
-    - Tuple of (failure_counts, flags) where flags is True for flagged respondents.
+    - Tuple of (failure_scores, flags) where flags is True for flagged respondents.
 
     Example:
         >>> data = [[5, 3, 1], [5, 5, 5], [1, 3, 5]]
@@ -100,6 +153,23 @@ def infrequency_flag(
         >>> print(flags)
         [False False  True]
     """
-    scores = infrequency(x, item_indices, expected_responses, proportion=False)
-    flags = scores >= threshold
+    if not isinstance(proportion, bool):
+        raise ValueError("proportion must be a boolean")
+    resolved_threshold = validate_threshold(threshold)
+    assert resolved_threshold is not None
+    if resolved_threshold < 0:
+        raise ValueError("threshold must be nonnegative")
+    if proportion and resolved_threshold > 1:
+        raise ValueError("proportion threshold must be between 0 and 1")
+
+    scores = infrequency(
+        x,
+        item_indices,
+        expected_responses,
+        proportion=proportion,
+        missing=missing,
+    )
+    flags = np.zeros(len(scores), dtype=bool)
+    available = ~np.isnan(scores)
+    flags[available] = scores[available] >= resolved_threshold
     return scores, flags

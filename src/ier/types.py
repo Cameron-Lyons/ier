@@ -15,6 +15,7 @@ IndexErrorMap: TypeAlias = dict[str, str]
 IndexThresholdMap: TypeAlias = dict[str, float | None]
 
 CompositeMethod: TypeAlias = Literal["mean", "sum", "max", "best_subset"]
+InfrequencyMissingPolicy: TypeAlias = Literal["pass", "fail", "omit", "propagate"]
 
 
 class IndexMetadata(TypedDict):

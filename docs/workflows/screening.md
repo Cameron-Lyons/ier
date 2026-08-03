@@ -59,12 +59,30 @@ result = screen(
         semantic_item_pairs=[(0, 1), (2, 3)],
         infrequency_item_indices=[9],
         infrequency_expected_responses=[5],
+        infrequency_missing="fail",
     ),
 )
 ```
 
 Missing required config is recorded in `result["errors"]` instead of aborting
 the whole screening run. `composite()` uses the same soft-fail policy.
+
+### Attention-check missing responses
+
+`infrequency` exposes four explicit missing-response policies through
+`IndexOptions.infrequency_missing`, the standalone `missing=` argument, and CLI
+`--infrequency-missing`:
+
+| Policy | Behavior |
+|--------|----------|
+| `pass` | Treat missing checks as correct; legacy default |
+| `fail` | Treat missing checks as failures |
+| `omit` | Exclude missing checks from proportions; no observed checks yields `NaN` |
+| `propagate` | Return `NaN` when any configured check is missing |
+
+Set `infrequency_proportion=True` (or `--infrequency-proportion`) to score the
+failure share instead of the count. `infrequency_flag(..., proportion=True)`
+supports the same policy with an inclusive cutoff between zero and one.
 
 For production batches that require every requested index to succeed, enable
 strict mode. The first failed index raises a contextual `ValueError`:
@@ -184,6 +202,9 @@ ier screen data.csv --indices irv mad --strict
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
+ier screen data.csv --indices infrequency \
+  --infrequency-item-indices 3,7 \
+  --infrequency-expected-responses 5,1 --infrequency-missing fail
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier response-time timings.csv --metric median --threshold 1.0
 ier screen data.csv.gz --format json --output screening.json.gz
