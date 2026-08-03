@@ -139,6 +139,24 @@ become archive paths. The loader rejects missing, extra, object-typed, unaligned
 or internally inconsistent members and recomputes the full decision before
 returning. Omitted scores retain the documented fully-available meaning.
 
+Create the same schema directly from validated registered-score and timing
+results:
+
+```bash
+ier archive-consensus screening.npz timing.npz \
+  --indices irv longstring --threshold longstring=8 \
+  --index-percentile irv=99 --min-valid-signals 3 \
+  --format npz --output consensus.npz
+```
+
+`archive-consensus` reflags selected registered scores, retains the timing
+archive's stored score and decision, and aligns fully identified inputs to the
+score archive's ID order. Unidentified inputs must have equal counts and are
+assumed to share row order; mixed identity metadata and different ID sets are
+rejected. Text reports signal coverage and ranked flag counts. Strict JSON and
+streaming CSV include aligned per-respondent scores, flags, availability, and
+decisions. NPZ writes the table below through atomic replacement.
+
 | Member | Type |
 | --- | --- |
 | `schema_version` / `result_type` | Integer `1` / Unicode `flag_consensus` |

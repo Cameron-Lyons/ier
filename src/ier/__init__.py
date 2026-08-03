@@ -7,6 +7,7 @@ from ._registry import index_catalog as index_catalog
 from ._validation import MatrixLike as MatrixLike
 from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
+from .archive import flag_consensus_archives as flag_consensus_archives
 from .archive import load_archive as load_archive
 from .archive import load_flag_consensus_archive as load_flag_consensus_archive
 from .archive import load_psychsyn_model as load_psychsyn_model
@@ -128,6 +129,7 @@ __all__ = [
     "evenodd",
     "FloatArray",
     "flag_consensus",
+    "flag_consensus_archives",
     "FlagConsensusArchive",
     "FlagConsensusResult",
     "guttman",
@@ -202,9 +204,9 @@ __all__ = [
     "response_time_score_flags",
     "screen",
     "screen_scores",
-    "save_response_time_archive",
     "save_flag_consensus_archive",
     "save_psychsyn_model",
+    "save_response_time_archive",
     "save_response_time_mixture_model",
     "save_score_archive",
     "ScreenIndexSummary",

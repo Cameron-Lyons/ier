@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.73] - 2026-08-03
+
+### Added
+
+- `flag_consensus_archives()` and `ier archive-consensus` directly combine a
+  validated registered-score archive with a validated response-time result.
+  Registered scores are reflagged with configurable fixed or percentile cutoffs,
+  while the timing result contributes its stored score and decision. Fully
+  identified inputs are aligned to score-archive ID order; mixed identity state,
+  different counts or ID sets, unsafe selections, and naming conflicts are
+  rejected. The CLI writes compact text, strict JSON, streaming CSV, or atomic
+  reusable NPZ without either source matrix or a new dependency. On the maintained
+  500,000-respondent, 9-index-plus-timing benchmark, the complete validated
+  workflow reads 38.6 MiB of input archives, reflags, aligns availability, and
+  reduces consensus in 64.0 ms with 60.1 MiB traced peak.
+
 ## [2.19.72] - 2026-08-03
 
 ### Added

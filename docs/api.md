@@ -23,6 +23,7 @@
         - __version__
         - index_catalog
         - flag_consensus
+        - flag_consensus_archives
         - load_archive
         - load_flag_consensus_archive
         - load_psychsyn_model

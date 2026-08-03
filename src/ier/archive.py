@@ -17,7 +17,7 @@ from ier._registry import composite_index_names, validate_index_names
 from ier._validation import validate_score_array, validate_score_vectors
 from ier.psychsyn import PsychsynModel
 from ier.response_time import ResponseTimeMixtureModel
-from ier.screen import flag_consensus
+from ier.screen import flag_consensus, screen_scores
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -1302,6 +1302,148 @@ def merge_score_archives(
         "scores": merged_scores,
         "respondent_ids": None if canonical_ids is None else canonical_ids.copy(),
         "errors": validated_errors,
+    }
+
+
+def flag_consensus_archives(
+    score_path: str | Path,
+    response_time_path: str | Path,
+    *,
+    indices: Sequence[str] | None = None,
+    percentile: float = 95.0,
+    thresholds: Mapping[str, float] | None = None,
+    percentiles: Mapping[str, float] | None = None,
+    timing_name: str = "response_time",
+    min_flags: int = 2,
+    min_valid_signals: int | None = None,
+) -> FlagConsensusArchive:
+    """
+    Build one aligned consensus from score and response-time result archives.
+
+    Registered score vectors are reflagged through ``screen_scores()`` while the
+    validated response-time archive contributes its stored score and flag. When
+    both archives contain respondent identifiers, timing vectors are reordered
+    to the score archive's identifier order. When neither contains identifiers,
+    equal row counts are treated as matching order. Mixed identity metadata,
+    different identifier sets, and different respondent counts are rejected.
+
+    Parameters:
+    - score_path: Validated screen or detailed composite score archive.
+    - response_time_path: Validated response-time result archive.
+    - indices: Optional ordered subset of stored registered scores.
+    - percentile: Default screen tail percentile.
+    - thresholds: Optional fixed per-index screen cutoffs.
+    - percentiles: Optional per-index screen percentile overrides.
+    - timing_name: Nonblank consensus signal name for the timing result.
+    - min_flags: Minimum total flag count required for consensus.
+    - min_valid_signals: Optional minimum available-signal count for eligibility.
+
+    Returns:
+    - A reusable in-memory ``FlagConsensusArchive`` in score-archive respondent
+      order, ready for output or ``save_flag_consensus_archive()``.
+
+    Example:
+        >>> from ier import flag_consensus_archives, save_flag_consensus_archive
+        >>> combined = flag_consensus_archives(
+        ...     "screening.npz",
+        ...     "timing.npz",
+        ...     thresholds={"longstring": 8},
+        ...     min_valid_signals=3,
+        ... )
+        >>> save_flag_consensus_archive(
+        ...     "consensus.npz",
+        ...     combined["flags"],
+        ...     scores=combined["scores"],
+        ...     min_flags=combined["min_flags"],
+        ...     min_valid_signals=combined["min_valid_signals"],
+        ...     respondent_ids=combined["respondent_ids"],
+        ... )
+    """
+    score_archive = load_score_archive(score_path)
+    timing_archive = load_response_time_archive(response_time_path)
+    if score_archive["n_respondents"] != timing_archive["n_respondents"]:
+        raise ValueError(
+            "score and response-time archives must contain the same number of respondents"
+        )
+
+    if indices is None:
+        selected_scores = score_archive["scores"]
+    else:
+        if isinstance(indices, (str, bytes)):
+            raise TypeError("indices must be a sequence of stored index names")
+        selected_names = list(indices)
+        if not selected_names:
+            raise ValueError("indices must contain at least one stored index name")
+        if any(not isinstance(name, str) or not name.strip() for name in selected_names):
+            raise ValueError("indices must contain nonblank strings")
+        if len(selected_names) != len(set(selected_names)):
+            raise ValueError("indices must not contain duplicates")
+        for name in selected_names:
+            if name not in score_archive["scores"]:
+                raise ValueError(f"score archive does not contain selected index: {name}")
+        selected_scores = {name: score_archive["scores"][name] for name in selected_names}
+
+    if not isinstance(timing_name, str) or not timing_name.strip():
+        raise ValueError("timing_name must be a nonblank string")
+    if timing_name in selected_scores:
+        raise ValueError("timing_name must not duplicate a selected score index")
+
+    score_ids = score_archive["respondent_ids"]
+    timing_ids = timing_archive["respondent_ids"]
+    if (score_ids is None) != (timing_ids is None):
+        raise ValueError(
+            "score and response-time archives must both include respondent IDs or both omit them"
+        )
+
+    row_order: np.ndarray | None = None
+    if score_ids is not None:
+        assert timing_ids is not None
+        if set(score_ids) != set(timing_ids):
+            raise ValueError("score and response-time archive respondent ID sets must match")
+        if score_ids != timing_ids:
+            positions = {respondent_id: index for index, respondent_id in enumerate(timing_ids)}
+            row_order = np.fromiter(
+                (positions[respondent_id] for respondent_id in score_ids),
+                dtype=np.intp,
+                count=score_archive["n_respondents"],
+            )
+
+    timing_scores = (
+        timing_archive["scores"] if row_order is None else timing_archive["scores"][row_order]
+    )
+    timing_flags = (
+        timing_archive["flags"] if row_order is None else timing_archive["flags"][row_order]
+    )
+    screened = screen_scores(
+        selected_scores,
+        percentile=percentile,
+        min_flags=1,
+        thresholds=thresholds,
+        percentiles=percentiles,
+    )
+    scores = {**screened["scores"], timing_name: timing_scores}
+    flags = {**screened["flags"], timing_name: timing_flags}
+    consensus = flag_consensus(
+        flags,
+        scores=scores,
+        min_flags=min_flags,
+        min_valid_signals=min_valid_signals,
+    )
+    return {
+        "schema_version": _FLAG_CONSENSUS_ARCHIVE_SCHEMA_VERSION,
+        "result_type": "flag_consensus",
+        "n_respondents": consensus["n_respondents"],
+        "n_signals": consensus["n_signals"],
+        "signal_names": list(flags),
+        "scores": scores,
+        "flags": flags,
+        "flag_counts": consensus["flag_counts"],
+        "valid_signal_counts": consensus["valid_signal_counts"],
+        "consensus_eligible": consensus["consensus_eligible"],
+        "consensus_flags": consensus["consensus_flags"],
+        "min_flags": consensus["min_flags"],
+        "min_valid_signals": consensus["min_valid_signals"],
+        "respondent_ids": None if score_ids is None else score_ids.copy(),
     }
 
 

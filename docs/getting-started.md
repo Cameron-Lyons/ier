@@ -397,6 +397,36 @@ The loader disables pickling and recomputes counts, coverage, eligibility, and
 final decisions before accepting the file. Arbitrary signal names are stored by
 numeric position rather than as archive paths.
 
+If registered scores and response-time decisions already live in separate
+archives, combine them without either raw matrix:
+
+```python
+from ier import flag_consensus_archives
+
+combined = flag_consensus_archives(
+    "screening.npz",
+    "timing.npz",
+    indices=["irv", "longstring"],
+    thresholds={"longstring": 8},
+    percentiles={"irv": 99},
+    min_valid_signals=3,
+)
+```
+
+```bash
+ier archive-consensus screening.npz timing.npz \
+  --indices irv longstring --threshold longstring=8 \
+  --index-percentile irv=99 --min-valid-signals 3 \
+  --format npz --output consensus.npz
+```
+
+The score vectors are reflagged through the registered direction rules; the
+timing archive contributes its stored score and decision. When both inputs have
+IDs, timing rows are reordered to score-archive order. When neither has IDs,
+equal counts are treated as shared row order. Mixed or mismatched identity
+metadata is rejected. Text, JSON, CSV, and reusable NPZ outputs share the same
+aligned result.
+
 ```python
 from ier import load_archive
 

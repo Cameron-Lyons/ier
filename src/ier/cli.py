@@ -21,6 +21,7 @@ from ier import (
     composite_summary,
     fit_psychsyn_model,
     fit_response_time_mixture,
+    flag_consensus_archives,
     index_catalog,
     load_archive,
     load_psychsyn_model,
@@ -46,6 +47,7 @@ from ier._cli_results import (
     valid_score_counts,
     write_archive_info_result,
     write_composite_result,
+    write_flag_consensus_result,
     write_index_catalog_result,
     write_response_time_result,
     write_screen_result,
@@ -293,12 +295,12 @@ def _add_metadata_output_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_screen_decision_options(
+def _add_screen_cutoff_options(
     parser: argparse.ArgumentParser,
     *,
     indices_help: str,
 ) -> None:
-    """Add reusable screening cutoff and consensus controls."""
+    """Add reusable registered-score selection and cutoff controls."""
     parser.add_argument(
         "--indices",
         nargs="+",
@@ -320,6 +322,15 @@ def _add_screen_decision_options(
         metavar="INDEX=VALUE",
         help="Per-index tail percentile; repeat for multiple indices",
     )
+
+
+def _add_screen_decision_options(
+    parser: argparse.ArgumentParser,
+    *,
+    indices_help: str,
+) -> None:
+    """Add reusable screening cutoff and consensus controls."""
+    _add_screen_cutoff_options(parser, indices_help=indices_help)
     parser.add_argument(
         "--min-flags",
         type=int,
@@ -602,6 +613,43 @@ def _build_parser() -> argparse.ArgumentParser:
         default="screen",
         help="Validate merged indices for screen or composite reuse (default: screen)",
     )
+
+    archive_consensus_parser = sub.add_parser(
+        "archive-consensus",
+        help="Combine stored registered scores and timing flags into one consensus.",
+    )
+    archive_consensus_parser.add_argument(
+        "score_archive",
+        type=Path,
+        help="Validated screen or detailed composite score archive",
+    )
+    archive_consensus_parser.add_argument(
+        "response_time_archive",
+        type=Path,
+        help="Validated response-time result archive",
+    )
+    _add_screen_cutoff_options(
+        archive_consensus_parser,
+        indices_help="Stored registered score names to reuse, in order (default: all)",
+    )
+    archive_consensus_parser.add_argument(
+        "--timing-name",
+        default="response_time",
+        help="Consensus signal name for the timing result (default: response_time)",
+    )
+    archive_consensus_parser.add_argument(
+        "--min-flags",
+        type=int,
+        default=2,
+        help="Minimum total signal flags for consensus (default: 2)",
+    )
+    archive_consensus_parser.add_argument(
+        "--min-valid-signals",
+        type=int,
+        default=None,
+        help="Minimum available signals required for consensus eligibility",
+    )
+    _add_output_options(archive_consensus_parser)
 
     screen_parser = sub.add_parser("screen", help="Run multi-index screening on a matrix.")
     screen_parser.add_argument(
@@ -1004,6 +1052,20 @@ def _run_command(args: argparse.Namespace) -> int:
             threshold_source,
             percentile,
         )
+
+    if args.command == "archive-consensus":
+        consensus_result = flag_consensus_archives(
+            args.score_archive,
+            args.response_time_archive,
+            indices=args.indices,
+            percentile=args.percentile,
+            thresholds=_parse_thresholds(args.threshold),
+            percentiles=_parse_percentiles(args.index_percentile),
+            timing_name=args.timing_name,
+            min_flags=args.min_flags,
+            min_valid_signals=args.min_valid_signals,
+        )
+        return write_flag_consensus_result(args, consensus_result)
 
     if args.command == "screen-reflag":
         score_archive = load_score_archive(args.archive)

@@ -14,6 +14,7 @@ For a comprehensive methods review, see
 - Validated, pickle-free score, timing-result, flag-consensus, and model persistence
 - Auto-detecting result/model archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
+- Direct score-archive plus timing-archive consensus with respondent-ID alignment
 - Safe score-archive merging with respondent-ID alignment and atomic in-place output
 - Bounded complete and pairwise-complete discovery and scoring for psychometric synonyms
 - Reusable immutable psychometric pair calibration for later cohorts
@@ -411,6 +412,36 @@ counts, eligibility, final flags, and respondent identifiers. Reloading
 recomputes every aggregate from the stored signals and rejects any inconsistency;
 the retained mappings can be passed back to `flag_consensus()` with different
 thresholds without loading either source matrix.
+
+Build that reusable decision directly from separate validated score and timing
+results. Registered scores receive fresh direction-aware cutoffs; the timing
+archive contributes its already validated score and flag:
+
+```python
+from ier import flag_consensus_archives
+
+combined = flag_consensus_archives(
+    "screening.npz",
+    "timing.npz",
+    thresholds={"longstring": 8},
+    percentiles={"irv": 99},
+    min_flags=2,
+    min_valid_signals=3,
+)
+```
+
+```bash
+ier archive-consensus screening.npz timing.npz \
+  --threshold longstring=8 --index-percentile irv=99 \
+  --min-valid-signals 3 --format npz --output consensus.npz
+```
+
+Fully identified inputs are reordered to the score archive's ID order. If both
+omit IDs, equal row counts are treated as matching order. Mixed identity state,
+different counts or ID sets, duplicate or missing selections, and timing-name
+conflicts are rejected. Text summarizes coverage and top counts; JSON and CSV
+preserve aligned respondent detail; NPZ uses the reusable consensus schema. No
+source matrix is loaded and no additional dependency is required.
 
 When the archive type is not known in advance, `load_archive()` reads the
 declared result type and applies the complete score, response-time, consensus, or
