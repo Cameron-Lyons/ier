@@ -3,6 +3,7 @@
 Usage:
     uv run python benchmarks/bench_evenodd.py
     uv run python benchmarks/bench_evenodd.py --respondents 200000 --factors 30
+    uv run python benchmarks/bench_evenodd.py --factors 1 --factor-items 120 --missing-rate 0.1
 """
 
 from __future__ import annotations

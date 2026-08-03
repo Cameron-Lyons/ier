@@ -578,6 +578,58 @@ class TestCalculateCorrelations(unittest.TestCase):
         self.assertEqual(len(result), 2)
         np.testing.assert_almost_equal(result, [-1.0, -1.0])
 
+    def test_correlations_use_bounded_row_blocks(self) -> None:
+        """Wide pairwise-complete correlations preserve results in bounded workspaces."""
+        rng = np.random.default_rng(20260803)
+        left = rng.normal(size=(257, 30))
+        right = rng.normal(size=(257, 30))
+        missing = rng.random(left.shape) < 0.1
+        left[missing] = np.nan
+        right[rng.random(right.shape) < 0.1] = np.nan
+        left[0] = 1.0
+        left[1, 1:] = np.nan
+        original_left = left.copy()
+        original_right = right.copy()
+        expected = np.empty(len(left))
+        for row_index, (left_row, right_row) in enumerate(zip(left, right, strict=True)):
+            valid = ~(np.isnan(left_row) | np.isnan(right_row))
+            if np.count_nonzero(valid) < 2:
+                expected[row_index] = np.nan
+                continue
+            left_centered = left_row[valid] - np.mean(left_row[valid])
+            right_centered = right_row[valid] - np.mean(right_row[valid])
+            denominator = np.sqrt(
+                np.sum(left_centered * left_centered) * np.sum(right_centered * right_centered)
+            )
+            expected[row_index] = (
+                np.sum(left_centered * right_centered) / denominator if denominator > 0 else 0.0
+            )
+        np.clip(expected, -1.0, 1.0, out=expected)
+        observed_shapes: list[tuple[int, ...]] = []
+        original_isnan = np.isnan
+
+        def small_row_slices(n_rows: int, n_columns: int) -> Iterator[tuple[int, int]]:
+            del n_columns
+            for start in range(0, n_rows, 17):
+                yield start, min(start + 17, n_rows)
+
+        def observed_isnan(values: np.ndarray) -> np.ndarray:
+            observed_shapes.append(values.shape)
+            return original_isnan(values)
+
+        with (
+            patch("ier._correlation.row_slices", side_effect=small_row_slices) as slices,
+            patch("ier._correlation.np.isnan", side_effect=observed_isnan),
+        ):
+            result = calculate_correlations(left, right)
+
+        self.assertGreaterEqual(slices.call_count, 2)
+        self.assertTrue(observed_shapes)
+        self.assertTrue(all(rows <= 17 and columns == 30 for rows, columns in observed_shapes))
+        np.testing.assert_allclose(result, expected, rtol=0.0, atol=2e-15, equal_nan=True)
+        np.testing.assert_array_equal(left, original_left)
+        np.testing.assert_array_equal(right, original_right)
+
     def test_two_point_correlations_use_exact_difference_signs(self) -> None:
         """Two-pair rows avoid centered matrices while preserving edge cases."""
         maximum = np.finfo(float).max

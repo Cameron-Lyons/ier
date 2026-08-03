@@ -246,8 +246,10 @@ and workspace limits.
 Even–odd consistency reduces factor correlations directly into respondent-level
 sums and valid-factor counts. Factors with exactly two paired observations use
 the closed-form product of response-difference signs, avoiding centered matrices;
-larger factors retain centered contraction reductions. Peak allocation therefore
-does not grow with the factor count.
+larger factors retain centered contraction reductions. The shared correlation
+kernel scans for its established missing/infinity path and performs every factor
+in bounded row blocks, so peak workspace grows with neither respondent count nor
+factor count.
 Psychometric synonym and antonym scoring reuse the same row-correlation kernel
 in bounded respondent batches and report each respondent's actual available-pair
 count. Missing-response discovery accumulates pairwise-complete counts, sums,

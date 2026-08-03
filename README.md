@@ -20,7 +20,7 @@ For a comprehensive methods review, see
 - Externally calibrated LZ parameters across Python and CLI scoring workflows
 - Section-aware IRV scoring with bounded-memory section reduction
 - Allocation-bounded split-half reliability with stable raw-moment correlations
-- Exact low-allocation two-point correlations for common even-odd factor designs
+- Respondent-bounded row correlations with an exact two-point even-odd shortcut
 - Batched dense, sparse, and grouped missing-response Markov entropy scoring
 - Batched missing-response longest-run and repeating-pattern scoring
 - Batched dependency-free chi-square quantiles for large Mahalanobis Q-Q plots
