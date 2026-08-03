@@ -19,7 +19,13 @@ from ier.lz import (
 )
 from ier.mad import mad, mad_flag
 from ier.mahad import mahad_qqplot
-from ier.markov import _transition_entropy, markov, markov_flag, markov_summary
+from ier.markov import (
+    _transition_entropy,
+    _transition_entropy_row,
+    markov,
+    markov_flag,
+    markov_summary,
+)
 from ier.onset import onset, onset_flag
 from ier.person_total import person_total
 from ier.reliability import individual_reliability, individual_reliability_flag
@@ -1588,6 +1594,36 @@ class TestMarkov(unittest.TestCase):
         result = markov(data, na_rm=True)
         self.assertEqual(len(result), 2)
         self.assertFalse(np.isnan(result[0]))
+
+    def test_missing_rows_are_grouped_in_bounded_compressed_batches(self) -> None:
+        """Missing removal retains order while avoiding respondent-wise scoring."""
+        from ier.markov import _markov_complete
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(257, 60)).astype(float)
+        data[rng.random(data.shape) < 0.15] = np.nan
+        data[0] = np.nan
+        data[1, 1:] = np.nan
+        original = data.copy()
+        expected = np.full(len(data), np.nan)
+        for row_index, row in enumerate(data):
+            retained = row[~np.isnan(row)]
+            if len(retained) >= 2:
+                expected[row_index] = _transition_entropy_row(retained)
+
+        with (
+            patch("ier.markov._MISSING_COMPRESSION_BATCH_CELLS", 300),
+            patch("ier.markov._markov_complete", wraps=_markov_complete) as grouped_batches,
+        ):
+            result = markov(data)
+
+        self.assertGreater(grouped_batches.call_count, 1)
+        self.assertTrue(all(call.args[0].size <= 300 for call in grouped_batches.call_args_list))
+        self.assertTrue(
+            all(not np.isnan(call.args[0]).any() for call in grouped_batches.call_args_list)
+        )
+        np.testing.assert_allclose(result, expected, rtol=0.0, atol=1e-12, equal_nan=True)
+        np.testing.assert_array_equal(data, original)
 
     def test_all_missing_rows_return_nan(self) -> None:
         """Test all-missing data returns missing entropy scores."""
