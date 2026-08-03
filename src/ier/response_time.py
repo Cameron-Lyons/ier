@@ -5,13 +5,17 @@ Extremely fast or unusually consistent response times may indicate
 careless or inattentive responding.
 """
 
+import math
 import warnings
 
 import numpy as np
 
 from ier._flagging import threshold_flags
-from ier._statistics import normal_pdf
 from ier._validation import MatrixLike, validate_matrix_input
+
+_LOG_TWO_PI = math.log(2.0 * math.pi)
+_MIN_COMPONENT_MASS = 1e-10
+_MIN_VARIANCE = 1e-10
 
 
 def response_time(
@@ -168,7 +172,7 @@ def response_time_mixture(
         warnings.simplefilter("ignore", RuntimeWarning)
         medians = np.nanmedian(times_array, axis=1)
 
-    valid_mask = ~np.isnan(medians) & (medians > 0)
+    valid_mask = np.isfinite(medians) & (medians > 0)
     if np.sum(valid_mask) < n_components:
         raise ValueError(
             f"insufficient valid observations ({int(np.sum(valid_mask))}) "
@@ -204,43 +208,89 @@ def _em_gaussian_mixture(
     split_points = np.array_split(sorted_data, k)
     means = np.array([np.mean(s) for s in split_points])
     variances = np.full(k, np.var(data) / k)
-    variances = np.maximum(variances, 1e-10)
+    variances = np.maximum(variances, _MIN_VARIANCE)
     weights = np.full(k, 1.0 / k)
 
     means += rng.normal(0, 0.01, size=k)
 
-    resp = np.zeros((n, k))
+    resp = np.empty((n, k))
+    scratch = np.empty(n)
     prev_ll = -np.inf
 
     for _ in range(max_iter):
-        for j in range(k):
-            resp[:, j] = weights[j] * normal_pdf(data, loc=means[j], scale=np.sqrt(variances[j]))
-
-        row_sums = resp.sum(axis=1, keepdims=True)
-        row_sums = np.maximum(row_sums, 1e-300)
-        ll = float(np.sum(np.log(row_sums)))
-        resp /= row_sums
+        ll = _mixture_expectation(data, weights, means, variances, resp, scratch)
 
         for j in range(k):
             nj = resp[:, j].sum()
-            if nj < 1e-10:
+            if nj < _MIN_COMPONENT_MASS:
                 continue
             weights[j] = nj / n
             means[j] = (resp[:, j] @ data) / nj
-            diff = data - means[j]
-            variances[j] = (resp[:, j] @ (diff**2)) / nj
-            variances[j] = max(variances[j], 1e-10)
+            np.subtract(data, means[j], out=scratch)
+            np.square(scratch, out=scratch)
+            variances[j] = (resp[:, j] @ scratch) / nj
+            variances[j] = max(variances[j], _MIN_VARIANCE)
 
         if abs(ll - prev_ll) < tol:
             break
         prev_ll = ll
 
-    for j in range(k):
-        resp[:, j] = weights[j] * normal_pdf(data, loc=means[j], scale=np.sqrt(variances[j]))
-    row_sums = resp.sum(axis=1, keepdims=True)
-    row_sums = np.maximum(row_sums, 1e-300)
-    resp /= row_sums
+    _mixture_expectation(data, weights, means, variances, resp, scratch)
 
     fast_component = int(np.argmin(means))
     result: np.ndarray = resp[:, fast_component]
     return result
+
+
+def _mixture_expectation(
+    data: np.ndarray,
+    weights: np.ndarray,
+    means: np.ndarray,
+    variances: np.ndarray,
+    responsibilities: np.ndarray,
+    scratch: np.ndarray,
+) -> float:
+    """Fill normalized responsibilities and return their log-likelihood."""
+    for component in range(len(weights)):
+        np.subtract(data, means[component], out=scratch)
+        np.square(scratch, out=scratch)
+        np.multiply(scratch, -0.5 / variances[component], out=scratch)
+        np.exp(scratch, out=scratch)
+        scale = weights[component] / math.sqrt(2.0 * math.pi * variances[component])
+        np.multiply(scratch, scale, out=responsibilities[:, component])
+
+    row_sums = np.sum(responsibilities, axis=1)
+    regular = np.isfinite(row_sums) & (row_sums > 0.0)
+    if np.all(regular):
+        log_likelihood = float(np.sum(np.log(row_sums)))
+        responsibilities /= row_sums[:, None]
+        return log_likelihood
+
+    log_likelihood = float(np.sum(np.log(row_sums[regular])))
+    np.divide(
+        responsibilities,
+        row_sums[:, None],
+        out=responsibilities,
+        where=regular[:, None],
+    )
+
+    underflow = ~regular
+    underflow_data = data[underflow]
+    log_joint = np.empty((len(underflow_data), len(weights)))
+    for component in range(len(weights)):
+        component_values = log_joint[:, component]
+        np.subtract(underflow_data, means[component], out=component_values)
+        np.square(component_values, out=component_values)
+        np.multiply(component_values, -0.5 / variances[component], out=component_values)
+        component_values += math.log(weights[component]) - 0.5 * (
+            _LOG_TWO_PI + math.log(variances[component])
+        )
+
+    row_maximum = np.max(log_joint, axis=1)
+    log_joint -= row_maximum[:, None]
+    np.exp(log_joint, out=log_joint)
+    normalizers = np.sum(log_joint, axis=1)
+    log_joint /= normalizers[:, None]
+    responsibilities[underflow] = log_joint
+    log_likelihood += float(np.sum(row_maximum + np.log(normalizers)))
+    return log_likelihood

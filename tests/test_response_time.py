@@ -6,6 +6,7 @@ import numpy as np
 
 from ier.response_time import (
     _em_gaussian_mixture,
+    _mixture_expectation,
     response_time,
     response_time_consistency,
     response_time_flag,
@@ -116,6 +117,59 @@ class TestResponseTimeMixture(unittest.TestCase):
 
         self.assertGreater(float(np.max(np.abs(short_run - full_run))), 0.05)
 
+    def test_expectation_matches_probability_space_reference(self) -> None:
+        data = np.array([-2.0, -0.5, 0.0, 1.5, 3.0])
+        weights = np.array([0.4, 0.6])
+        means = np.array([-1.0, 2.0])
+        variances = np.array([0.5, 1.25])
+        responsibilities = np.empty((len(data), len(weights)))
+        scratch = np.empty(len(data))
+
+        expected = np.column_stack(
+            [
+                weight
+                * np.exp(-0.5 * (data - mean) ** 2 / variance)
+                / np.sqrt(2.0 * np.pi * variance)
+                for weight, mean, variance in zip(weights, means, variances, strict=True)
+            ]
+        )
+        row_sums = np.sum(expected, axis=1)
+        expected_log_likelihood = float(np.sum(np.log(row_sums)))
+        expected /= row_sums[:, None]
+
+        actual_log_likelihood = _mixture_expectation(
+            data,
+            weights,
+            means,
+            variances,
+            responsibilities,
+            scratch,
+        )
+
+        self.assertAlmostEqual(actual_log_likelihood, expected_log_likelihood)
+        np.testing.assert_allclose(responsibilities, expected, rtol=1e-15, atol=1e-15)
+
+    def test_expectation_uses_log_domain_for_underflowed_rows(self) -> None:
+        data = np.array([0.0, 1_000_000.0])
+        weights = np.array([0.5, 0.5])
+        means = np.array([0.0, 1.0])
+        variances = np.array([1e-10, 1e-10])
+        responsibilities = np.empty((len(data), len(weights)))
+        scratch = np.empty(len(data))
+
+        log_likelihood = _mixture_expectation(
+            data,
+            weights,
+            means,
+            variances,
+            responsibilities,
+            scratch,
+        )
+
+        self.assertTrue(np.isfinite(log_likelihood))
+        np.testing.assert_array_equal(responsibilities, [[1.0, 0.0], [0.0, 1.0]])
+        np.testing.assert_array_equal(np.sum(responsibilities, axis=1), [1.0, 1.0])
+
     def test_insufficient_data_raises(self) -> None:
         """Test that insufficient data raises ValueError."""
         times = [[1.0, 2.0, 3.0]]
@@ -130,6 +184,22 @@ class TestResponseTimeMixture(unittest.TestCase):
         result = response_time_mixture(times, random_seed=42)
         self.assertTrue(np.isnan(result[0]))
         self.assertFalse(np.isnan(result[1]))
+
+    def test_non_finite_medians_are_excluded(self) -> None:
+        times = np.array(
+            [
+                [np.inf, np.inf],
+                [0.5, 0.6],
+                [0.7, 0.8],
+                [4.0, 5.0],
+                [6.0, 7.0],
+            ]
+        )
+
+        result = response_time_mixture(times, random_seed=42)
+
+        self.assertTrue(np.isnan(result[0]))
+        self.assertTrue(np.isfinite(result[1:]).all())
 
 
 if __name__ == "__main__":

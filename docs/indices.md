@@ -78,7 +78,7 @@ flags in your analysis code if needed.
 | `response_time` | Central tendency of RT | low (too fast) |
 | `response_time_consistency` | RT coefficient of variation | low (too uniform) |
 | `response_time_flag` | Percentile / threshold flagging | low |
-| `response_time_mixture` | Mixture P(fast component) | high |
+| `response_time_mixture` | Stable mixture P(fast component) | high |
 
 ## Plot helpers
 

@@ -135,7 +135,9 @@ repeated and default output schemas remain unchanged.
 Timing matrices are a different data modality than item responses. Helpers in
 `response_time.py` are public but **intentionally outside** the screen /
 composite registry so they are not mixed into item-response pipelines by
-accident.
+accident. Gaussian-mixture fitting reuses responsibility and scratch buffers
+throughout EM. Its expectation step follows a fast probability-space path for
+ordinary observations and normalizes only underflowed rows in log space.
 
 ## Optional dependencies
 
@@ -150,5 +152,6 @@ Plotting remains optional and reports a centralized install hint from
 - Detection-rate simulation: `benchmarks/bench_detection.py`.
 - Throughput microbench: `benchmarks/bench_screen.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
+- Response-time mixture EM and end-to-end scoring: `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.
