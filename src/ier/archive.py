@@ -12,6 +12,7 @@ from zipfile import ZIP_STORED, ZipFile
 
 import numpy as np
 
+from ier._flagging import resolve_threshold, validate_percentile
 from ier._registry import composite_index_names, validate_index_names
 from ier._validation import validate_score_array, validate_score_vectors
 
@@ -26,11 +27,13 @@ if TYPE_CHECKING:
         ResponseTimeArchive,
         ResponseTimeFlagDirection,
         ResponseTimeMetric,
+        ResponseTimeThresholdSource,
         ScoreArchive,
         ScoreArchiveResultType,
     )
 
 _ARCHIVE_SCHEMA_VERSION = 1
+_RESPONSE_TIME_ARCHIVE_SCHEMA_VERSION = 2
 
 
 def _validate_result_type(value: object) -> ScoreArchiveResultType:
@@ -308,6 +311,40 @@ def _validate_response_time_direction(value: object) -> ResponseTimeFlagDirectio
     return cast("ResponseTimeFlagDirection", value)
 
 
+def _validate_response_time_threshold_source(
+    value: object,
+) -> ResponseTimeThresholdSource:
+    """Return a supported response-time threshold provenance value."""
+    if not isinstance(value, str) or value not in {"fixed", "percentile"}:
+        raise ValueError("response-time archive threshold_source must be 'fixed' or 'percentile'")
+    return cast("ResponseTimeThresholdSource", value)
+
+
+def _validate_response_time_percentile(
+    value: object,
+    source: ResponseTimeThresholdSource,
+) -> float | None:
+    """Validate the percentile field required by response-time schema v2."""
+    if value is None:
+        if source == "percentile":
+            raise ValueError(
+                "response-time archive percentile is required for percentile thresholds"
+            )
+        return None
+    if source == "fixed":
+        raise ValueError("response-time archive percentile must be absent for fixed thresholds")
+    return validate_percentile(value)  # type: ignore[arg-type]
+
+
+def _optional_percentile_scalar(archive: NpzFile, name: str) -> float | None:
+    """Load a numeric percentile scalar, treating NaN as an absent value."""
+    value = _require_member(archive, name)
+    if value.shape != () or value.dtype.kind not in "fiu":
+        raise ValueError(f"NPZ archive member {name} must be a numeric scalar")
+    result = float(value.item())
+    return None if np.isnan(result) else result
+
+
 def _validate_response_time_values(
     scores: ArrayLike,
     flags: ArrayLike,
@@ -316,6 +353,8 @@ def _validate_response_time_values(
     threshold: object,
     *,
     expected_respondents: int | None = None,
+    threshold_source: ResponseTimeThresholdSource | None = None,
+    percentile: float | None = None,
 ) -> tuple[
     np.ndarray,
     BoolArray,
@@ -346,15 +385,38 @@ def _validate_response_time_values(
         name="response-time archive flags",
     )
 
+    validated_percentile = (
+        None
+        if threshold_source is None
+        else _validate_response_time_percentile(percentile, threshold_source)
+    )
+    if threshold_source == "percentile":
+        assert validated_percentile is not None
+        resolved_threshold = resolve_threshold(
+            validated_scores,
+            None,
+            validated_percentile,
+        )
+        if not np.isclose(
+            validated_threshold,
+            resolved_threshold,
+            rtol=1e-12,
+            atol=1e-12,
+        ):
+            raise ValueError("response-time archive threshold is inconsistent with its percentile")
+
     expected_flags = np.empty_like(validated_flags)
     inclusive_compare = np.greater_equal if validated_direction == "high" else np.less_equal
     exclusive_compare = np.greater if validated_direction == "high" else np.less
-    inclusive_compare(validated_scores, validated_threshold, out=expected_flags)
+    compare = exclusive_compare if threshold_source == "percentile" else inclusive_compare
+    compare(validated_scores, validated_threshold, out=expected_flags)
     if not np.array_equal(validated_flags, expected_flags):
-        exclusive_compare(validated_scores, validated_threshold, out=expected_flags)
-        if not np.array_equal(validated_flags, expected_flags):
+        if threshold_source is None:
+            exclusive_compare(validated_scores, validated_threshold, out=expected_flags)
+        if threshold_source is not None or not np.array_equal(validated_flags, expected_flags):
+            rule = " and threshold source" if threshold_source is not None else ""
             raise ValueError(
-                "response-time archive flags are inconsistent with its threshold and direction"
+                f"response-time archive flags are inconsistent with its threshold, direction{rule}"
             )
 
     return (
@@ -371,7 +433,7 @@ def _read_response_time_archive(archive: NpzFile) -> ResponseTimeArchive:
     if len(archive.files) != len(set(archive.files)):
         raise ValueError("response-time archive member names must be unique")
 
-    allowed_members = {
+    base_members = {
         "schema_version",
         "result_type",
         "n_respondents",
@@ -382,16 +444,29 @@ def _read_response_time_archive(archive: NpzFile) -> ResponseTimeArchive:
         "flags",
         "respondent_ids",
     }
+    schema_version = _integer_scalar(archive, "schema_version")
+    if schema_version == _ARCHIVE_SCHEMA_VERSION:
+        allowed_members = base_members
+        threshold_source = None
+        percentile = None
+    elif schema_version == _RESPONSE_TIME_ARCHIVE_SCHEMA_VERSION:
+        allowed_members = base_members | {"threshold_source", "percentile"}
+        threshold_source = _validate_response_time_threshold_source(
+            _string_scalar(archive, "threshold_source")
+        )
+        percentile = _validate_response_time_percentile(
+            _optional_percentile_scalar(archive, "percentile"),
+            threshold_source,
+        )
+    else:
+        raise ValueError(
+            f"unsupported response-time archive schema version: {schema_version}; "
+            f"expected {_ARCHIVE_SCHEMA_VERSION} or "
+            f"{_RESPONSE_TIME_ARCHIVE_SCHEMA_VERSION}"
+        )
     unexpected = set(archive.files) - allowed_members
     if unexpected:
         raise ValueError(f"response-time archive contains unexpected member: {min(unexpected)}")
-
-    schema_version = _integer_scalar(archive, "schema_version")
-    if schema_version != _ARCHIVE_SCHEMA_VERSION:
-        raise ValueError(
-            f"unsupported response-time archive schema version: {schema_version}; "
-            f"expected {_ARCHIVE_SCHEMA_VERSION}"
-        )
 
     result_type = _string_scalar(archive, "result_type")
     if result_type != "response_time":
@@ -408,6 +483,8 @@ def _read_response_time_archive(archive: NpzFile) -> ResponseTimeArchive:
         _string_scalar(archive, "flag_direction"),
         _numeric_scalar(archive, "threshold"),
         expected_respondents=n_respondents,
+        threshold_source=threshold_source,
+        percentile=percentile,
     )
 
     respondent_ids = _load_respondent_ids(archive, n_respondents)
@@ -418,6 +495,8 @@ def _read_response_time_archive(archive: NpzFile) -> ResponseTimeArchive:
         "metric": metric,
         "flag_direction": direction,
         "threshold": threshold,
+        "threshold_source": threshold_source,
+        "percentile": percentile,
         "scores": scores,
         "flags": flags,
         "respondent_ids": respondent_ids,
@@ -509,14 +588,18 @@ def save_response_time_archive(
     metric: ResponseTimeMetric = "median",
     flag_direction: ResponseTimeFlagDirection = "low",
     respondent_ids: Sequence[str] | None = None,
+    threshold_source: ResponseTimeThresholdSource | None = None,
+    percentile: float | None = None,
 ) -> None:
     """
     Save reusable response-time results as a versioned, pickle-free NPZ archive.
 
     Scores, Boolean flags, metric/direction compatibility, the finite threshold,
     and optional respondent identifiers are validated before the destination is
-    opened. Flags may follow either the inclusive fixed-cutoff rule or the
-    tie-exclusive percentile rule.
+    opened. With no cutoff provenance, the writer preserves the legacy v1
+    schema and accepts either flag rule. Providing ``threshold_source`` or
+    ``percentile`` writes schema v2 and validates the exact fixed-inclusive or
+    percentile-exclusive rule.
 
     Parameters:
     - path: Explicit destination ending in ``.npz``.
@@ -526,6 +609,8 @@ def save_response_time_archive(
     - metric: Timing metric represented by the score vector.
     - flag_direction: Suspicious tail, ``"low"`` or ``"high"``.
     - respondent_ids: Optional aligned, unique, nonblank string identifiers.
+    - threshold_source: Optional ``"fixed"`` or ``"percentile"`` provenance.
+    - percentile: Requested percentile when the cutoff is percentile-derived.
 
     Example:
         >>> from ier import response_time_score_flags, save_response_time_archive
@@ -539,6 +624,14 @@ def save_response_time_archive(
     if destination.suffix.casefold() != ".npz":
         raise ValueError("response-time archive output path must end in .npz")
 
+    has_provenance = threshold_source is not None or percentile is not None
+    validated_source: ResponseTimeThresholdSource | None = None
+    if has_provenance:
+        validated_source = _validate_response_time_threshold_source(
+            "percentile" if threshold_source is None else threshold_source
+        )
+        percentile = _validate_response_time_percentile(percentile, validated_source)
+
     validated_scores, validated_flags, validated_metric, validated_direction, cutoff = (
         _validate_response_time_values(
             scores,
@@ -546,6 +639,8 @@ def save_response_time_archive(
             metric,
             flag_direction,
             threshold,
+            threshold_source=validated_source,
+            percentile=percentile,
         )
     )
     validated_ids: list[str] | None = None
@@ -558,7 +653,10 @@ def save_response_time_archive(
         )
 
     payload = {
-        "schema_version": np.asarray(_ARCHIVE_SCHEMA_VERSION, dtype=np.int64),
+        "schema_version": np.asarray(
+            _RESPONSE_TIME_ARCHIVE_SCHEMA_VERSION if has_provenance else _ARCHIVE_SCHEMA_VERSION,
+            dtype=np.int64,
+        ),
         "result_type": np.asarray("response_time", dtype=np.str_),
         "n_respondents": np.asarray(len(validated_scores), dtype=np.int64),
         "metric": np.asarray(validated_metric, dtype=np.str_),
@@ -567,6 +665,12 @@ def save_response_time_archive(
         "scores": validated_scores,
         "flags": validated_flags,
     }
+    if validated_source is not None:
+        payload["threshold_source"] = np.asarray(validated_source, dtype=np.str_)
+        payload["percentile"] = np.asarray(
+            np.nan if percentile is None else percentile,
+            dtype=np.float64,
+        )
     if validated_ids is not None:
         payload["respondent_ids"] = np.asarray(validated_ids, dtype=np.str_)
     _write_npz_archive(destination, payload)

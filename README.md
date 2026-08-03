@@ -202,8 +202,11 @@ alignment, and pickle-free safety checks run before reuse.
 
 Response-time results have matching `save_response_time_archive()` and
 `load_response_time_archive()` boundaries. The writer preserves prepared scores,
-Boolean flags, cutoff metadata, and optional identifiers after verifying the
-same fixed or percentile decision contract enforced by the loader.
+Boolean flags, cutoff provenance, requested percentile, and optional identifiers
+after verifying the same fixed-inclusive or percentile-exclusive decision
+contract enforced by the loader. Existing writer calls without provenance retain
+the legacy schema; pass `threshold_source` and, for derived cutoffs, `percentile`
+to produce the richer schema used by current CLI output.
 
 Composite scores are standardized per index by default. Pass
 `ier composite --no-standardize` to combine directed scores in their original
@@ -260,11 +263,13 @@ write cannot truncate an existing result. See
 `ier response-time` accepts a separate respondent-by-timing matrix and supports
 mean, median, standard-deviation, minimum, consistency, and Gaussian-mixture
 scores. Fixed thresholds are inclusive; sample-relative defaults flag the low
-5% for direct timing metrics and the high 5% for mixture probabilities. Retain
+5% for direct timing metrics and the high 5% for mixture probabilities. Text,
+JSON, and NPZ preserve whether the resolved cutoff was fixed or percentile-based
+and record the requested percentile when applicable. Retain
 any returned score vector and pass it to `response_time_score_flags()` to compare
 cutoffs without recalculating row summaries or refitting a mixture. NPZ output
 loads through `load_response_time_archive()`, which validates its schema and
-returns the stored scores ready for the same sensitivity workflow. Use
+returns the stored scores and provenance ready for the same sensitivity workflow. Use
 `save_response_time_archive()` to create the identical interoperable schema from
 Python.
 

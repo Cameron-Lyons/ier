@@ -79,9 +79,11 @@ CLI archives written with `--include-components`. Aggregate-only composite and
 response-time archives do not contain reusable registered-index vectors and are
 rejected with a contextual error.
 
-### Common schema
+### Common fields
 
-All archives use schema version `1` and include:
+Screen and composite archives use schema version `1`. Response-time archives use
+version `2` when cutoff provenance is recorded and remain readable at legacy
+version `1`. Every archive includes:
 
 | Key | Value |
 |-----|-------|
@@ -149,7 +151,10 @@ unchanged.
 ### Response-time schema
 
 `response-time` archives include `metric`, `flag_direction`, `threshold`,
-respondent-aligned `scores`, and boolean `flags`.
+respondent-aligned `scores`, and boolean `flags`. Current CLI output writes schema
+version `2`, adding `threshold_source` (`fixed` or `percentile`) and a scalar
+`percentile`. Fixed cutoffs store `NaN` for `percentile`; derived cutoffs retain
+the requested value, including the default low-tail `5` or high-tail `95`.
 
 Load and reflag the retained scores through the public validated boundary:
 
@@ -174,16 +179,22 @@ save_response_time_archive(
     metric=saved["metric"],
     flag_direction=saved["flag_direction"],
     respondent_ids=saved["respondent_ids"],
+    threshold_source="fixed",
 )
 ```
 
 `load_response_time_archive()` disables pickling and verifies schema version,
 metric and direction compatibility, finite cutoff metadata, aligned score and
 flag vectors, optional respondent identifiers, and agreement between stored
-flags and their cutoff rule. It accepts both inclusive fixed-threshold flags and
-tie-exclusive percentile flags.
+flags and their cutoff rule. Legacy v1 archives accept either inclusive fixed
+flags or tie-exclusive percentile flags because their source was not recorded.
+For v2, the loader enforces the rule named by `threshold_source` and recomputes a
+percentile-derived cutoff from the stored scores and requested percentile.
 
-`save_response_time_archive()` writes the same CLI-compatible schema and checks
+`save_response_time_archive()` writes legacy v1 when both provenance arguments
+are omitted, preserving existing calls. Pass `threshold_source="fixed"` or pass
+`threshold_source="percentile", percentile=VALUE` to write v2; supplying only
+`percentile` infers the latter. The writer checks
 all scores, Boolean flags, cutoff metadata, direction rules, and optional
 identifiers before opening the destination. It streams the validated vectors
 without stacking or adding a runtime dependency.

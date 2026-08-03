@@ -282,6 +282,7 @@ save_response_time_archive(
     metric=saved["metric"],
     flag_direction=saved["flag_direction"],
     respondent_ids=saved["respondent_ids"],
+    threshold_source="fixed",
 )
 ```
 
@@ -298,9 +299,11 @@ percentile cutoffs exclude ties, matching the other public flagging workflows.
 Retained direct scores use `direction="low"` by default; pass `direction="high"`
 for mixture probabilities. This sensitivity path never recomputes row summaries
 or refits the mixture. The NPZ loader also validates that archived flags agree
-with their stored threshold and suspicious-tail direction before reuse. The
+with their stored threshold, suspicious-tail direction, and—when present—fixed
+or percentile provenance before reuse. Provenance-aware archives retain the
+requested percentile and recompute the derived cutoff during validation. The
 matching writer performs the same checks before creating a CLI-compatible
-archive.
+archive; calls without provenance remain compatible with legacy v1 output.
 Mixture fitting excludes respondents whose median time is missing, infinite, or
 non-positive. Its posterior normalization remains stable when ordinary Gaussian
 density calculations underflow for an extreme valid observation.

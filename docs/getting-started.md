@@ -236,7 +236,10 @@ member is complete. Detailed composite NPZ output produced with
 `--include-components` works with the same loader and `composite_scores()`.
 Response-time results have matching `save_response_time_archive()` and
 `load_response_time_archive()` boundaries; retained `scores` feed directly into
-`response_time_score_flags()` and can be written back with revised flags.
+`response_time_score_flags()` and can be written back with revised flags. Current
+CLI text, JSON, and NPZ output also records whether the cutoff was fixed or
+percentile-derived and retains the requested percentile. The archive loader
+supports both legacy v1 files and provenance-aware v2 files.
 
 ## Next steps
 

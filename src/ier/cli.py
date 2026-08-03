@@ -517,6 +517,10 @@ def _run_command(args: argparse.Namespace) -> int:
         if percentile is None:
             percentile = 95.0 if direction == "high" else 5.0
         cutoff = resolve_threshold(scores, args.threshold, percentile)
+        threshold_source: Literal["fixed", "percentile"] = (
+            "fixed" if args.threshold is not None else "percentile"
+        )
+        requested_percentile = None if args.threshold is not None else percentile
         flags = threshold_flags(
             scores,
             threshold=cutoff,
@@ -536,6 +540,8 @@ def _run_command(args: argparse.Namespace) -> int:
                     direction,
                     cutoff,
                     respondent_ids,
+                    threshold_source=threshold_source,
+                    percentile=requested_percentile,
                 ),
             )
             return 0
@@ -552,6 +558,8 @@ def _run_command(args: argparse.Namespace) -> int:
                 direction,
                 cutoff,
                 respondent_ids,
+                threshold_source=threshold_source,
+                percentile=requested_percentile,
             )
             return 0
         else:
@@ -563,6 +571,8 @@ def _run_command(args: argparse.Namespace) -> int:
                 cutoff,
                 args.top,
                 respondent_ids,
+                threshold_source=threshold_source,
+                percentile=requested_percentile,
             )
         _write_output(text, args.output)
         return 0

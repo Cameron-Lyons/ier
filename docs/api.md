@@ -7,6 +7,7 @@
         - ResponseTimeArchive
         - ResponseTimeFlagDirection
         - ResponseTimeMetric
+        - ResponseTimeThresholdSource
         - ScoreArchive
         - __version__
         - index_catalog

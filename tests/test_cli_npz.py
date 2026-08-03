@@ -148,10 +148,13 @@ class TestCliNpz(unittest.TestCase):
         )
 
         timing_result = read_all(timing_out)
+        self.assertEqual(timing_result["schema_version"].item(), 2)
         self.assertEqual(timing_result["result_type"].item(), "response_time")
         self.assertEqual(timing_result["metric"].item(), "median")
         self.assertEqual(timing_result["flag_direction"].item(), "low")
         self.assertEqual(timing_result["threshold"].item(), 2.0)
+        self.assertEqual(timing_result["threshold_source"].item(), "fixed")
+        self.assertTrue(np.isnan(timing_result["percentile"].item()))
         self.assertEqual(timing_result["flags"].tolist(), [True, False, False])
         self.assertEqual(timing_result["flags"].dtype, np.bool_)
 

@@ -251,7 +251,8 @@ Plotting remains optional and reports a centralized install hint from
   `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - Reusable composite sensitivity analysis: `benchmarks/bench_composite.py`.
-- Validated and atomic score and response-time archive loading and saving:
+- Validated and atomic score and response-time archive loading, saving, and
+  cutoff-provenance verification:
   `benchmarks/bench_archive.py`.
 - Shared fixed and percentile flagging throughput and memory: `benchmarks/bench_flagging.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.

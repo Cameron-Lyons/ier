@@ -75,12 +75,14 @@ def _raw_response_time_save(
     _stream_npz_archive(
         path,
         {
-            "schema_version": np.asarray(1, dtype=np.int64),
+            "schema_version": np.asarray(2, dtype=np.int64),
             "result_type": np.asarray("response_time", dtype=np.str_),
             "n_respondents": np.asarray(len(scores), dtype=np.int64),
             "metric": np.asarray("median", dtype=np.str_),
             "flag_direction": np.asarray("low", dtype=np.str_),
             "threshold": np.asarray(threshold, dtype=np.float64),
+            "threshold_source": np.asarray("percentile", dtype=np.str_),
+            "percentile": np.asarray(5.0, dtype=np.float64),
             "scores": scores,
             "flags": flags,
         },
@@ -167,6 +169,8 @@ def main() -> None:
             timing_scores,
             timing_flags,
             threshold=timing_threshold,
+            threshold_source="percentile",
+            percentile=5.0,
         )
 
         raw_seconds, raw_peak, raw = _measure(lambda: _raw_load(validated_path), args.repeats)
@@ -206,6 +210,8 @@ def main() -> None:
                 timing_scores,
                 timing_flags,
                 threshold=timing_threshold,
+                threshold_source="percentile",
+                percentile=5.0,
             ),
             args.write_repeats,
         )

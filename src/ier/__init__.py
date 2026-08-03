@@ -68,6 +68,7 @@ from .types import IntArray as IntArray
 from .types import ResponseTimeArchive as ResponseTimeArchive
 from .types import ResponseTimeFlagDirection as ResponseTimeFlagDirection
 from .types import ResponseTimeMetric as ResponseTimeMetric
+from .types import ResponseTimeThresholdSource as ResponseTimeThresholdSource
 from .types import ScoreArchive as ScoreArchive
 from .types import ScoreArchiveResultType as ScoreArchiveResultType
 from .types import ScreenIndexSummary as ScreenIndexSummary
@@ -147,6 +148,7 @@ __all__ = [
     "ResponseTimeFlagDirection",
     "ResponseTimeArchive",
     "ResponseTimeMetric",
+    "ResponseTimeThresholdSource",
     "response_time_mixture",
     "response_time_score_flags",
     "screen",

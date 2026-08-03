@@ -140,6 +140,8 @@ def test_response_time_archive_round_trip_supports_reflagging(tmp_path: Path) ->
     assert loaded["metric"] == "median"
     assert loaded["flag_direction"] == "low"
     assert loaded["threshold"] == threshold
+    assert loaded["threshold_source"] is None
+    assert loaded["percentile"] is None
     assert loaded["respondent_ids"] == respondent_ids
     np.testing.assert_array_equal(loaded["scores"], scores)
     np.testing.assert_array_equal(loaded["flags"], flags)
@@ -183,7 +185,7 @@ def _response_time_payload() -> dict[str, np.ndarray]:
 @pytest.mark.parametrize(
     ("updates", "message"),
     [
-        ({"schema_version": np.asarray(2)}, "unsupported.*schema version"),
+        ({"schema_version": np.asarray(3)}, "unsupported.*schema version"),
         ({"result_type": np.asarray("screen")}, "result_type"),
         ({"n_respondents": np.asarray(0)}, "must be positive"),
         ({"metric": np.asarray("unknown")}, "unsupported metric"),
@@ -277,9 +279,166 @@ def test_public_response_time_writer_round_trip_preserves_result(tmp_path: Path)
     assert loaded["metric"] == "median"
     assert loaded["flag_direction"] == "low"
     assert loaded["threshold"] == 1.0
+    assert loaded["threshold_source"] is None
+    assert loaded["percentile"] is None
     assert loaded["respondent_ids"] == respondent_ids
     np.testing.assert_array_equal(loaded["scores"], scores)
     np.testing.assert_array_equal(loaded["flags"], flags)
+
+
+def test_public_response_time_writer_records_fixed_cutoff_provenance(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "fixed-timing.npz"
+    scores = np.asarray([0.5, 1.0, 2.0, np.nan])
+    flags = np.asarray([True, True, False, False])
+
+    save_response_time_archive(
+        destination,
+        scores,
+        flags,
+        threshold=1.0,
+        threshold_source="fixed",
+    )
+
+    with np.load(destination, allow_pickle=False) as raw:
+        assert raw["schema_version"].item() == 2
+        assert raw["threshold_source"].item() == "fixed"
+        assert np.isnan(raw["percentile"].item())
+
+    loaded = load_response_time_archive(destination)
+    assert loaded["schema_version"] == 2
+    assert loaded["threshold_source"] == "fixed"
+    assert loaded["percentile"] is None
+
+
+def test_public_response_time_writer_records_percentile_cutoff_provenance(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "percentile-timing.npz"
+    scores = np.asarray([0.5, 1.0, 1.0, 2.0, np.nan])
+    flags = np.asarray([True, False, False, False, False])
+
+    save_response_time_archive(
+        destination,
+        scores,
+        flags,
+        threshold=1.0,
+        percentile=50.0,
+    )
+
+    loaded = load_response_time_archive(destination)
+    assert loaded["schema_version"] == 2
+    assert loaded["threshold_source"] == "percentile"
+    assert loaded["percentile"] == 50.0
+    np.testing.assert_array_equal(loaded["flags"], flags)
+
+
+def _response_time_v2_payload() -> dict[str, np.ndarray]:
+    payload = _response_time_payload()
+    payload.update(
+        {
+            "schema_version": np.asarray(2, dtype=np.int64),
+            "threshold_source": np.asarray("percentile", dtype=np.str_),
+            "percentile": np.asarray(50.0, dtype=np.float64),
+        }
+    )
+    return payload
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"threshold_source": np.asarray("other")}, "threshold_source"),
+        (
+            {
+                "threshold_source": np.asarray("fixed"),
+                "percentile": np.asarray(50.0),
+            },
+            "must be absent",
+        ),
+        ({"percentile": np.asarray(np.nan)}, "percentile is required"),
+        ({"percentile": np.asarray(101.0)}, "between 0 and 100"),
+        ({"threshold": np.asarray(1.75)}, "inconsistent with its percentile"),
+        (
+            {
+                "n_respondents": np.asarray(3),
+                "scores": np.asarray([1.0, 1.5, 2.0]),
+                "flags": np.asarray([True, True, False]),
+            },
+            "flags are inconsistent",
+        ),
+        (
+            {
+                "threshold_source": np.asarray("fixed"),
+                "percentile": np.asarray(np.nan),
+                "n_respondents": np.asarray(3),
+                "scores": np.asarray([1.0, 1.5, 2.0]),
+                "flags": np.asarray([True, False, False]),
+            },
+            "flags are inconsistent",
+        ),
+    ],
+)
+def test_malformed_response_time_v2_provenance_is_rejected(
+    tmp_path: Path,
+    updates: dict[str, np.ndarray],
+    message: str,
+) -> None:
+    payload = _response_time_v2_payload()
+    payload.update(updates)
+    destination = tmp_path / "malformed-timing-v2.npz"
+    np.savez(destination, **payload)
+
+    with pytest.raises(ValueError, match=message):
+        load_response_time_archive(destination)
+
+
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        ({"threshold_source": "unknown"}, "threshold_source"),
+        (
+            {"threshold_source": "fixed", "percentile": 50.0},
+            "must be absent",
+        ),
+        ({"threshold_source": "percentile"}, "percentile is required"),
+        (
+            {"threshold_source": "percentile", "percentile": 25.0},
+            "inconsistent with its percentile",
+        ),
+    ],
+)
+def test_public_response_time_writer_rejects_invalid_provenance(
+    tmp_path: Path,
+    metadata: dict[str, object],
+    message: str,
+) -> None:
+    destination = tmp_path / "timing.npz"
+
+    with pytest.raises(ValueError, match=message):
+        save_response_time_archive(
+            destination,
+            [1.0, 2.0],
+            [True, False],
+            threshold=1.5,
+            **metadata,  # type: ignore[arg-type]
+        )
+    assert not destination.exists()
+
+
+def test_public_response_time_writer_enforces_fixed_cutoff_ties(tmp_path: Path) -> None:
+    destination = tmp_path / "timing.npz"
+
+    with pytest.raises(ValueError, match="flags are inconsistent"):
+        save_response_time_archive(
+            destination,
+            [1.0, 1.5, 2.0],
+            [True, False, False],
+            threshold=1.5,
+            threshold_source="fixed",
+        )
+    assert not destination.exists()
 
 
 def test_public_response_time_writer_accepts_exclusive_mixture_flags(

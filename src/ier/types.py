@@ -21,6 +21,7 @@ CompositeMethod: TypeAlias = Literal["mean", "sum", "max", "best_subset"]
 InfrequencyMissingPolicy: TypeAlias = Literal["pass", "fail", "omit", "propagate"]
 ResponseTimeFlagDirection: TypeAlias = Literal["high", "low"]
 ResponseTimeMetric: TypeAlias = Literal["mean", "median", "sd", "min", "consistency", "mixture"]
+ResponseTimeThresholdSource: TypeAlias = Literal["fixed", "percentile"]
 
 
 class IndexMetadata(TypedDict):
@@ -91,6 +92,8 @@ class ResponseTimeArchive(TypedDict):
     metric: ResponseTimeMetric
     flag_direction: ResponseTimeFlagDirection
     threshold: float
+    threshold_source: ResponseTimeThresholdSource | None
+    percentile: float | None
     scores: FloatArray
     flags: BoolArray
     respondent_ids: list[str] | None

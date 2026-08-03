@@ -570,6 +570,8 @@ class TestCli(unittest.TestCase):
         self.assertEqual(payload["metric"], "median")
         self.assertEqual(payload["flag_direction"], "low")
         self.assertEqual(payload["threshold"], 1.0)
+        self.assertEqual(payload["threshold_source"], "fixed")
+        self.assertNotIn("percentile", payload)
         self.assertEqual(payload["respondent_ids"], ["fast", "steady", "typical"])
         self.assertEqual(payload["scores"], [0.5, 1.0, 3.0])
         self.assertEqual(payload["flags"], [True, True, False])
@@ -606,6 +608,31 @@ class TestCli(unittest.TestCase):
         self.assertEqual([row["respondent"] for row in rows], ["fast", "steady", "typical"])
         self.assertEqual([row["response_time_flag"] for row in rows], ["0", "1", "0"])
 
+    def test_response_time_json_records_requested_percentile(self) -> None:
+        timings = self.root / "percentile-timings.csv"
+        timings.write_text("1,2,3\n2,3,4\n3,4,5\n", encoding="utf-8")
+        out = self.root / "percentile-timings.json"
+
+        code = main(
+            [
+                "response-time",
+                str(timings),
+                "--percentile",
+                "50",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["threshold_source"], "percentile")
+        self.assertEqual(payload["percentile"], 50.0)
+        self.assertEqual(payload["threshold"], 3.0)
+        self.assertEqual(payload["flags"], [True, False, False])
+
     def test_response_time_text_uses_default_low_tail(self) -> None:
         timings = self.root / "text-timings.csv"
         timings.write_text(
@@ -631,7 +658,8 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 0)
         text = stdout.getvalue()
         self.assertIn("flag direction: low", text)
-        self.assertIn("threshold: 0.55", text)
+        self.assertIn("threshold: 0.55 (percentile)", text)
+        self.assertIn("percentile: 5", text)
         self.assertIn("flagged: 1", text)
         self.assertLess(text.index("fast\t"), text.index("steady\t"))
 

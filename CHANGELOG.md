@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.30] - 2026-08-03
+
+### Added
+
+- Response-time text, JSON, and NPZ output now records whether its resolved
+  cutoff was fixed or percentile-derived. Percentile output also preserves the
+  requested value, including the low- or high-tail CLI default.
+- `ResponseTimeThresholdSource` and the corresponding `threshold_source` and
+  `percentile` archive fields expose cutoff provenance to typed library users.
+
+### Changed
+
+- Response-time NPZ schema v2 validates fixed-inclusive and
+  percentile-exclusive tie behavior against its recorded source. Derived
+  thresholds are recomputed from the stored scores and requested percentile;
+  the loader remains compatible with source-less v1 archives, and existing
+  writer calls still emit v1 unless provenance is supplied.
+- On a 500,000-respondent provenance-aware archive, validated loading takes
+  5.1 ms versus 0.9 ms for direct member access and 8.3 versus 4.9 MiB peak
+  traced allocation. Validated atomic saving takes 5.2 ms versus 1.3 ms and
+  4.0 versus 3.9 MiB, including cutoff recomputation and without another
+  dependency.
+
 ## [2.19.29] - 2026-08-03
 
 ### Changed

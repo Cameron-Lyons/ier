@@ -18,7 +18,12 @@ from ier.archive import save_response_time_archive
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ier.types import ResponseTimeFlagDirection, ResponseTimeMetric, ScreenResult
+    from ier.types import (
+        ResponseTimeFlagDirection,
+        ResponseTimeMetric,
+        ResponseTimeThresholdSource,
+        ScreenResult,
+    )
 
 
 def _metadata(result_type: str, n_respondents: int) -> dict[str, np.ndarray]:
@@ -219,6 +224,9 @@ def _write_response_time_npz(
     direction: ResponseTimeFlagDirection,
     cutoff: float,
     respondent_ids: list[str] | None = None,
+    *,
+    threshold_source: ResponseTimeThresholdSource | None = None,
+    percentile: float | None = None,
 ) -> None:
     """Write response-time results as a versioned NumPy archive."""
     destination = _require_npz_output_path(path)
@@ -230,4 +238,6 @@ def _write_response_time_npz(
         metric=metric,
         flag_direction=direction,
         respondent_ids=respondent_ids,
+        threshold_source=threshold_source,
+        percentile=percentile,
     )

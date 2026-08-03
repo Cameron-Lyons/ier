@@ -22,7 +22,7 @@ from ier._cli_composite import (
 )
 
 if TYPE_CHECKING:
-    from ier.types import IndexCatalog, ScreenResult
+    from ier.types import IndexCatalog, ResponseTimeThresholdSource, ScreenResult
 
 
 _JSON_ARRAY_CHUNK_SIZE = 4096
@@ -588,6 +588,9 @@ def _emit_response_time_text(
     cutoff: float,
     top: int,
     respondent_ids: list[str] | None = None,
+    *,
+    threshold_source: ResponseTimeThresholdSource | None = None,
+    percentile: float | None = None,
 ) -> str:
     """Render timing results as a compact human-readable summary."""
     labels = _respondent_label_values(len(scores), respondent_ids)
@@ -597,14 +600,23 @@ def _emit_response_time_text(
         order = order[::-1]
     order = order[: max(top, 0)]
     label_name = "identifier" if respondent_ids is not None else "index"
+    threshold_line = f"threshold: {cutoff:g}"
+    if threshold_source is not None:
+        threshold_line += f" ({threshold_source})"
     lines = [
         f"respondents: {len(scores)}",
         f"metric: {metric}",
         f"flag direction: {direction}",
-        f"threshold: {cutoff:g}",
-        f"flagged: {int(np.sum(flags))}",
-        f"top suspicious respondents ({label_name}, score):",
+        threshold_line,
     ]
+    if percentile is not None:
+        lines.append(f"percentile: {percentile:g}")
+    lines.extend(
+        [
+            f"flagged: {int(np.sum(flags))}",
+            f"top suspicious respondents ({label_name}, score):",
+        ]
+    )
     for index in order:
         lines.append(f"  {labels[int(index)]}\t{float(scores[index]):.6f}")
     return "\n".join(lines)
@@ -617,6 +629,9 @@ def _emit_response_time_json(
     direction: Literal["high", "low"],
     cutoff: float,
     respondent_ids: list[str] | None = None,
+    *,
+    threshold_source: ResponseTimeThresholdSource | None = None,
+    percentile: float | None = None,
 ) -> str:
     """Render timing results as strict JSON."""
     output = StringIO()
@@ -628,6 +643,8 @@ def _emit_response_time_json(
         direction,
         cutoff,
         respondent_ids,
+        threshold_source=threshold_source,
+        percentile=percentile,
     )
     return output.getvalue()
 
@@ -640,6 +657,9 @@ def _write_response_time_json(
     direction: Literal["high", "low"],
     cutoff: float,
     respondent_ids: list[str] | None = None,
+    *,
+    threshold_source: ResponseTimeThresholdSource | None = None,
+    percentile: float | None = None,
 ) -> None:
     """Write timing JSON while bounding respondent-array allocation."""
     payload: dict[str, object] = {
@@ -650,6 +670,10 @@ def _write_response_time_json(
         "scores": _JsonArray(scores, "number"),
         "flags": _JsonArray(flags, "boolean"),
     }
+    if threshold_source is not None:
+        payload["threshold_source"] = threshold_source
+    if percentile is not None:
+        payload["percentile"] = percentile
     if respondent_ids is not None:
         payload["respondent_ids"] = _JsonArray(
             _respondent_label_values(len(scores), respondent_ids),
