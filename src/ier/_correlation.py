@@ -3,7 +3,12 @@
 import numpy as np
 
 
-def row_correlations(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+def row_correlations(
+    left: np.ndarray,
+    right: np.ndarray,
+    *,
+    zero_variance: float = 0.0,
+) -> np.ndarray:
     """Return paired row correlations using pairwise-complete observations."""
     if left.shape[0] != right.shape[0]:
         raise ValueError("left and right must have the same number of rows")
@@ -61,7 +66,7 @@ def row_correlations(left: np.ndarray, right: np.ndarray) -> np.ndarray:
         correlations: np.ndarray = np.divide(
             covariance,
             denominator,
-            out=np.zeros(n_rows),
+            out=np.full(n_rows, zero_variance),
             where=denominator > 0,
         )
 

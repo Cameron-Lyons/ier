@@ -8,7 +8,10 @@ careless or random responding.
 
 import numpy as np
 
+from ier._correlation import row_correlations
 from ier._validation import MatrixLike, validate_matrix_input
+
+_PERSON_TOTAL_BATCH_ELEMENTS = 262_144
 
 
 def person_total(
@@ -40,26 +43,49 @@ def person_total(
         [1.0, -1.0, 1.0]
     """
     x_array = validate_matrix_input(x, min_columns=2)
+    n_rows, n_items = x_array.shape
+    batch_rows = max(1, _PERSON_TOTAL_BATCH_ELEMENTS // n_items)
 
-    item_means = np.nanmean(x_array, axis=0) if na_rm else np.mean(x_array, axis=0)
+    if not na_rm and np.isnan(x_array).any():
+        return np.full(n_rows, np.nan)
 
-    if na_rm:
-        valid_mask = ~np.isnan(x_array)
-        item_means_broadcast = np.where(valid_mask, item_means, np.nan)
-    else:
-        item_means_broadcast = np.broadcast_to(item_means, x_array.shape)
-
-    with np.errstate(invalid="ignore"):
-        x_centered = x_array - np.nanmean(x_array, axis=1, keepdims=True)
-        m_centered = item_means_broadcast - np.nanmean(item_means_broadcast, axis=1, keepdims=True)
-
-        cov = np.nansum(x_centered * m_centered, axis=1)
-        x_std = np.sqrt(np.nansum(x_centered**2, axis=1))
-        m_std = np.sqrt(np.nansum(m_centered**2, axis=1))
-
-        correlations = cov / (x_std * m_std)
-
-    valid_counts = np.sum(~np.isnan(x_array), axis=1) if na_rm else x_array.shape[1]
-    correlations = np.where(valid_counts < 2, np.nan, correlations)
+    item_means = _item_means(x_array, na_rm=na_rm, batch_rows=batch_rows)
+    correlations = np.empty(n_rows)
+    for start in range(0, n_rows, batch_rows):
+        stop = min(start + batch_rows, n_rows)
+        block = x_array[start:stop]
+        correlations[start:stop] = row_correlations(
+            block,
+            np.broadcast_to(item_means, block.shape),
+            zero_variance=np.nan,
+        )
 
     return correlations
+
+
+def _item_means(
+    x: np.ndarray,
+    *,
+    na_rm: bool,
+    batch_rows: int,
+) -> np.ndarray:
+    """Calculate column means without a complete floating-point copy."""
+    if not na_rm:
+        result: np.ndarray = np.mean(x, axis=0)
+        return result
+
+    sums = np.zeros(x.shape[1])
+    counts = np.zeros(x.shape[1], dtype=np.intp)
+    for start in range(0, len(x), batch_rows):
+        block = x[start : start + batch_rows]
+        valid = ~np.isnan(block)
+        sums += np.sum(block, axis=0, dtype=float, where=valid)
+        counts += np.sum(valid, axis=0, dtype=np.intp)
+
+    means: np.ndarray = np.divide(
+        sums,
+        counts,
+        out=np.full(x.shape[1], np.nan),
+        where=counts > 0,
+    )
+    return means

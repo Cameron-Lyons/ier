@@ -50,6 +50,67 @@ class TestPersonTotal(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertFalse(np.isnan(result[0]))
 
+    def test_batched_scoring_matches_expanded_formula(self) -> None:
+        """Bounded means and correlations preserve the expanded definition."""
+        from ier._correlation import row_correlations
+
+        rng = np.random.default_rng(20260803)
+        data = rng.normal(size=(513, 30))
+        data[rng.random(data.shape) < 0.05] = np.nan
+        original = data.copy()
+
+        item_means = np.nanmean(data, axis=0)
+        valid = ~np.isnan(data)
+        mean_matrix = np.where(valid, item_means, np.nan)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            centered_data = data - np.nanmean(data, axis=1, keepdims=True)
+            centered_means = mean_matrix - np.nanmean(mean_matrix, axis=1, keepdims=True)
+            covariance = np.nansum(centered_data * centered_means, axis=1)
+            data_norm = np.sqrt(np.nansum(centered_data**2, axis=1))
+            mean_norm = np.sqrt(np.nansum(centered_means**2, axis=1))
+            expected = covariance / (data_norm * mean_norm)
+        expected[np.sum(valid, axis=1) < 2] = np.nan
+
+        with (
+            patch("ier.person_total._PERSON_TOTAL_BATCH_ELEMENTS", 300),
+            patch("ier.person_total.row_correlations", wraps=row_correlations) as correlations,
+        ):
+            result = person_total(data)
+
+        self.assertGreater(correlations.call_count, 2)
+        self.assertTrue(all(call.args[0].size <= 300 for call in correlations.call_args_list))
+        np.testing.assert_allclose(result, expected, rtol=0.0, atol=1e-14, equal_nan=True)
+        np.testing.assert_array_equal(data, original)
+
+    def test_zero_variance_profiles_remain_unavailable(self) -> None:
+        """Undefined correlations are NaN rather than synthetic zero scores."""
+        data = [[3, 3, 3, 3], [1, 2, 4, 5], [2, 4, 5, 5]]
+        result = person_total(data)
+        self.assertTrue(np.isnan(result[0]))
+        self.assertTrue(np.isfinite(result[1:]).all())
+
+    def test_all_missing_item_is_ignored_without_warning(self) -> None:
+        """An unavailable item does not warn or contaminate pairwise scores."""
+        data = [[1, np.nan, 5], [2, np.nan, 3], [3, np.nan, 1]]
+        result = person_total(data, na_rm=True)
+        np.testing.assert_allclose(result, [1.0, 1.0, -1.0], rtol=0.0, atol=1e-15)
+
+    def test_strict_missing_policy_propagates_unavailable_item(self) -> None:
+        """Disabling missing removal leaves every affected correlation unavailable."""
+        data = [[1, np.nan, 5], [2, np.nan, 3], [3, np.nan, 1]]
+        result = person_total(data, na_rm=False)
+        self.assertTrue(np.isnan(result).all())
+
+    def test_strict_policy_matches_complete_data_scores(self) -> None:
+        """Strict and pairwise policies agree when every response is present."""
+        data = [[1, 2, 4, 5], [2, 3, 5, 6], [5, 4, 2, 1]]
+        np.testing.assert_allclose(
+            person_total(data, na_rm=False),
+            person_total(data, na_rm=True),
+            rtol=0.0,
+            atol=1e-15,
+        )
+
 
 class TestSemanticSyn(unittest.TestCase):
     """Tests for semantic synonym/antonym functions."""

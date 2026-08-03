@@ -30,7 +30,7 @@ defaults, and options that must be configured before an index can run.
 | `mahad` | Mahalanobis distance (multivariate outlier) | high | yes | yes | — |
 | `psychsyn` | Psychometric synonym consistency | low | yes | yes | `psychsyn_critval` |
 | `psychant` | Psychometric antonym consistency | low | no | yes | `psychant_critval` |
-| `person_total` | Extreme total scores | low* | yes | yes | — |
+| `person_total` | Agreement with the sample item profile | low* | yes | yes | — |
 | `markov` | Transition entropy | low | yes | yes | — |
 | `missing_rate` | Missing-response proportion | high | no | yes | optional item subset via direct API |
 | `u3_poly` | Polytomous person-fit / Guttman-like | high | yes | no | `scale_min` / `scale_max` |
@@ -46,8 +46,8 @@ defaults, and options that must be configured before an index can run.
 | `semantic_ant` | Predefined antonym consistency | low | no | yes | `semantic_item_pairs`, optional scale bounds |
 | `infrequency` | Failed attention / bogus items | high | no | yes | item indices + expected responses |
 
-\* `person_total` flags unusually low totals under the default low-direction
-percentile rule; interpret in context of your scale coding.
+\* `person_total` flags unusually low correlations with the sample-wide item
+profile under the default low-direction percentile rule.
 
 `individual_reliability(..., random_seed=...)` uses an isolated reproducible
 random stream. It does not reset or advance NumPy's process-wide random state.
