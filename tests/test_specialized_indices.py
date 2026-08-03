@@ -426,6 +426,53 @@ class TestIndividualReliability(unittest.TestCase):
         finally:
             np.random.set_state(original_state)
 
+    def test_unseeded_scoring_consumes_only_the_expected_permutations(self) -> None:
+        """The global stream advances once per requested item split."""
+        data = [[1, 2, 1, 2, 1, 2, 1], [1, 5, 2, 4, 3, 3, 2]]
+        original_state = np.random.get_state()
+        try:
+            np.random.seed(20260803)
+            individual_reliability(data, n_splits=7)
+            actual_next = np.random.random()
+
+            np.random.seed(20260803)
+            for _ in range(7):
+                np.random.permutation(7)
+            expected_next = np.random.random()
+
+            self.assertEqual(actual_next, expected_next)
+        finally:
+            np.random.set_state(original_state)
+
+    def test_scoring_batches_rows_without_changing_seeded_results(self) -> None:
+        """Forced tiny workspaces preserve missing-data scores and input values."""
+        from ier.reliability import _paired_split_correlations
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(53, 12)).astype(float)
+        data[rng.random(data.shape) < 0.1] = np.nan
+        original = data.copy()
+        expected = individual_reliability(data, n_splits=7, random_seed=17)
+
+        with (
+            patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 18),
+            patch(
+                "ier.reliability._paired_split_correlations",
+                wraps=_paired_split_correlations,
+            ) as correlations,
+        ):
+            result = individual_reliability(data, n_splits=7, random_seed=17)
+
+        self.assertGreater(correlations.call_count, 7)
+        self.assertTrue(
+            all(
+                call.args[0].size <= 18 and call.args[1].size <= 18
+                for call in correlations.call_args_list
+            )
+        )
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(data, original)
+
     def test_n_splits_must_be_a_positive_integer(self) -> None:
         """Reject invalid split counts before allocating workspaces."""
         data = [[1, 2, 1, 2], [2, 1, 2, 1]]
