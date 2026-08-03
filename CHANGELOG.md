@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.19.71] - 2026-08-03
+## [2.19.73] - 2026-08-03
 
 ### Added
 
@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   benchmark, bounded consensus takes 5.6 ms and 8.6 MiB traced peak versus
   7.7 ms and 18.1 MiB for a stacked reference. No dependency is added.
 
-## [2.19.70] - 2026-08-03
+## [2.19.72] - 2026-08-03
 
 ### Added
 
@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   archives takes 12.4 ms and 57.9 MiB traced peak, compared with 11.8 ms and the
   same peak for loading one equivalent validated archive.
 
-## [2.19.69] - 2026-08-03
+## [2.19.71] - 2026-08-03
 
 ### Added
 
@@ -51,7 +51,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discovery threshold. The maintained benchmark covers shared fixed-model
   screening. No dependency is added.
 
-## [2.19.68] - 2026-08-03
+## [2.19.70] - 2026-08-03
+
+### Added
+
+- Shared `screen()`, `composite()`, and registry workflows now accept immutable
+  `psychsyn_model` and `psychant_model` calibrations through `IndexOptions`, with
+  matching `--psychsyn-model` and `--psychant-model` CLI flags. Fixed models
+  bypass pair discovery, preserve retry seeds and missing-value policy, validate
+  synonym/antonym mode and item count through the established strict/soft error
+  policy, and are safe to reuse with parallel workers. CLI model files are
+  validated before response input and cannot be combined with the matching
+  discovery threshold. The maintained benchmark covers shared fixed-model
+  screening. No dependency is added.
+
+## [2.19.69] - 2026-08-03
 
 ### Added
 
@@ -66,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CSV, and NPZ screen outputs. The maintained benchmark round-trips the model and
   reports archive size and load latency. No dependency is added.
 
-## [2.19.67] - 2026-08-03
+## [2.19.68] - 2026-08-03
 
 ### Added
 
@@ -80,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validation rejects non-finite thresholds and non-Boolean modes, and no
   dependency is added.
 
-## [2.19.66] - 2026-08-03
+## [2.19.67] - 2026-08-03
 
 ### Changed
 
@@ -92,7 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discovery benchmark, peak traced allocation falls from 64.1 MiB to 7.6 MiB and
   median runtime from 126.1 ms to 88.4 ms, with no dependency added.
 
-## [2.19.65] - 2026-08-03
+## [2.19.66] - 2026-08-03
 
 ### Changed
 
@@ -103,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   component count, the maintained benchmark covers the path, and no dependency is
   added.
 
-## [2.19.64] - 2026-08-03
+## [2.19.65] - 2026-08-03
 
 ### Changed
 
@@ -114,7 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and validation are preserved. The maintained benchmark documents the wide-pattern
   path, and no dependency is added.
 
-## [2.19.63] - 2026-08-03
+## [2.19.64] - 2026-08-03
 
 ### Changed
 
@@ -125,7 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zero-variance policy, and exact two-pair shortcut. The wide-factor benchmark is
   documented, inputs remain unchanged, and no dependency is added.
 
-## [2.19.62] - 2026-08-03
+## [2.19.63] - 2026-08-03
 
 ### Changed
 
@@ -136,7 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of respondent count. The row-reduction benchmark now covers every item-selection
   and applicability mode, and no dependency is added.
 
-## [2.19.61] - 2026-08-03
+## [2.19.62] - 2026-08-03
 
 ### Fixed
 
@@ -145,7 +159,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared reducer compacts partially missing values once, preserves established
   finite-value results and public return shapes, and adds no dependency.
 
-## [2.19.60] - 2026-08-03
+## [2.19.61] - 2026-08-03
 
 ### Added
 
@@ -155,7 +169,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   established field sets. Calculations and missing-data behavior are unchanged,
   the shared statistics helper no longer uses `Any`, and no dependency is added.
 
-## [2.19.59] - 2026-08-03
+## [2.19.60] - 2026-08-03
 
 ### Added
 
@@ -166,7 +180,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   means, and variances. The dedicated scoring loader is unchanged, malformed
   models still fail complete validation, and no dependency is added.
 
-## [2.19.58] - 2026-08-03
+## [2.19.59] - 2026-08-03
 
 ### Changed
 
@@ -177,7 +191,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer grows with component count, numerical behavior is preserved, and no
   dependency is added.
 
-## [2.19.57] - 2026-08-03
+## [2.19.58] - 2026-08-03
 
 ### Added
 
@@ -188,7 +202,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output format, and rejects fitting-only options before reading the input
   matrix. No dependency is added.
 
-## [2.19.56] - 2026-08-03
+## [2.19.57] - 2026-08-03
 
 ### Added
 
@@ -198,6 +212,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before atomic replacement; loads reject missing, extra, unsafe, malformed, or
   inconsistent members and reconstruct independent read-only parameters for
   exact later-cohort scoring. No dependency is added.
+
+## [2.19.56] - 2026-08-03
+
+### Performance
+
+- Missing-response rate scoring now reduces bounded respondent batches before
+  selecting required columns or applying respondent-specific applicability
+  masks. On a 200,000-respondent, 80-item benchmark, peak traced allocation
+  fell from 16.8 to 2.0 MiB for all items, from 70.3 to 4.0 MiB for a 40-item
+  subset, and from 81.2 to 4.4 MiB for the same subset with a skip-logic mask.
+  Median runtime improved from 8.6 to 5.2 ms, 23.5 to 9.7 ms, and 30.7 to
+  18.2 ms respectively. Rates, subset semantics, zero-denominator behavior,
+  source immutability, and the NumPy-only dependency set remain unchanged.
 
 ## [2.19.55] - 2026-08-03
 
