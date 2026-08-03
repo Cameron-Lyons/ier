@@ -215,7 +215,9 @@ ier screen responses.npy --indices irv longstring --format npz --output screenin
 ```
 
 NPZ output requires a `.npz` file path and preserves typed flags, metadata, and
-non-finite values. See [CLI output formats](cli-output.md) for its schema.
+non-finite values. Writes use same-directory atomic replacement, so existing
+results survive an interrupted serialization. See
+[CLI output formats](cli-output.md) for the schema.
 
 Save a compact reusable-score archive directly from Python, or reload compatible
 CLI output for later sensitivity work:
@@ -229,7 +231,8 @@ revised = screen_scores(saved["scores"], percentile=99)
 ```
 
 `save_score_archive()` validates every vector and metadata field before opening
-the destination. Detailed composite NPZ output produced with
+the staged archive and atomically replaces the destination only after every
+member is complete. Detailed composite NPZ output produced with
 `--include-components` works with the same loader and `composite_scores()`.
 Response-time results have matching `save_response_time_archive()` and
 `load_response_time_archive()` boundaries; retained `scores` feed directly into

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
+from stat import S_IMODE
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, cast
 from zipfile import ZIP_STORED, ZipFile
 
@@ -91,14 +94,33 @@ def _validate_respondent_ids(values: list[str], n_respondents: int) -> list[str]
     return values
 
 
-def _write_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
-    """Stream typed arrays into one uncompressed, pickle-free NPZ archive."""
-    if any(value.dtype.hasobject for value in payload.values()):
-        raise ValueError("NPZ archive cannot contain object arrays")
+def _stream_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
+    """Stream typed arrays directly into one uncompressed NPZ archive."""
     with ZipFile(path, mode="w", compression=ZIP_STORED, allowZip64=True) as archive:
         for name, value in payload.items():
             with archive.open(f"{name}.npy", mode="w", force_zip64=True) as member:
                 np.save(member, value, allow_pickle=False)
+
+
+def _write_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
+    """Atomically stream one typed, pickle-free NPZ archive into place."""
+    if any(value.dtype.hasobject for value in payload.values()):
+        raise ValueError("NPZ archive cannot contain object arrays")
+
+    destination = path.resolve(strict=False) if path.is_symlink() else path
+    existing_mode: int | None = None
+    with suppress(FileNotFoundError):
+        existing_mode = S_IMODE(destination.stat().st_mode)
+
+    with TemporaryDirectory(
+        prefix=f".{destination.name}.",
+        dir=destination.parent,
+    ) as directory:
+        staged_path = Path(directory) / destination.name
+        _stream_npz_archive(staged_path, payload)
+        if existing_mode is not None:
+            staged_path.chmod(existing_mode)
+        staged_path.replace(destination)
 
 
 def _require_member(archive: NpzFile, name: str) -> np.ndarray:
