@@ -888,6 +888,55 @@ class TestMarkov(unittest.TestCase):
 
         np.testing.assert_allclose(scores, row_path_scores, rtol=0, atol=1e-12)
 
+    def test_noninteger_categories_match_missing_data_row_path(self) -> None:
+        """Sorted-category encoding preserves the sparse row calculation."""
+        rng = np.random.default_rng(17)
+        data = rng.choice([0.25, 1.5, 9.75], size=(200, 24))
+
+        scores = markov(data)
+        row_path_data = np.column_stack((data, np.full(data.shape[0], np.nan)))
+        row_path_scores = markov(row_path_data)
+
+        np.testing.assert_allclose(scores, row_path_scores, rtol=0, atol=1e-12)
+
+    def test_complete_fast_path_chunks_workspace(self) -> None:
+        """Bounded dense batches preserve results when forced into small chunks."""
+        rng = np.random.default_rng(23)
+        data = rng.integers(1, 6, size=(250, 60)).astype(float)
+        expected = markov(data)
+
+        with patch("ier.markov._TRANSITION_BATCH_WORKSPACE_BYTES", 4096):
+            result = markov(data)
+
+        np.testing.assert_allclose(result, expected, rtol=0, atol=1e-12)
+
+    def test_high_cardinality_rows_use_sparse_observed_counts(self) -> None:
+        """Distinct response values do not require a dense global state square."""
+        data = np.arange(40_000, dtype=float).reshape(2, 20_000)
+
+        scores = markov(data)
+        row_path_data = np.column_stack((data, np.full(data.shape[0], np.nan)))
+        row_path_scores = markov(row_path_data)
+
+        np.testing.assert_array_equal(scores, [0.0, 0.0])
+        np.testing.assert_array_equal(row_path_scores, scores)
+
+    def test_high_cardinality_sparse_entropy_matches_hand_calculation(self) -> None:
+        """Observed-pair counts retain branching entropy above the dense-state limit."""
+        row = np.concatenate((np.array([0.0, 1.0, 0.0, 2.0]), np.arange(3.0, 70.0)))
+
+        result = markov(row[None, :])
+
+        self.assertAlmostEqual(result[0], 2.0 / (len(row) - 1))
+
+    def test_infinite_categories_are_scored_without_warnings(self) -> None:
+        """Infinite response categories remain valid categorical labels."""
+        data = [[np.inf, np.inf, 1.0, 1.0], [-np.inf, 0.0, np.inf, 0.0]]
+
+        result = markov(data)
+
+        self.assertTrue(np.isfinite(result).all())
+
     def test_rows_with_too_few_nonmissing_values_return_nan(self) -> None:
         """Test rows reduced below one transition return NaN."""
         data = [[np.nan, 1, np.nan], [1, 2, 3]]
