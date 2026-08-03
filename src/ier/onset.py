@@ -16,6 +16,9 @@ import numpy as np
 
 from ier._validation import MatrixLike, validate_matrix_input
 
+_ONSET_BATCH_WORKSPACE_BYTES = 64 * 1024 * 1024
+_SHAO_ZHANG_CRITICAL_VALUE = 1.358
+
 
 def onset(
     x: MatrixLike,
@@ -59,11 +62,17 @@ def onset(
     if min_items < window_size:
         raise ValueError("min_items must be at least as large as window_size")
 
-    if not na_rm and np.isnan(x_array).any():
+    has_missing = bool(np.isnan(x_array).any())
+    if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
 
     n_rows = x_array.shape[0]
     result = np.full(n_rows, np.nan)
+    if x_array.shape[1] < min_items:
+        return result
+
+    if not has_missing:
+        return _onset_complete(x_array, window_size)
 
     for i in range(n_rows):
         row = x_array[i, :]
@@ -81,6 +90,33 @@ def onset(
         cp = _shao_zhang_changepoint(running_irv)
         if cp is not None:
             result[i] = float(cp + window_size - 1)
+
+    return result
+
+
+def _onset_complete(x: np.ndarray, window_size: int) -> np.ndarray:
+    """Detect onset for complete rows in bounded vectorized batches."""
+    n_rows, n_items = x.shape
+    n_windows = n_items - window_size + 1
+    result = np.full(n_rows, np.nan)
+    if n_windows < 3:
+        return result
+
+    # ``np.std`` may materialize a window-sized temporary in addition to the
+    # prefix/candidate arrays, so include both in the row-size estimate.
+    bytes_per_row = np.dtype(float).itemsize * n_windows * (window_size + 6)
+    batch_rows = max(1, _ONSET_BATCH_WORKSPACE_BYTES // bytes_per_row)
+
+    for start in range(0, n_rows, batch_rows):
+        stop = min(start + batch_rows, n_rows)
+        windows = np.lib.stride_tricks.sliding_window_view(
+            x[start:stop],
+            window_size,
+            axis=1,
+        )
+        running_irv = np.std(windows, axis=2)
+        changepoints = _shao_zhang_changepoints(running_irv)
+        result[start:stop] = changepoints + window_size - 1
 
     return result
 
@@ -118,17 +154,11 @@ def onset_flag(
 
 def _running_inconsistency(row: np.ndarray, window_size: int) -> np.ndarray:
     """Compute running standard deviation over sliding windows."""
-    n = len(row)
-    if n < window_size:
+    if len(row) < window_size:
         return np.array([])
 
-    n_windows = n - window_size + 1
-    result = np.zeros(n_windows)
-
-    for j in range(n_windows):
-        window = row[j : j + window_size]
-        result[j] = np.std(window)
-
+    windows = np.lib.stride_tricks.sliding_window_view(row, window_size)
+    result: np.ndarray = np.std(windows, axis=1)
     return result
 
 
@@ -143,30 +173,37 @@ def _shao_zhang_changepoint(series: np.ndarray) -> int | None:
     if n < 3:
         return None
 
-    mean_val = np.mean(series)
-    cumsum = np.cumsum(series - mean_val)
+    changepoint = _shao_zhang_changepoints(series[None, :])[0]
+    return None if np.isnan(changepoint) else int(changepoint)
 
-    var_estimate = np.zeros(n)
-    for k in range(1, n):
-        partial = series[:k] - np.mean(series[:k])
-        var_estimate[k] = np.sum(partial**2)
 
-    var_estimate = np.maximum(var_estimate, 1e-10)
+def _shao_zhang_changepoints(series: np.ndarray) -> np.ndarray:
+    """Apply the changepoint test to a complete batch of running IRV rows."""
+    n_rows, n_observations = series.shape
+    result = np.full(n_rows, np.nan)
+    if n_observations < 3:
+        return result
 
-    test_stats = np.zeros(n)
-    for k in range(1, n - 1):
-        test_stats[k] = cumsum[k] ** 2 / var_estimate[k]
+    prefix_sum = np.cumsum(series, axis=1)
+    prefix_square_sum = np.cumsum(series * series, axis=1)
+    centered_prefix = np.cumsum(series - np.mean(series, axis=1, keepdims=True), axis=1)
 
-    trim = max(1, n // 10)
-    candidate_range = test_stats[trim : n - trim]
+    trim = max(1, n_observations // 10)
+    candidate_positions = np.arange(trim, n_observations - trim)
+    if len(candidate_positions) == 0:
+        return result
 
-    if len(candidate_range) == 0:
-        return None
+    prefix_positions = candidate_positions - 1
+    prefix_counts = candidate_positions.astype(float)
+    variances = (
+        prefix_square_sum[:, prefix_positions]
+        - prefix_sum[:, prefix_positions] ** 2 / prefix_counts
+    )
+    variances = np.maximum(variances, 1e-10)
+    test_stats = centered_prefix[:, candidate_positions] ** 2 / variances
 
-    max_stat = np.max(candidate_range)
-    critical_value = 1.358
-
-    if max_stat > critical_value:
-        return int(trim + np.argmax(candidate_range))
-
-    return None
+    offsets = np.argmax(test_stats, axis=1)
+    max_stats = np.take_along_axis(test_stats, offsets[:, None], axis=1)[:, 0]
+    detected = max_stats > _SHAO_ZHANG_CRITICAL_VALUE
+    result[detected] = (trim + offsets[detected]).astype(float)
+    return result

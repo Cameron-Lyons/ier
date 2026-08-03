@@ -1,6 +1,7 @@
 """Unit tests for specialized IER indices."""
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -817,6 +818,38 @@ class TestOnset(unittest.TestCase):
         data[0, 5] = np.nan
         result = onset(data, window_size=5, min_items=10, na_rm=True)
         self.assertEqual(len(result), 1)
+
+    def test_complete_fast_path_matches_missing_data_row_path(self) -> None:
+        """Complete batches preserve established row-wise changepoints."""
+        rng = np.random.default_rng(17)
+        for n_items in [5, 10, 20, 41, 80]:
+            data = rng.integers(1, 6, size=(24, n_items)).astype(float)
+            if n_items >= 20:
+                data[0, n_items // 2 :] = 3.0
+            row_path_data = np.column_stack((data, np.full(data.shape[0], np.nan)))
+
+            for window_size in [2, 3, 5, 10]:
+                if window_size > n_items:
+                    continue
+                with self.subTest(n_items=n_items, window_size=window_size):
+                    result = onset(data, window_size=window_size, min_items=window_size)
+                    row_path_result = onset(
+                        row_path_data,
+                        window_size=window_size,
+                        min_items=window_size,
+                    )
+                    np.testing.assert_array_equal(result, row_path_result)
+
+    def test_complete_fast_path_chunks_workspace(self) -> None:
+        """Bounded batches preserve results when the workspace forces chunks."""
+        rng = np.random.default_rng(23)
+        data = rng.integers(1, 6, size=(250, 60)).astype(float)
+        expected = onset(data, window_size=7, min_items=20)
+
+        with patch("ier.onset._ONSET_BATCH_WORKSPACE_BYTES", 4096):
+            result = onset(data, window_size=7, min_items=20)
+
+        np.testing.assert_array_equal(result, expected)
 
 
 if __name__ == "__main__":
