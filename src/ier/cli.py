@@ -26,7 +26,7 @@ from ier import (
     screen,
     screen_scores,
 )
-from ier._cli_input import _load_input, _load_numeric_vector
+from ier._cli_input import _load_boolean_matrix, _load_input, _load_numeric_vector
 from ier._cli_npz import _require_npz_output_path
 from ier._cli_results import (
     flag_response_time_scores,
@@ -134,6 +134,11 @@ def _load_optional_numeric_vector(path: Path | None, label: str) -> np.ndarray |
     return None if path is None else _load_numeric_vector(path, label)
 
 
+def _load_optional_applicability_mask(path: Path | None) -> np.ndarray | None:
+    """Load an optional respondent-by-item skip-logic mask."""
+    return None if path is None else _load_boolean_matrix(path, "missing applicability mask")
+
+
 def _options_from_args(args: argparse.Namespace) -> IndexOptions:
     return IndexOptions(
         na_rm=args.na_rm,
@@ -173,6 +178,7 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
         infrequency_proportion=args.infrequency_proportion,
         infrequency_missing=args.infrequency_missing,
         missing_item_indices=_parse_int_list(args.missing_item_indices),
+        missing_applicable_mask=_load_optional_applicability_mask(args.missing_applicable_mask),
     )
 
 
@@ -457,6 +463,13 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         "--missing-item-indices",
         default=None,
         help="Comma-separated required item indices for missing-rate scoring",
+    )
+    parser.add_argument(
+        "--missing-applicable-mask",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="Respondent-by-item skip-logic mask as 0/1 text or a Boolean/numeric .npy file",
     )
     _add_output_options(parser)
 

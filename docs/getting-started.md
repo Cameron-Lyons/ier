@@ -223,6 +223,20 @@ ier screen responses.csv --indices psychant --psychant-random-seed 29
 Seeds affect only retry draws for undefined within-person correlations. Each
 scorer uses an isolated random stream and leaves NumPy's global state untouched.
 
+Command-line missing-rate scoring supports respondent-specific skip logic with
+a separate applicability matrix:
+
+```bash
+ier screen responses.csv --indices missing_rate \
+  --missing-applicable-mask applicable.npy
+```
+
+The mask must match the scored response matrix after item-column selection.
+True or `1` cells identify expected responses; false or `0` cells are excluded
+from both the missing count and denominator. Files may be delimited text,
+gzip-compressed text, or safe pickle-free `.npy`; Boolean NumPy masks remain
+read-only memory maps.
+
 Final screening flag counts and composite reductions use respondent-sized
 workspaces rather than another respondent-by-index matrix, keeping post-scoring
 memory bounded as the number of selected indices grows.

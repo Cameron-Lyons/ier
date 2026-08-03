@@ -21,12 +21,18 @@ from ier import (
     composite_summary,
     irv,
     lz,
+    missing_rate,
     psychant,
     psychsyn,
     save_response_time_archive,
     save_score_archive,
 )
-from ier._cli_input import _load_input, _load_matrix, _load_numeric_vector
+from ier._cli_input import (
+    _load_boolean_matrix,
+    _load_input,
+    _load_matrix,
+    _load_numeric_vector,
+)
 from ier._cli_output import _emit_composite_json, _emit_composite_text, _write_composite_csv
 from ier.cli import (
     _parse_float_list,
@@ -1627,6 +1633,150 @@ class TestCli(unittest.TestCase):
             _load_numeric_vector(compressed, "test vector")
         with self.assertRaisesRegex(ValueError, "cannot use standard input"):
             _load_numeric_vector(Path("-"), "test vector")
+
+    def test_boolean_matrix_loader_accepts_memory_mapped_and_text_masks(self) -> None:
+        expected = np.array([[True, False, True], [False, True, False]])
+        npy_path = self.root / "mask.npy"
+        text_path = self.root / "mask.csv.gz"
+        np.save(npy_path, expected)
+        with gzip.open(text_path, mode="wt", encoding="utf-8") as handle:
+            handle.write("q1,q2,q3\n1,0,1\n0,1,0\n")
+
+        npy_mask = _load_boolean_matrix(npy_path, "test mask")
+        text_mask = _load_boolean_matrix(text_path, "test mask")
+
+        self.assertIsInstance(npy_mask, np.memmap)
+        self.assertFalse(npy_mask.flags.writeable)
+        self.assertEqual(text_mask.dtype, np.bool_)
+        np.testing.assert_array_equal(npy_mask, expected)
+        np.testing.assert_array_equal(text_mask, expected)
+
+    def test_boolean_matrix_loader_rejects_unsafe_or_nonbinary_inputs(self) -> None:
+        vector = self.root / "vector.npy"
+        objects = self.root / "objects.npy"
+        complex_values = self.root / "complex.npy"
+        nonbinary = self.root / "nonbinary.npy"
+        compressed = self.root / "compressed.npy.gz"
+        np.save(vector, np.ones(2, dtype=bool))
+        np.save(objects, np.array([[{"unsafe": True}]], dtype=object))
+        np.save(complex_values, np.ones((2, 2), dtype=complex))
+        np.save(nonbinary, np.array([[0.0, 2.0]]))
+        with gzip.open(compressed, mode="wb") as handle:
+            np.save(handle, np.ones((2, 2), dtype=bool))
+
+        for path, message in [
+            (vector, "non-empty two-dimensional test mask"),
+            (objects, "failed to load test mask"),
+            (complex_values, "Boolean or real numeric test mask"),
+            (nonbinary, "must contain only 0 or 1"),
+            (compressed, "compressed .npy test mask"),
+            (Path("-"), "cannot use standard input"),
+        ]:
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, message):
+                _load_boolean_matrix(path, "test mask")
+
+    def test_applicability_mask_file_matches_direct_screen_and_composite(self) -> None:
+        data = np.array(
+            [
+                [1.0, np.nan, 3.0, 4.0],
+                [np.nan, np.nan, 3.0, 4.0],
+                [np.nan, np.nan, np.nan, np.nan],
+            ]
+        )
+        applicable = np.array(
+            [
+                [True, False, True, True],
+                [True, True, True, True],
+                [False, False, False, False],
+            ]
+        )
+        data_path = self.root / "branched-responses.csv"
+        mask_path = self.root / "applicable.npy"
+        np.savetxt(data_path, data, delimiter=",")
+        np.save(mask_path, applicable)
+        expected = missing_rate(data, applicable_mask=applicable)
+        expected_json = [None if np.isnan(value) else float(value) for value in expected]
+        common = [
+            str(data_path),
+            "--indices",
+            "missing_rate",
+            "--missing-applicable-mask",
+            str(mask_path),
+            "--format",
+            "json",
+        ]
+        screen_output = self.root / "skip-logic-screen.json"
+        composite_output = self.root / "skip-logic-composite.json"
+
+        screen_code = main(["screen", *common, "--output", str(screen_output)])
+        composite_code = main(
+            [
+                "composite",
+                *common,
+                "--no-standardize",
+                "--output",
+                str(composite_output),
+            ]
+        )
+
+        self.assertEqual(screen_code, 0)
+        self.assertEqual(composite_code, 0)
+        screen_payload = json.loads(screen_output.read_text(encoding="utf-8"))
+        composite_payload = json.loads(composite_output.read_text(encoding="utf-8"))
+        self.assertEqual(screen_payload["scores"]["missing_rate"], expected_json)
+        self.assertEqual(composite_payload["scores"], expected_json)
+
+    def test_applicability_mask_shape_uses_soft_and_strict_policy(self) -> None:
+        mask = self.root / "wrong-shape.npy"
+        np.save(mask, np.ones((2, 2), dtype=bool))
+        soft_output = self.root / "soft-mask-error.json"
+        stderr = StringIO()
+        arguments = [
+            "screen",
+            str(self.csv_path),
+            "--indices",
+            "missing_rate",
+            "--missing-applicable-mask",
+            str(mask),
+            "--min-flags",
+            "1",
+        ]
+
+        with patch("sys.stderr", stderr):
+            soft_code = main([*arguments, "--format", "json", "--output", str(soft_output)])
+            strict_code = main([*arguments, "--strict"])
+
+        self.assertEqual(soft_code, 0)
+        payload = json.loads(soft_output.read_text(encoding="utf-8"))
+        self.assertEqual(payload["scores"], {})
+        self.assertIn("must have shape", payload["errors"]["missing_rate"])
+        self.assertEqual(strict_code, 1)
+        self.assertIn("must have shape", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_invalid_applicability_mask_fails_before_response_input(self) -> None:
+        invalid = self.root / "invalid-mask.npy"
+        np.save(invalid, np.array([[0.0, 2.0]]))
+        stderr = StringIO()
+
+        with (
+            patch("ier.cli._load_input", side_effect=AssertionError("response matrix loaded")),
+            patch("sys.stderr", stderr),
+        ):
+            code = main(
+                [
+                    "screen",
+                    "unused.csv",
+                    "--indices",
+                    "missing_rate",
+                    "--missing-applicable-mask",
+                    str(invalid),
+                ]
+            )
+
+        self.assertEqual(code, 1)
+        self.assertIn("must contain only 0 or 1", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_calibrated_lz_parameter_files_match_direct_screen_and_composite(self) -> None:
         matrix, _ = _load_input(self.csv_path, None)

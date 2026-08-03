@@ -64,6 +64,8 @@ Configure `missing_rate` with `IndexOptions(missing_item_indices=[...])` for a
 fixed required-item subset or `missing_applicable_mask=...` for respondent-specific
 skip logic. Respondents without applicable items contribute an unavailable
 component score, so `min_valid_indices` can enforce the desired composite coverage.
+The CLI accepts the same mask from 0/1 text or a Boolean/numeric `.npy` file via
+`--missing-applicable-mask`; its shape must match the scored response matrix.
 
 The `infrequency` component also accepts `infrequency_missing`. Policies `omit`
 and `propagate` can produce unavailable scores; combine them with
