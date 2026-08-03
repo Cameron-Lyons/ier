@@ -14,6 +14,7 @@ from ier._cli_npz import (
 from ier._cli_output import (
     _emit_archive_info_text,
     _emit_composite_text,
+    _emit_flag_consensus_text,
     _emit_index_catalog_json,
     _emit_index_catalog_text,
     _emit_response_time_text,
@@ -22,6 +23,8 @@ from ier._cli_output import (
     _write_archive_info_json,
     _write_composite_csv,
     _write_composite_json,
+    _write_flag_consensus_csv,
+    _write_flag_consensus_json,
     _write_index_catalog_csv,
     _write_json_output,
     _write_output,
@@ -32,11 +35,13 @@ from ier._cli_output import (
 )
 from ier._flagging import resolve_threshold, threshold_flags
 from ier._statistics import logistic_transform
+from ier.archive import save_flag_consensus_archive
 
 if TYPE_CHECKING:
     import argparse
 
     from ier.types import (
+        FlagConsensusArchive,
         IndexCatalog,
         IndexScoreMap,
         InspectableArchive,
@@ -56,6 +61,38 @@ def write_archive_info_result(args: argparse.Namespace, archive: InspectableArch
         )
     else:
         _write_output(_emit_archive_info_text(archive), args.output)
+    return 0
+
+
+def write_flag_consensus_result(
+    args: argparse.Namespace,
+    result: FlagConsensusArchive,
+) -> int:
+    """Write one cross-domain consensus result through the selected format."""
+    if args.format == "json":
+        _write_json_output(
+            args.output,
+            lambda handle: _write_flag_consensus_json(handle, result),
+        )
+    elif args.format == "csv":
+        with _output_stream(args.output) as handle:
+            _write_flag_consensus_csv(handle, result)
+    elif args.format == "npz":
+        if args.output is None:
+            raise ValueError("--format npz requires an explicit output path")
+        save_flag_consensus_archive(
+            args.output,
+            result["flags"],
+            scores=result["scores"],
+            min_flags=result["min_flags"],
+            min_valid_signals=result["min_valid_signals"],
+            respondent_ids=result["respondent_ids"],
+        )
+    else:
+        _write_output(
+            _emit_flag_consensus_text(result, args.top),
+            args.output,
+        )
     return 0
 
 

@@ -23,6 +23,7 @@ from ier._cli_composite import (
 
 if TYPE_CHECKING:
     from ier.types import (
+        FlagConsensusArchive,
         IndexCatalog,
         InspectableArchive,
         ResponseTimeThresholdSource,
@@ -357,6 +358,102 @@ def _emit_archive_info_text(archive: InspectableArchive) -> str:
         for name, message in archive["errors"].items():
             lines.append(f"  {name}: {message}")
     return "\n".join(lines)
+
+
+def _emit_flag_consensus_text(result: FlagConsensusArchive, top: int) -> str:
+    """Render a compact cross-domain consensus summary."""
+    n_respondents = result["n_respondents"]
+    n_flagged = int(np.sum(result["consensus_flags"]))
+    lines = [
+        f"respondents: {n_respondents}",
+        f"signals: {', '.join(result['signal_names'])}",
+        f"consensus flagged: {n_flagged}/{n_respondents} "
+        f"({n_flagged / n_respondents:.1%}, min_flags={result['min_flags']})",
+        "signal coverage:",
+    ]
+    for name in result["signal_names"]:
+        score = result["scores"].get(name)
+        n_valid = n_respondents if score is None else int(np.count_nonzero(~np.isnan(score)))
+        n_signal_flagged = int(np.count_nonzero(result["flags"][name]))
+        rate = n_signal_flagged / n_valid if n_valid else float("nan")
+        rate_text = "n/a" if not np.isfinite(rate) else f"{rate:.1%}"
+        lines.append(
+            f"  {name}: valid={n_valid}/{n_respondents}, "
+            f"flagged={n_signal_flagged}/{n_valid} ({rate_text})"
+        )
+    if result["min_valid_signals"] is not None:
+        lines.append(
+            f"consensus eligible: {int(np.sum(result['consensus_eligible']))}/{n_respondents} "
+            f"(min_valid_signals={result['min_valid_signals']})"
+        )
+
+    counts = result["flag_counts"]
+    valid_counts = result["valid_signal_counts"]
+    eligible = result["consensus_eligible"]
+    labels = _respondent_label_values(n_respondents, result["respondent_ids"])
+    order = np.argsort(counts)[::-1][: max(top, 0)]
+    label_name = "identifier" if result["respondent_ids"] is not None else "index"
+    lines.append(
+        f"top flagged respondents ({label_name}, flag_count, valid_signal_count, eligible):"
+    )
+    for index in order:
+        lines.append(
+            f"  {labels[int(index)]}\t{int(counts[index])}\t{int(valid_counts[index])}"
+            f"\t{int(bool(eligible[index]))}"
+        )
+    return "\n".join(lines)
+
+
+def _write_flag_consensus_json(handle: TextIO, result: FlagConsensusArchive) -> None:
+    """Write reusable consensus JSON with bounded respondent-array allocation."""
+    payload = {
+        "n_respondents": result["n_respondents"],
+        "n_signals": result["n_signals"],
+        "signal_names": result["signal_names"],
+        "flag_counts": _JsonArray(result["flag_counts"], "integer"),
+        "valid_signal_counts": _JsonArray(result["valid_signal_counts"], "integer"),
+        "consensus_eligible": _JsonArray(result["consensus_eligible"], "boolean"),
+        "consensus_flags": _JsonArray(result["consensus_flags"], "boolean"),
+        "min_flags": result["min_flags"],
+        "min_valid_signals": result["min_valid_signals"],
+        "scores": {name: _JsonArray(values, "number") for name, values in result["scores"].items()},
+        "flags": {name: _JsonArray(values, "boolean") for name, values in result["flags"].items()},
+    }
+    if result["respondent_ids"] is not None:
+        payload["respondent_ids"] = _JsonArray(result["respondent_ids"], "string")
+    _write_json_value(handle, payload)
+
+
+def _write_flag_consensus_csv(handle: TextIO, result: FlagConsensusArchive) -> None:
+    """Write respondent-aligned consensus inputs and decisions to CSV."""
+    fieldnames = [
+        "respondent",
+        "flag_count",
+        "valid_signal_count",
+        "consensus_eligible",
+        "consensus_flag",
+    ]
+    for name in result["signal_names"]:
+        if name in result["scores"]:
+            fieldnames.append(f"{name}_score")
+        fieldnames.append(f"{name}_flag")
+
+    labels = _respondent_label_values(result["n_respondents"], result["respondent_ids"])
+    writer = csv.DictWriter(handle, fieldnames=fieldnames)
+    writer.writeheader()
+    for index in range(result["n_respondents"]):
+        row: dict[str, object] = {
+            "respondent": labels[index],
+            "flag_count": int(result["flag_counts"][index]),
+            "valid_signal_count": int(result["valid_signal_counts"][index]),
+            "consensus_eligible": int(bool(result["consensus_eligible"][index])),
+            "consensus_flag": int(bool(result["consensus_flags"][index])),
+        }
+        for name in result["signal_names"]:
+            if name in result["scores"]:
+                row[f"{name}_score"] = _csv_number(result["scores"][name][index])
+            row[f"{name}_flag"] = int(bool(result["flags"][name][index]))
+        writer.writerow(row)
 
 
 def _write_archive_info_json(handle: TextIO, archive: InspectableArchive) -> None:

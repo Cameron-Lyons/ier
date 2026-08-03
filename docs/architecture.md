@@ -50,12 +50,14 @@ _validation / _flagging    ← shared input checks and threshold helpers
   optional score vectors to enforce availability. These layers support
   sensitivity analysis without rerunning scorers.
 - **Archive-backed decisions.** Screening reflagging, composite recombination,
-  and response-time reflagging load validated retained vectors before applying
-  new decisions. They share cutoff, combination, probability, and output paths
-  with their original scoring commands. NPZ output can therefore atomically
-  replace a reusable source without retaining the raw input matrix or adding a
-  runtime dependency; composite replacement explicitly requires component
-  retention.
+  response-time reflagging, and cross-domain consensus load validated retained
+  vectors before applying new decisions. Score-plus-timing consensus reorders
+  fully identified timing vectors to score-archive ID order before registered
+  reflagging and bounded reduction. These workflows share cutoff, combination,
+  probability, and output paths with their original scoring commands. NPZ output
+  can therefore atomically replace a reusable source without retaining the raw
+  input matrix or adding a runtime dependency; composite replacement explicitly
+  requires component retention.
 - **Reusable consensus archives.** Ordered cross-domain flags and optional
   availability scores use indexed NPZ members, then store the bounded reduction
   result beside them with count vectors narrowed to the smallest safe unsigned
@@ -369,5 +371,7 @@ Plotting remains optional and reports a centralized install hint from
   `benchmarks/bench_archive.py`.
 - Validated flag-consensus archive save/load latency, traced peak allocation,
   and artifact size: `benchmarks/bench_consensus_archive.py`.
+- Validated score-plus-timing archive reflagging, alignment, availability, and
+  bounded consensus: `benchmarks/bench_archive_consensus.py`.
 - Shared fixed and percentile flagging throughput and memory: `benchmarks/bench_flagging.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.

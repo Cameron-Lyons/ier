@@ -25,6 +25,7 @@ from ier import (
     fit_psychsyn_model,
     fit_response_time_mixture,
     irv,
+    load_flag_consensus_archive,
     load_psychsyn_model,
     load_response_time_mixture_model,
     lz,
@@ -1983,6 +1984,104 @@ class TestCli(unittest.TestCase):
         self.assertEqual(text_code, 0)
         self.assertIn("threshold: 1 (percentile)", stdout.getvalue())
         self.assertIn("percentile: 50", stdout.getvalue())
+
+    def test_archive_consensus_aligns_and_writes_every_output_format(self) -> None:
+        scores_path = self.root / "scores.npz"
+        timing_path = self.root / "timing.npz"
+        json_out = self.root / "consensus.json"
+        csv_out = self.root / "consensus.csv"
+        npz_out = self.root / "consensus.npz"
+        save_score_archive(
+            scores_path,
+            {
+                "irv": np.asarray([0.1, 0.8, np.nan]),
+                "longstring": np.asarray([2.0, 10.0, 7.0]),
+            },
+            respondent_ids=["case-a", "case-b", "case-c"],
+        )
+        save_response_time_archive(
+            timing_path,
+            np.asarray([0.4, 0.5, 2.0]),
+            np.asarray([True, True, False]),
+            threshold=0.5,
+            respondent_ids=["case-c", "case-a", "case-b"],
+        )
+        shared = [
+            "archive-consensus",
+            str(scores_path),
+            str(timing_path),
+            "--indices",
+            "longstring",
+            "irv",
+            "--threshold",
+            "longstring=5",
+            "--threshold",
+            "irv=0.5",
+            "--timing-name",
+            "speed",
+            "--min-valid-signals",
+            "3",
+        ]
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            text_code = main([*shared, "--top", "2"])
+        json_code = main([*shared, "--format", "json", "--output", str(json_out)])
+        csv_code = main([*shared, "--format", "csv", "--output", str(csv_out)])
+        npz_code = main([*shared, "--format", "npz", "--output", str(npz_out)])
+
+        self.assertEqual([text_code, json_code, csv_code, npz_code], [0, 0, 0, 0])
+        text = stdout.getvalue()
+        self.assertIn("signals: longstring, irv, speed", text)
+        self.assertIn("consensus flagged: 1/3", text)
+        self.assertIn("consensus eligible: 2/3", text)
+        self.assertIn("case-c\t2\t2\t0", text)
+        self.assertIn("case-a\t2\t3\t1", text)
+
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["signal_names"], ["longstring", "irv", "speed"])
+        self.assertEqual(payload["respondent_ids"], ["case-a", "case-b", "case-c"])
+        self.assertEqual(payload["scores"]["speed"], [0.5, 2.0, 0.4])
+        self.assertEqual(payload["flags"]["speed"], [True, False, True])
+        self.assertEqual(payload["flag_counts"], [2, 1, 2])
+        self.assertEqual(payload["valid_signal_counts"], [3, 3, 2])
+        self.assertEqual(payload["consensus_eligible"], [True, True, False])
+        self.assertEqual(payload["consensus_flags"], [True, False, False])
+
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        self.assertEqual([row["respondent"] for row in rows], ["case-a", "case-b", "case-c"])
+        self.assertEqual([row["speed_score"] for row in rows], ["0.5", "2.0", "0.4"])
+        self.assertEqual([row["speed_flag"] for row in rows], ["1", "0", "1"])
+        self.assertEqual([row["consensus_flag"] for row in rows], ["1", "0", "0"])
+
+        archived = load_flag_consensus_archive(npz_out)
+        self.assertEqual(archived["signal_names"], ["longstring", "irv", "speed"])
+        self.assertEqual(archived["respondent_ids"], ["case-a", "case-b", "case-c"])
+        np.testing.assert_array_equal(archived["consensus_flags"], [True, False, False])
+
+    def test_archive_consensus_reports_unsafe_alignment_without_traceback(self) -> None:
+        scores_path = self.root / "scores.npz"
+        timing_path = self.root / "timing.npz"
+        save_score_archive(
+            scores_path,
+            {"irv": [0.1, 0.8]},
+            respondent_ids=["case-a", "case-b"],
+        )
+        save_response_time_archive(
+            timing_path,
+            [0.4, 2.0],
+            [True, False],
+            threshold=0.5,
+            respondent_ids=["case-a", "other"],
+        )
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            code = main(["archive-consensus", str(scores_path), str(timing_path)])
+
+        self.assertEqual(code, 1)
+        self.assertIn("respondent ID sets must match", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_response_time_reflag_preserves_mixture_high_tail(self) -> None:
         archive = self.root / "mixture-timing.npz"

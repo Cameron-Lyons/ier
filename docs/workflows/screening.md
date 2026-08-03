@@ -409,6 +409,7 @@ respondents. Call them directly or use the dedicated CLI command:
 ```python
 from ier import (
     flag_consensus,
+    flag_consensus_archives,
     fit_response_time_mixture,
     load_response_time_archive,
     response_time,
@@ -453,6 +454,15 @@ save_response_time_archive(
     respondent_ids=saved["respondent_ids"],
     threshold_source="fixed",
 )
+
+archived_combined = flag_consensus_archives(
+    "screening.npz",
+    "timing.npz",
+    thresholds={"longstring": 8},
+    percentiles={"irv": 99},
+    min_flags=2,
+    min_valid_signals=3,
+)
 ```
 
 The response and timing matrices remain separate. Only aligned, already scored
@@ -468,6 +478,9 @@ ier response-time timings.csv --metric median --format npz --output timing.npz
 ier response-time-fit reference-times.csv timing-model.npz --components 3 --random-seed 42
 ier response-time later-times.csv --mixture-model timing-model.npz --threshold 0.5
 ier response-time-reflag timing.npz --percentile 1 --format npz --output strict.npz
+ier archive-consensus screening.npz timing.npz --threshold longstring=8 \
+  --index-percentile irv=99 --min-valid-signals 3 \
+  --format npz --output consensus.npz
 ```
 
 Direct timing metrics and consistency scores use low-tail flagging. Mixture
@@ -488,6 +501,11 @@ The archive reflag command exposes the same sensitivity path without Python and
 requires a new fixed or percentile cutoff. It preserves the stored metric,
 direction, scores, and identifiers and can atomically replace its input when NPZ
 output targets the same path.
+The archive consensus command validates both source schemas, reflags registered
+scores, and aligns timing rows by respondent ID before bounded reduction. If IDs
+are absent from both inputs, equal counts are treated as shared row order; mixed
+or mismatched identity state is rejected. It supports text, JSON, CSV, and
+reusable NPZ output without loading either source matrix.
 Mixture fitting excludes respondents whose median time is missing, infinite, or
 non-positive. Its posterior normalization remains stable when ordinary Gaussian
 density calculations underflow for an extreme valid observation. A fitted

@@ -12,6 +12,7 @@ from ier import (
     fit_psychsyn_model,
     fit_response_time_mixture,
     flag_consensus,
+    flag_consensus_archives,
     load_archive,
     load_flag_consensus_archive,
     load_psychsyn_model,
@@ -155,6 +156,134 @@ def test_score_archive_merge_supports_composite_reuse_and_successful_retry(
     assert merged["respondent_ids"] is None
     assert merged["errors"] == {}
     np.testing.assert_allclose(combined, [0.15, 0.3], rtol=0.0, atol=1e-15)
+
+
+def test_archive_consensus_aligns_ids_and_applies_registered_cutoffs(
+    tmp_path: Path,
+) -> None:
+    scores_path = tmp_path / "scores.npz"
+    timing_path = tmp_path / "timing.npz"
+    save_score_archive(
+        scores_path,
+        {
+            "irv": np.asarray([0.1, 0.8, np.nan]),
+            "longstring": np.asarray([2.0, 10.0, 7.0]),
+        },
+        respondent_ids=["case-a", "case-b", "case-c"],
+    )
+    save_response_time_archive(
+        timing_path,
+        np.asarray([0.4, 0.5, 2.0]),
+        np.asarray([True, True, False]),
+        threshold=0.5,
+        respondent_ids=["case-c", "case-a", "case-b"],
+    )
+
+    combined = flag_consensus_archives(
+        scores_path,
+        timing_path,
+        indices=["longstring", "irv"],
+        thresholds={"longstring": 5.0, "irv": 0.5},
+        timing_name="speed",
+        min_flags=2,
+        min_valid_signals=3,
+    )
+
+    assert combined["schema_version"] == 1
+    assert combined["result_type"] == "flag_consensus"
+    assert combined["n_respondents"] == 3
+    assert combined["n_signals"] == 3
+    assert combined["signal_names"] == ["longstring", "irv", "speed"]
+    assert combined["respondent_ids"] == ["case-a", "case-b", "case-c"]
+    assert combined["min_flags"] == 2
+    assert combined["min_valid_signals"] == 3
+    np.testing.assert_array_equal(combined["scores"]["speed"], [0.5, 2.0, 0.4])
+    np.testing.assert_array_equal(combined["flags"]["longstring"], [False, True, True])
+    np.testing.assert_array_equal(combined["flags"]["irv"], [True, False, False])
+    np.testing.assert_array_equal(combined["flags"]["speed"], [True, False, True])
+    np.testing.assert_array_equal(combined["flag_counts"], [2, 1, 2])
+    np.testing.assert_array_equal(combined["valid_signal_counts"], [3, 3, 2])
+    np.testing.assert_array_equal(combined["consensus_eligible"], [True, True, False])
+    np.testing.assert_array_equal(combined["consensus_flags"], [True, False, False])
+
+
+def test_archive_consensus_supports_shared_unidentified_row_order(tmp_path: Path) -> None:
+    scores_path = tmp_path / "scores.npz"
+    timing_path = tmp_path / "timing.npz"
+    save_score_archive(scores_path, {"irv": [0.1, 0.8]})
+    save_response_time_archive(
+        timing_path,
+        [0.4, 2.0],
+        [True, False],
+        threshold=0.5,
+    )
+
+    combined = flag_consensus_archives(
+        scores_path,
+        timing_path,
+        thresholds={"irv": 0.5},
+        min_flags=1,
+    )
+
+    assert combined["respondent_ids"] is None
+    np.testing.assert_array_equal(combined["flags"]["irv"], [True, False])
+    np.testing.assert_array_equal(combined["flags"]["response_time"], [True, False])
+    np.testing.assert_array_equal(combined["consensus_flags"], [True, False])
+
+
+def test_archive_consensus_rejects_unsafe_alignment_and_selection(tmp_path: Path) -> None:
+    scores_path = tmp_path / "scores.npz"
+    timing_path = tmp_path / "timing.npz"
+    unidentified = tmp_path / "unidentified.npz"
+    fewer = tmp_path / "fewer.npz"
+    different_ids = tmp_path / "different-ids.npz"
+    save_score_archive(
+        scores_path,
+        {"irv": [0.1, 0.8, 0.4], "longstring": [2.0, 10.0, 7.0]},
+        respondent_ids=["case-a", "case-b", "case-c"],
+    )
+    save_response_time_archive(
+        timing_path,
+        [0.4, 2.0, 0.3],
+        [True, False, True],
+        threshold=0.5,
+        respondent_ids=["case-a", "case-b", "case-c"],
+    )
+    save_response_time_archive(
+        unidentified,
+        [0.4, 2.0, 0.3],
+        [True, False, True],
+        threshold=0.5,
+    )
+    save_response_time_archive(fewer, [0.4, 2.0], [True, False], threshold=0.5)
+    save_response_time_archive(
+        different_ids,
+        [0.4, 2.0, 0.3],
+        [True, False, True],
+        threshold=0.5,
+        respondent_ids=["case-a", "case-b", "other"],
+    )
+
+    with pytest.raises(TypeError, match="indices must be a sequence"):
+        flag_consensus_archives(scores_path, timing_path, indices="irv")
+    with pytest.raises(ValueError, match="at least one stored index"):
+        flag_consensus_archives(scores_path, timing_path, indices=[])
+    with pytest.raises(ValueError, match="nonblank strings"):
+        flag_consensus_archives(scores_path, timing_path, indices=[""])
+    with pytest.raises(ValueError, match="indices must not contain duplicates"):
+        flag_consensus_archives(scores_path, timing_path, indices=["irv", "irv"])
+    with pytest.raises(ValueError, match="does not contain selected index: mad"):
+        flag_consensus_archives(scores_path, timing_path, indices=["mad"])
+    with pytest.raises(ValueError, match="must not duplicate"):
+        flag_consensus_archives(scores_path, timing_path, timing_name="irv")
+    with pytest.raises(ValueError, match="timing_name must be a nonblank string"):
+        flag_consensus_archives(scores_path, timing_path, timing_name=" ")
+    with pytest.raises(ValueError, match="both include respondent IDs"):
+        flag_consensus_archives(scores_path, unidentified)
+    with pytest.raises(ValueError, match="same number of respondents"):
+        flag_consensus_archives(scores_path, fewer)
+    with pytest.raises(ValueError, match="respondent ID sets must match"):
+        flag_consensus_archives(scores_path, different_ids)
 
 
 def test_score_archive_merge_rejects_unsafe_alignment_and_conflicts(tmp_path: Path) -> None:
