@@ -5,6 +5,28 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.10] - 2026-08-02
+
+### Added
+
+- A reproducible Guttman throughput and peak-allocation benchmark covering
+  configurable matrix sizes, categorical scales, and missing-response rates.
+
+### Changed
+
+- Guttman item means, difficulty-ordered selection, valid-response counts, and
+  error accumulation now run in bounded respondent batches. On a
+  100,000-respondent, 80-item, five-category benchmark with 10% missing
+  responses, median time falls from 137.0 to 112.3 ms and peak temporary
+  allocation from 250.2 to 21.7 MiB, without adding a dependency.
+
+### Fixed
+
+- Large low-cardinality datasets no longer switch away from categorical
+  accumulation solely because the respondent-by-category product is large;
+  fractional categories and high-cardinality responses preserve the direct
+  ordered-pair definition within the same row bound.
+
 ## [2.19.9] - 2026-08-02
 
 ### Added
