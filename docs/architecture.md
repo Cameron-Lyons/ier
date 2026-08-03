@@ -204,7 +204,9 @@ serializers with the original response-time command.
 Markov transition entropy counts categorical pairs in bounded row batches for
 up to 64 observed states. Higher-cardinality inputs use only each row's observed
 states and pairs, avoiding a dense global state-square allocation. Both paths
-evaluate the equivalent count form of conditional entropy.
+evaluate the equivalent count form of conditional entropy. Missing-response rows
+are grouped by retained length and compressed in bounded batches, preserving the
+post-removal response order while reusing the same dense or sparse kernel.
 
 Even–odd consistency reduces factor correlations directly into respondent-level
 sums and valid-factor counts. Factors with exactly two paired observations use

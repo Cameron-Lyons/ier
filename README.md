@@ -18,6 +18,7 @@ For a comprehensive methods review, see
 - Contracted complete and bounded masked missing-response LZ estimation
 - Allocation-bounded split-half reliability with stable raw-moment correlations
 - Exact low-allocation two-point correlations for common even-odd factor designs
+- Bounded grouped missing-response Markov entropy scoring
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format

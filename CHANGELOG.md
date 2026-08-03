@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.41] - 2026-08-03
+
+### Performance
+
+- Missing-response Markov entropy now groups respondents by retained response
+  count and compresses bounded row batches before reusing the established
+  complete-response kernel. On a 100,000-respondent, 80-item, five-state
+  benchmark with 10% missing responses, median time improved from 7.8280 to
+  0.0953 seconds, an 82.1x speedup, while peak traced allocation fell from 15.3
+  to 8.5 MiB. Complete-response time remained effectively unchanged and peak
+  allocation fell from 85.5 to 77.9 MiB. Retained response order, rows with too
+  few observations, noninteger and infinite categories, high-cardinality sparse
+  scoring, and missing-value policies are preserved to machine precision without
+  adding a dependency.
+
 ## [2.19.40] - 2026-08-03
 
 ### Performance

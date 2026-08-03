@@ -17,11 +17,12 @@ import numpy as np
 
 from ier._flagging import threshold_flags
 from ier._summary import calculate_summary_stats
-from ier._validation import MatrixLike, iter_rows, validate_matrix_input
+from ier._validation import MatrixLike, validate_matrix_input
 
 _MAX_DENSE_STATES = 64
 _TRANSITION_BATCH_WORKSPACE_BYTES = 64 * 1024 * 1024
 _CATEGORY_DISCOVERY_ROWS = 4096
+_MISSING_COMPRESSION_BATCH_CELLS = 131_072
 
 
 def markov(
@@ -53,26 +54,30 @@ def markov(
     """
     x_array = validate_matrix_input(x, min_columns=3, check_type=False)
 
-    missing = np.isnan(x_array)
-    has_missing = bool(missing.any())
+    has_missing = bool(np.isnan(x_array).any())
     if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
 
-    n_rows = x_array.shape[0]
     if not has_missing:
         return _markov_complete(x_array)
 
-    if not np.any(~missing):
-        return np.full(x_array.shape[0], np.nan)
+    valid_counts = x_array.shape[1] - np.count_nonzero(np.isnan(x_array), axis=1)
+    return _markov_missing(x_array, valid_counts)
 
-    result = np.zeros(n_rows, dtype=float)
-    for i, row in enumerate(iter_rows(x_array, na_rm=True)):
-        if len(row) < 2:
-            result[i] = np.nan
-            continue
 
-        result[i] = _transition_entropy_row(row)
+def _markov_missing(x: np.ndarray, valid_counts: np.ndarray) -> np.ndarray:
+    """Compress equal-length missing-response rows into bounded dense batches."""
+    result = np.full(len(x), np.nan)
+    batch_rows = max(1, _MISSING_COMPRESSION_BATCH_CELLS // x.shape[1])
 
+    for count_value in np.unique(valid_counts[valid_counts >= 2]):
+        count = int(count_value)
+        row_indices = np.flatnonzero(valid_counts == count)
+        for start in range(0, len(row_indices), batch_rows):
+            rows = row_indices[start : start + batch_rows]
+            selected = x[rows]
+            compressed = selected[~np.isnan(selected)].reshape(len(rows), count)
+            result[rows] = _markov_complete(compressed)
     return result
 
 
