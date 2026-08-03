@@ -30,6 +30,20 @@ _validation / _flagging    ← shared input checks and threshold helpers
   to raise a contextual error as soon as a selected index fails. Composite
   callers still raise if *no* index succeeds under the default soft policy.
 
+## Command-line boundaries
+
+The command-line path is split by responsibility:
+
+- `cli.py` defines arguments, converts index options, and coordinates commands.
+- `_cli_input.py` owns forward-only delimited input, gzip handling, named-column
+  selection, and memory-mapped NumPy input.
+- `_cli_output.py` renders text, strict JSON, and streamed CSV results.
+- `_cli_npz.py` writes versioned, typed, pickle-free NumPy result archives.
+
+Keeping parsing, matrix construction, serialization, and orchestration separate
+makes format-specific changes independently testable without adding runtime
+packages or coupling them to statistical index implementations.
+
 ## IndexOptions
 
 Orchestration APIs accept configuration **only** via

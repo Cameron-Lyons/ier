@@ -13,16 +13,14 @@ from unittest.mock import patch
 
 import numpy as np
 
+from ier._cli_input import _load_input, _load_matrix
+from ier._cli_output import _emit_composite_json, _write_composite_csv
 from ier.cli import (
-    _emit_composite_json,
-    _load_input,
-    _load_matrix,
     _parse_float_list,
     _parse_int_list,
     _parse_name_list,
     _parse_pair_list,
     _parse_thresholds,
-    _write_composite_csv,
     main,
 )
 
@@ -380,7 +378,10 @@ class TestCli(unittest.TestCase):
 
     def test_screen_csv_writer_emits_rows_individually(self) -> None:
         out = self.root / "screen.csv"
-        with patch("ier.cli.csv.DictWriter.writerows", side_effect=AssertionError("buffered")):
+        with patch(
+            "ier._cli_output.csv.DictWriter.writerows",
+            side_effect=AssertionError("buffered"),
+        ):
             code = main(
                 [
                     "screen",
@@ -413,8 +414,8 @@ class TestCli(unittest.TestCase):
             return float(cell)
 
         with (
-            patch("ier.cli._iter_rows", side_effect=iter_rows),
-            patch("ier.cli._parse_numeric_cell", side_effect=parse_cell),
+            patch("ier._cli_input._iter_rows", side_effect=iter_rows),
+            patch("ier._cli_input._parse_numeric_cell", side_effect=parse_cell),
         ):
             matrix = _load_matrix(Path("unused.csv"), None)
 
@@ -1160,7 +1161,7 @@ class TestCli(unittest.TestCase):
         weird = self.root / "weird.csv"
         weird.write_text("1  2\t3\n4\t5  6\n", encoding="utf-8")
 
-        with patch("ier.cli.csv.Sniffer.sniff", side_effect=csv.Error("nope")):
+        with patch("ier._cli_input.csv.Sniffer.sniff", side_effect=csv.Error("nope")):
             matrix = _load_matrix(weird, None)
 
         np.testing.assert_array_equal(matrix, np.array([[1, 2, 3], [4, 5, 6]], dtype=float))

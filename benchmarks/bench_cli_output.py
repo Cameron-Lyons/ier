@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from ier._cli_npz import _write_screen_npz
-from ier.cli import _output_stream, _write_screen_csv
+from ier._cli_output import _output_stream, _write_screen_csv
 
 if TYPE_CHECKING:
     from ier.types import ScreenResult
