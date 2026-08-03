@@ -86,4 +86,4 @@ Plotting remains optional and reports a centralized install hint from
   JSON under `tests/fixtures/parity/`.
 - Detection-rate simulation: `benchmarks/bench_detection.py`.
 - Throughput microbench: `benchmarks/bench_screen.py`.
-- Forward-only CSV serialization: `benchmarks/bench_cli_csv.py`.
+- CLI result serialization: `benchmarks/bench_cli_output.py`.

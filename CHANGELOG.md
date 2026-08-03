@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - 2026-08-02
+
+### Added
+
+- CLI scoring commands now write versioned, pickle-free `.npz` result archives
+  with typed scores, flags, metadata, failures, and optional respondent IDs. On
+  a 100,000-respondent, five-index result, NPZ output is about 650 times faster
+  than CSV and produces a 5.2 MiB file instead of 11.2 MiB, without adding a
+  dependency.
+
 ## [2.10.1] - 2026-08-02
 
 ### Changed

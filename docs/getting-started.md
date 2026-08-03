@@ -146,8 +146,18 @@ ier screen responses.csv.gz --format json --output screening.json.gz
 CSV output is forward-only for plain files, gzip files, and standard output, so
 large respondent-level exports do not retain the complete document in memory.
 
+For fast, lossless NumPy workflows, write a versioned, pickle-free archive:
+
+```bash
+ier screen responses.npy --indices irv longstring --format npz --output screening.npz
+```
+
+NPZ output requires a `.npz` file path and preserves typed flags, metadata, and
+non-finite values. See [CLI output formats](cli-output.md) for its schema.
+
 ## Next steps
 
 - Run multi-index screening with [`screen()`](workflows/screening.md)
 - Combine signals with [`composite()`](workflows/composite.md)
 - Browse the [index catalog](indices.md)
+- Choose a machine-readable [CLI output format](cli-output.md)

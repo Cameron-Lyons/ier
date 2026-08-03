@@ -27,6 +27,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - CLI Output Formats: cli-output.md
   - Architecture: architecture.md
   - Workflows:
       - Screening: workflows/screening.md

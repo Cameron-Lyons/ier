@@ -70,6 +70,7 @@ ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
+ier screen data.csv --format npz --output screening.npz
 ier composite data.csv --indices irv longstring
 ier composite data.csv --format csv --output scores.csv
 ier response-time timings.csv --metric median --threshold 1.0
@@ -85,7 +86,7 @@ Input matrices may be comma-, tab-, semicolon-, or whitespace-delimited. Common
 delimiters are auto-detected unless `--delimiter` is supplied. Blank fields in
 delimited files are loaded as missing values (`NaN`). Use `--id-column NAME` to
 remove a named header column from scoring and preserve its unique, nonblank values
-in text, JSON, and CSV output. Use `--item-columns q1,q2,...` to select and order
+in text, JSON, CSV, and NPZ output. Use `--item-columns q1,q2,...` to select and order
 the numeric item matrix while ignoring unselected metadata columns; repeat the
 option to build the selection in groups.
 
@@ -100,6 +101,11 @@ transparently using the Python standard library. CSV results are written one row
 at a time, so output allocation stays bounded for plain, compressed, and
 standard-output destinations.
 
+All scoring commands accept `--format npz --output FILE.npz` for fast, typed,
+pickle-free result archives. NPZ preserves boolean flags, non-finite scores, and
+structured metadata without adding a dependency. See
+[CLI output formats](docs/cli-output.md) for the versioned schema and loading examples.
+
 `ier response-time` accepts a separate respondent-by-timing matrix and supports
 mean, median, standard-deviation, minimum, consistency, and Gaussian-mixture
 scores. Fixed thresholds are inclusive; sample-relative defaults flag the low
@@ -110,6 +116,7 @@ scores. Fixed thresholds are inclusive; sample-relative defaults flag the low
 Full docs live in [`docs/`](docs/) (MkDocs):
 
 - [Getting started](docs/getting-started.md)
+- [CLI output formats](docs/cli-output.md)
 - [Architecture](docs/architecture.md)
 - [Index catalog](docs/indices.md)
 - [Screening workflow](docs/workflows/screening.md)
@@ -137,7 +144,7 @@ Benchmarks:
 
 ```bash
 uv run python benchmarks/bench_screen.py
-uv run python benchmarks/bench_cli_csv.py
+uv run python benchmarks/bench_cli_output.py
 uv run python benchmarks/bench_detection.py
 ```
 
