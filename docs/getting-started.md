@@ -241,6 +241,17 @@ CLI text, JSON, and NPZ output also records whether the cutoff was fixed or
 percentile-derived and retains the requested percentile. The archive loader
 supports both legacy v1 files and provenance-aware v2 files.
 
+Reapply a cutoff from the command line without loading the original timing
+matrix or recalculating its metric:
+
+```bash
+ier response-time-reflag timing.npz --percentile 1 --format json --output strict.json
+```
+
+The command requires exactly one of `--threshold` or `--percentile`, validates
+the archive before reuse, and preserves its scores, metric direction, and
+respondent identifiers in every output format.
+
 ## Next steps
 
 - Run multi-index screening with [`screen()`](workflows/screening.md)

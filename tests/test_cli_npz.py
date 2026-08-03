@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import numpy as np
 
+from ier import load_response_time_archive, save_response_time_archive
 from ier._cli_npz import _write_npz_archive
 from ier.cli import main
 
@@ -299,6 +300,58 @@ class TestCliNpz(unittest.TestCase):
                 self.assertIn(message, stderr.getvalue())
                 self.assertNotIn("No such file", stderr.getvalue())
                 self.assertNotIn("Traceback", stderr.getvalue())
+
+        missing_archive = self.root / "missing.npz"
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "response-time-reflag",
+                    str(missing_archive),
+                    "--threshold",
+                    "1",
+                    "--format",
+                    "npz",
+                    "--output",
+                    str(self.root / "result.bin"),
+                ]
+            )
+        self.assertEqual(code, 1)
+        self.assertIn("ending in .npz", stderr.getvalue())
+        self.assertNotIn("No such file", stderr.getvalue())
+
+    def test_response_time_reflag_atomically_replaces_source_archive(self) -> None:
+        archive = self.root / "timing.npz"
+        scores = np.asarray([0.5, 1.0, 1.0, 3.0])
+        save_response_time_archive(
+            archive,
+            scores,
+            scores <= 1.0,
+            threshold=1.0,
+            respondent_ids=["fast", "tie-a", "tie-b", "slow"],
+        )
+
+        code = main(
+            [
+                "response-time-reflag",
+                str(archive),
+                "--percentile",
+                "50",
+                "--format",
+                "npz",
+                "--output",
+                str(archive),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        loaded = load_response_time_archive(archive)
+        self.assertEqual(loaded["schema_version"], 2)
+        self.assertEqual(loaded["threshold_source"], "percentile")
+        self.assertEqual(loaded["percentile"], 50.0)
+        self.assertEqual(loaded["respondent_ids"], ["fast", "tie-a", "tie-b", "slow"])
+        np.testing.assert_array_equal(loaded["scores"], scores)
+        np.testing.assert_array_equal(loaded["flags"], [True, False, False, False])
 
     def test_writer_rejects_object_arrays(self) -> None:
         out = self.root / "unsafe.npz"

@@ -269,9 +269,18 @@ and record the requested percentile when applicable. Retain
 any returned score vector and pass it to `response_time_score_flags()` to compare
 cutoffs without recalculating row summaries or refitting a mixture. NPZ output
 loads through `load_response_time_archive()`, which validates its schema and
-returns the stored scores and provenance ready for the same sensitivity workflow. Use
-`save_response_time_archive()` to create the identical interoperable schema from
-Python.
+returns the stored scores and provenance ready for the same sensitivity workflow.
+Use `save_response_time_archive()` to create the identical interoperable schema
+from Python. CLI users can reapply a cutoff without rescoring the original matrix:
+
+```bash
+ier response-time-reflag timing.npz --percentile 1 --format npz --output strict.npz
+ier response-time-reflag timing.npz --threshold 1.0 --format csv --output flags.csv
+```
+
+The command validates legacy v1 and provenance-aware v2 input, preserves timing
+scores, metric direction, and respondent identifiers, and requires exactly one
+new fixed or percentile cutoff.
 
 ## Documentation
 
