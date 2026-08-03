@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.19.63] - 2026-08-03
+## [2.19.64] - 2026-08-03
 
 ### Changed
 
@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   zero-variance policy, and exact two-pair shortcut. The wide-factor benchmark is
   documented, inputs remain unchanged, and no dependency is added.
 
-## [2.19.62] - 2026-08-03
+## [2.19.63] - 2026-08-03
 
 ### Changed
 
@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of respondent count. The row-reduction benchmark now covers every item-selection
   and applicability mode, and no dependency is added.
 
-## [2.19.61] - 2026-08-03
+## [2.19.62] - 2026-08-03
 
 ### Fixed
 
@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared reducer compacts partially missing values once, preserves established
   finite-value results and public return shapes, and adds no dependency.
 
-## [2.19.60] - 2026-08-03
+## [2.19.61] - 2026-08-03
 
 ### Added
 
@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   established field sets. Calculations and missing-data behavior are unchanged,
   the shared statistics helper no longer uses `Any`, and no dependency is added.
 
-## [2.19.59] - 2026-08-03
+## [2.19.60] - 2026-08-03
 
 ### Added
 
@@ -57,7 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   means, and variances. The dedicated scoring loader is unchanged, malformed
   models still fail complete validation, and no dependency is added.
 
-## [2.19.58] - 2026-08-03
+## [2.19.59] - 2026-08-03
 
 ### Changed
 
@@ -68,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer grows with component count, numerical behavior is preserved, and no
   dependency is added.
 
-## [2.19.57] - 2026-08-03
+## [2.19.58] - 2026-08-03
 
 ### Added
 
@@ -79,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output format, and rejects fitting-only options before reading the input
   matrix. No dependency is added.
 
-## [2.19.56] - 2026-08-03
+## [2.19.57] - 2026-08-03
 
 ### Added
 
@@ -89,6 +89,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before atomic replacement; loads reject missing, extra, unsafe, malformed, or
   inconsistent members and reconstruct independent read-only parameters for
   exact later-cohort scoring. No dependency is added.
+
+## [2.19.56] - 2026-08-03
+
+### Performance
+
+- Missing-response rate scoring now reduces bounded respondent batches before
+  selecting required columns or applying respondent-specific applicability
+  masks. On a 200,000-respondent, 80-item benchmark, peak traced allocation
+  fell from 16.8 to 2.0 MiB for all items, from 70.3 to 4.0 MiB for a 40-item
+  subset, and from 81.2 to 4.4 MiB for the same subset with a skip-logic mask.
+  Median runtime improved from 8.6 to 5.2 ms, 23.5 to 9.7 ms, and 30.7 to
+  18.2 ms respectively. Rates, subset semantics, zero-denominator behavior,
+  source immutability, and the NumPy-only dependency set remain unchanged.
 
 ## [2.19.55] - 2026-08-03
 
