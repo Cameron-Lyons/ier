@@ -201,6 +201,28 @@ the item count; if both forms are supplied, custom boundaries take precedence.
 The section mean is accumulated with respondent-sized temporary vectors, so its
 memory use does not grow with the number of sections.
 
+Missing-response psychometric retries can be reproduced across runs with scoped
+seeds:
+
+```python
+seeded = screen(
+    responses,
+    indices=["psychsyn", "psychant"],
+    options=IndexOptions(
+        psychsyn_random_seed=17,
+        psychant_random_seed=29,
+    ),
+)
+```
+
+```bash
+ier screen responses.csv --indices psychsyn --psychsyn-random-seed 17
+ier screen responses.csv --indices psychant --psychant-random-seed 29
+```
+
+Seeds affect only retry draws for undefined within-person correlations. Each
+scorer uses an isolated random stream and leaves NumPy's global state untouched.
+
 Final screening flag counts and composite reductions use respondent-sized
 workspaces rather than another respondent-by-index matrix, keeping post-scoring
 memory bounded as the number of selected indices grows.

@@ -11,6 +11,7 @@ from ier import IndexOptions
 from ier.acquiescence import acquiescence, acquiescence_flag
 from ier.irv import irv
 from ier.mahad import mahad
+from ier.psychsyn import psychant, psychsyn
 from ier.screen import _reduce_screen_results, screen
 from ier.visualize import plot_distributions, plot_flag_counts, plot_flagged_heatmap
 
@@ -445,6 +446,33 @@ class TestScreen(unittest.TestCase):
         )
 
         np.testing.assert_allclose(result["scores"]["irv"], expected, rtol=0.0, atol=1e-15)
+
+    def test_psychometric_retry_seeds_match_direct_scores(self) -> None:
+        data = np.array(
+            [
+                [1.0, 1.0, 2.0, 3.0],
+                [1.0, np.nan, 2.0, 3.0],
+                [4.0, 3.0, 2.0, 1.0],
+            ]
+        )
+        item_pairs = np.array([[0, 1], [0, 2], [0, 3]])
+
+        with patch("ier.psychsyn._discover_item_pairs", return_value=item_pairs):
+            expected_syn = psychsyn(data, resample_na=True, random_seed=17)
+            expected_ant = psychant(data, resample_na=True, random_seed=29)
+            synonym_result = screen(
+                data,
+                indices=["psychsyn"],
+                options=IndexOptions(psychsyn_random_seed=17),
+            )
+            antonym_result = screen(
+                data,
+                indices=["psychant"],
+                options=IndexOptions(psychant_random_seed=29),
+            )
+
+        np.testing.assert_array_equal(synonym_result["scores"]["psychsyn"], expected_syn)
+        np.testing.assert_array_equal(antonym_result["scores"]["psychant"], expected_ant)
 
     def test_invalid_index_raises(self) -> None:
         with self.assertRaises(ValueError):

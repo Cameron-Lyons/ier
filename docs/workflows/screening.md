@@ -104,6 +104,29 @@ same controls are available as `--irv-num-split` and `--irv-split-points` for
 both scoring commands. Section vectors are accumulated incrementally, keeping
 temporary memory bounded as the number of sections grows.
 
+## Reproducible psychometric retries
+
+With missing-value handling enabled, psychometric synonym and antonym scoring
+can retry an undefined within-person correlation by randomly reversing
+available pair directions. Configure independent seeds when exact reruns are
+required:
+
+```python
+result = screen(
+    data,
+    indices=["psychsyn", "psychant"],
+    options=IndexOptions(
+        psychsyn_random_seed=17,
+        psychant_random_seed=29,
+    ),
+)
+```
+
+The command-line equivalents are `--psychsyn-random-seed` and
+`--psychant-random-seed`. Seeds are forwarded only to their corresponding
+scorer, use isolated random streams, and do not affect pair discovery or
+NumPy's process-wide random state.
+
 ## Calibrated LZ parameters
 
 The direct `lz()` function supports externally calibrated IRT parameters, and

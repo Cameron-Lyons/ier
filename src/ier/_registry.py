@@ -38,7 +38,9 @@ class IndexOptions:
     irv_num_split: int | None = None
     irv_split_points: list[int] | None = None
     psychsyn_critval: float = 0.6
+    psychsyn_random_seed: int | None = None
     psychant_critval: float = -0.6
+    psychant_random_seed: int | None = None
     evenodd_factors: list[int] | None = None
     mad_positive_items: list[int] | None = None
     mad_negative_items: list[int] | None = None
@@ -136,7 +138,12 @@ def _irv_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
 
 def _psychsyn_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
     with np.errstate(divide="ignore", invalid="ignore"):
-        result = psychsyn(x, critval=options.psychsyn_critval, resample_na=options.na_rm)
+        result = psychsyn(
+            x,
+            critval=options.psychsyn_critval,
+            resample_na=options.na_rm,
+            random_seed=options.psychsyn_random_seed,
+        )
     if not isinstance(result, np.ndarray):
         raise ValueError("psychsyn returned non-array output")
     return result
@@ -144,7 +151,12 @@ def _psychsyn_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
 
 def _psychant_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
     with np.errstate(divide="ignore", invalid="ignore"):
-        result = psychant(x, critval=options.psychant_critval, resample_na=options.na_rm)
+        result = psychant(
+            x,
+            critval=options.psychant_critval,
+            resample_na=options.na_rm,
+            random_seed=options.psychant_random_seed,
+        )
     if not isinstance(result, np.ndarray):
         raise ValueError("psychant returned non-array output")
     return result

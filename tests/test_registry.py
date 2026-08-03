@@ -59,6 +59,36 @@ class TestIndexCatalog(unittest.TestCase):
 
 
 class TestParallelIndexScoring(unittest.TestCase):
+    def test_psychometric_retry_seeds_are_forwarded_independently(self) -> None:
+        data = np.ones((3, 4))
+        options = IndexOptions(
+            psychsyn_critval=0.45,
+            psychsyn_random_seed=17,
+            psychant_critval=-0.55,
+            psychant_random_seed=29,
+        )
+
+        with (
+            patch("ier._registry.psychsyn", return_value=np.arange(3.0)) as synonym,
+            patch("ier._registry.psychant", return_value=np.arange(3.0)) as antonym,
+        ):
+            scores, errors = score_registered_indices(
+                data,
+                ["psychsyn", "psychant"],
+                options,
+            )
+
+        self.assertEqual(errors, {})
+        self.assertEqual(set(scores), {"psychsyn", "psychant"})
+        self.assertEqual(
+            synonym.call_args.kwargs,
+            {"critval": 0.45, "resample_na": True, "random_seed": 17},
+        )
+        self.assertEqual(
+            antonym.call_args.kwargs,
+            {"critval": -0.55, "resample_na": True, "random_seed": 29},
+        )
+
     def test_workers_run_concurrently_and_results_keep_selection_order(self) -> None:
         rendezvous = threading.Barrier(2)
         second_completed = threading.Event()

@@ -15,6 +15,7 @@ For a comprehensive methods review, see
 - Auto-detecting archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
+- Reproducible psychometric missing-response retries across shared and CLI workflows
 - Contracted, active-row-compacted LZ estimation for complete and missing responses
 - Externally calibrated LZ parameters across Python and CLI scoring workflows
 - Section-aware IRV scoring with bounded-memory section reduction
@@ -133,6 +134,7 @@ ier screen data.csv --indices lz \
   --lz-theta theta.npy --lz-model 2pl
 ier screen data.csv --indices irv --irv-num-split 4
 ier screen data.csv --indices irv --irv-split-points 0,10,25,40
+ier screen data.csv --indices psychsyn --psychsyn-random-seed 42
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --format npz --output screening.npz
@@ -181,6 +183,14 @@ of the section IRVs. The corresponding CLI options are `--irv-num-split` and
 `--irv-split-points`; custom boundaries take precedence if both are supplied.
 Section results are reduced incrementally, so temporary storage remains bounded
 to respondent-sized vectors instead of growing with the number of sections.
+
+Psychometric synonym and antonym scoring may retry undefined within-person
+correlations by randomly reversing available pair directions when missing-value
+handling is enabled. Set `IndexOptions(psychsyn_random_seed=...)` or
+`IndexOptions(psychant_random_seed=...)` to make those retries reproducible.
+The CLI equivalents are `--psychsyn-random-seed` and
+`--psychant-random-seed`. Each scorer uses an isolated random stream and does
+not modify NumPy's process-wide state.
 
 Missing-response scoring is opt-in because planned omissions are often valid.
 Use `IndexOptions(missing_item_indices=[...])` or CLI
