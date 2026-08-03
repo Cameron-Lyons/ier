@@ -247,22 +247,27 @@ def _longest_repeating_pattern(row: np.ndarray, max_k: int) -> float:
     """
     n = len(row)
     best = 0
+    changes = row[1:] != row[:-1]
+    change_prefix = np.concatenate(([0], np.cumsum(changes, dtype=np.intp)))
 
     for k in range(2, min(max_k, n // 2) + 1):
+        matches = row[k:] == row[:-k]
+        match_indices = np.arange(matches.size)
+        next_mismatch = np.minimum.accumulate(
+            np.where(~matches, match_indices, matches.size)[::-1]
+        )[::-1]
+        match_lengths = next_mismatch - match_indices
+
         start = 0
         while start + k <= n:
-            pattern = row[start : start + k]
-            if len(np.unique(pattern)) < 2:
+            if change_prefix[start + k - 1] == change_prefix[start]:
                 start += 1
                 continue
-            repeat_len = k
-            for j in range(start + k, n):
-                if row[j] == pattern[(j - start) % k]:
-                    repeat_len += 1
-                else:
-                    break
-            if repeat_len > k and repeat_len > best:
+
+            repeat_extension = int(match_lengths[start]) if start < matches.size else 0
+            repeat_len = k + repeat_extension
+            if repeat_extension > 0 and repeat_len > best:
                 best = repeat_len
-            start += max(1, repeat_len - k + 1)
+            start += repeat_extension + 1
 
     return float(best)

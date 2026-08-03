@@ -17,9 +17,9 @@ per-index modules          ← irv, longstring, mahad, …
 _validation / _flagging    ← shared input checks and threshold helpers
 ```
 
-- **NumPy-first core.** Base installs depend only on NumPy. SciPy powers a
-  small set of extras (`mahad` chi2/zscore flagging, `mahad_qqplot`,
-  `response_time_mixture`, ML theta in `lz`). Matplotlib is only required for
+- **NumPy-first core.** Base installs depend only on NumPy. Statistical
+  routines, including chi-square flagging, response-time mixtures, and IRT
+  theta estimation, are implemented locally. Matplotlib is only required for
   plotting helpers.
 - **Registry.** `src/ier/_registry.py` maps string names to scorers, default
   screen/composite membership, flag direction, and required `IndexOptions`

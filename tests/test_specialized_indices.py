@@ -505,7 +505,17 @@ class TestLongstringPattern(unittest.TestCase):
         """Test seesaw (1-2-1-2) detection."""
         data = [[1, 2, 1, 2, 1, 2, 1, 2, 1, 2]]
         result = longstring_pattern(data)
-        self.assertGreater(result[0], 0)
+        self.assertEqual(result[0], 10.0)
+
+    def test_embedded_and_partial_repetitions(self) -> None:
+        """Test patterns with prefixes and incomplete final repetitions."""
+        data = [
+            [9, 9, 1, 2, 1, 2, 1, 2, 8],
+            [1, 2, 3, 4, 1, 2, 3, 9, 8],
+            [1, 1, 1, 2, 1, 2, 1, 2, 9],
+        ]
+        result = longstring_pattern(data)
+        np.testing.assert_array_equal(result, [6.0, 7.0, 6.0])
 
     def test_straight_line_excluded(self) -> None:
         """Test that straight-line (all same) yields 0 since it's not a repeating pattern."""
