@@ -125,6 +125,14 @@ ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
 ```
 
+Scoring commands also accept forward-only standard input and gzip-compressed
+files without extra packages:
+
+```bash
+cat responses.csv | ier screen - --indices irv longstring --format json
+ier screen responses.csv.gz --format json --output screening.json.gz
+```
+
 ## Next steps
 
 - Run multi-index screening with [`screen()`](workflows/screening.md)

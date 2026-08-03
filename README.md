@@ -74,6 +74,8 @@ ier composite data.csv --indices irv longstring
 ier composite data.csv --format csv --output scores.csv
 ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
+ier screen responses.csv.gz --format json --output screening.json.gz
+cat responses.csv | ier screen - --indices irv longstring --format json
 ier indices --format json
 ier --version
 ```
@@ -85,6 +87,10 @@ remove a named header column from scoring and preserve its unique, nonblank valu
 in text, JSON, and CSV output. Use `--item-columns q1,q2,...` to select and order
 the numeric item matrix while ignoring unselected metadata columns; repeat the
 option to build the selection in groups.
+
+Use `-` as the input path for a forward-only standard-input pipeline or as the
+output path for standard output. Files ending in `.gz` are read and written
+transparently using the Python standard library.
 
 `ier response-time` accepts a separate respondent-by-timing matrix and supports
 mean, median, standard-deviation, minimum, consistency, and Gaussian-mixture

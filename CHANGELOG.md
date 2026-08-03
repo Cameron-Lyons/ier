@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] - 2026-08-02
+
+### Added
+
+- CLI scoring commands now accept `-` for forward-only standard input and
+  explicit standard output. All CLI commands transparently read or write `.gz`
+  files where applicable, using only the Python standard library.
+
 ## [2.9.0] - 2026-08-02
 
 ### Added
