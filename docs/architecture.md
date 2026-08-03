@@ -65,7 +65,8 @@ The command-line path is split by responsibility:
   catalog, archive metadata, screen, composite, and response-time results to the
   selected format.
 - `_cli_input.py` owns forward-only delimited input, gzip handling, named-column
-  selection, and memory-mapped NumPy input.
+  selection, memory-mapped NumPy input, and the shared safe numeric-vector
+  loader for external model parameters.
 - `_cli_composite.py` validates shared respondent alignment and flag metadata
   contracts for every composite serializer.
 - `_cli_output.py` renders text plus bounded strict JSON and CSV results.

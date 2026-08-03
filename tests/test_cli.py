@@ -19,10 +19,11 @@ from ier import (
     composite_probability,
     composite_scores,
     composite_summary,
+    lz,
     save_response_time_archive,
     save_score_archive,
 )
-from ier._cli_input import _load_input, _load_matrix
+from ier._cli_input import _load_input, _load_matrix, _load_numeric_vector
 from ier._cli_output import _emit_composite_json, _emit_composite_text, _write_composite_csv
 from ier.cli import (
     _parse_float_list,
@@ -1512,6 +1513,150 @@ class TestCli(unittest.TestCase):
             np.savez(handle, responses=np.ones((2, 3), dtype=np.float64))
         with self.assertRaisesRegex(ValueError, "not an archive"):
             _load_matrix(archive, None)
+
+    def test_numeric_vector_loader_accepts_safe_binary_and_text_shapes(self) -> None:
+        expected = np.linspace(-2.0, 2.0, 5)
+        npy_path = self.root / "values.npy"
+        row_path = self.root / "values.csv"
+        column_path = self.root / "values.txt.gz"
+        np.save(npy_path, expected)
+        np.savetxt(row_path, expected[np.newaxis], delimiter=",")
+        with gzip.open(column_path, mode="wt", encoding="utf-8") as handle:
+            np.savetxt(handle, expected)
+
+        npy_values = _load_numeric_vector(npy_path, "test vector")
+        row_values = _load_numeric_vector(row_path, "test vector")
+        column_values = _load_numeric_vector(column_path, "test vector")
+
+        self.assertIsInstance(npy_values, np.memmap)
+        np.testing.assert_array_equal(npy_values, expected)
+        np.testing.assert_array_equal(row_values, expected)
+        np.testing.assert_array_equal(column_values, expected)
+
+    def test_numeric_vector_loader_rejects_matrices_pickle_and_standard_input(self) -> None:
+        matrix = self.root / "matrix.npy"
+        objects = self.root / "objects.npy"
+        complex_values = self.root / "complex.npy"
+        compressed = self.root / "compressed.npy.gz"
+        np.save(matrix, np.ones((2, 2)))
+        np.save(objects, np.array([{"unsafe": True}], dtype=object))
+        np.save(complex_values, np.array([1.0 + 2.0j]))
+        with gzip.open(compressed, mode="wb") as handle:
+            np.save(handle, np.ones(2))
+
+        with self.assertRaisesRegex(ValueError, "non-empty one-dimensional test vector"):
+            _load_numeric_vector(matrix, "test vector")
+        with self.assertRaisesRegex(ValueError, "failed to load test vector"):
+            _load_numeric_vector(objects, "test vector")
+        with self.assertRaisesRegex(ValueError, "real numeric test vector"):
+            _load_numeric_vector(complex_values, "test vector")
+        with self.assertRaisesRegex(ValueError, "compressed .npy test vector"):
+            _load_numeric_vector(compressed, "test vector")
+        with self.assertRaisesRegex(ValueError, "cannot use standard input"):
+            _load_numeric_vector(Path("-"), "test vector")
+
+    def test_calibrated_lz_parameter_files_match_direct_screen_and_composite(self) -> None:
+        matrix, _ = _load_input(self.csv_path, None)
+        difficulty = np.linspace(-1.5, 1.5, matrix.shape[1])
+        discrimination = np.linspace(0.6, 1.8, matrix.shape[1])
+        theta = np.linspace(-1.0, 1.0, matrix.shape[0])
+        difficulty_path = self.root / "difficulty.csv"
+        discrimination_path = self.root / "discrimination.npy"
+        theta_path = self.root / "theta.txt.gz"
+        np.savetxt(difficulty_path, difficulty[np.newaxis], delimiter=",")
+        np.save(discrimination_path, discrimination)
+        with gzip.open(theta_path, mode="wt", encoding="utf-8") as handle:
+            np.savetxt(handle, theta)
+        expected = lz(
+            matrix,
+            difficulty=difficulty,
+            discrimination=discrimination,
+            theta=theta,
+        )
+        shared_arguments = [
+            "--indices",
+            "lz",
+            "--lz-difficulty",
+            str(difficulty_path),
+            "--lz-discrimination",
+            str(discrimination_path),
+            "--lz-theta",
+            str(theta_path),
+            "--lz-model",
+            "2pl",
+            "--format",
+            "json",
+        ]
+
+        screen_out = self.root / "calibrated-screen.json"
+        composite_out = self.root / "calibrated-composite.json"
+        one_pl_out = self.root / "calibrated-one-pl.json"
+        screen_code = main(
+            ["screen", str(self.csv_path), *shared_arguments, "--output", str(screen_out)]
+        )
+        composite_code = main(
+            [
+                "composite",
+                str(self.csv_path),
+                *shared_arguments,
+                "--no-standardize",
+                "--output",
+                str(composite_out),
+            ]
+        )
+        one_pl_code = main(
+            [
+                "screen",
+                str(self.csv_path),
+                "--indices",
+                "lz",
+                "--lz-difficulty",
+                str(difficulty_path),
+                "--lz-model",
+                "1pl",
+                "--format",
+                "json",
+                "--output",
+                str(one_pl_out),
+            ]
+        )
+
+        self.assertEqual(screen_code, 0)
+        self.assertEqual(composite_code, 0)
+        self.assertEqual(one_pl_code, 0)
+        screen_payload = json.loads(screen_out.read_text(encoding="utf-8"))
+        composite_payload = json.loads(composite_out.read_text(encoding="utf-8"))
+        one_pl_payload = json.loads(one_pl_out.read_text(encoding="utf-8"))
+        np.testing.assert_array_equal(screen_payload["scores"]["lz"], expected)
+        np.testing.assert_array_equal(composite_payload["scores"], -expected)
+        np.testing.assert_array_equal(
+            one_pl_payload["scores"]["lz"],
+            lz(matrix, difficulty=difficulty, model="1pl"),
+        )
+
+    def test_invalid_lz_parameter_file_returns_structured_error(self) -> None:
+        difficulty = self.root / "difficulty.npy"
+        np.save(difficulty, np.ones((2, 2)))
+        stderr = StringIO()
+
+        with (
+            patch("ier.cli._load_input", side_effect=AssertionError("matrix input loaded")),
+            patch("sys.stderr", stderr),
+        ):
+            code = main(
+                [
+                    "screen",
+                    "unused.csv",
+                    "--indices",
+                    "lz",
+                    "--lz-difficulty",
+                    str(difficulty),
+                ]
+            )
+
+        self.assertEqual(code, 1)
+        self.assertIn("non-empty one-dimensional LZ difficulty vector", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_compressed_npy_input_returns_structured_error(self) -> None:
         path = self.root / "responses.npy.gz"

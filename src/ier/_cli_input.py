@@ -68,6 +68,19 @@ def _input_label(path: Path) -> str:
     return "standard input" if path == Path("-") else str(path)
 
 
+def _load_npy_array(path: Path, description: str) -> np.ndarray:
+    """Memory-map one pickle-free NumPy array with contextual errors."""
+    try:
+        loaded = np.load(path, allow_pickle=False, mmap_mode="r")
+    except (EOFError, ValueError) as err:
+        raise ValueError(f"failed to load {description} from {path}: {err}") from err
+
+    if not isinstance(loaded, np.ndarray):
+        loaded.close()
+        raise ValueError(f"expected one NumPy array in {path}, not an archive")
+    return loaded
+
+
 def _load_npy_input(
     path: Path,
     delimiter: str | None,
@@ -80,15 +93,7 @@ def _load_npy_input(
     if id_column is not None or item_columns is not None:
         raise ValueError("--id-column and --item-columns are not supported with .npy input")
 
-    try:
-        loaded = np.load(path, allow_pickle=False, mmap_mode="r")
-    except (EOFError, ValueError) as err:
-        raise ValueError(f"failed to load NumPy matrix from {path}: {err}") from err
-
-    if not isinstance(loaded, np.ndarray):
-        loaded.close()
-        raise ValueError(f"expected one NumPy array in {path}, not an archive")
-    matrix = loaded
+    matrix = _load_npy_array(path, "NumPy matrix")
 
     if matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0:
         raise ValueError(f"expected a non-empty 2D NumPy matrix in {path}")
@@ -234,6 +239,29 @@ def _load_input(
 
     matrix = np.frombuffer(numeric_values, dtype=np.float64).reshape(n_rows, n_items)
     return matrix, identifiers
+
+
+def _load_numeric_vector(path: Path, label: str) -> np.ndarray:
+    """Load one real numeric vector from a safe NumPy or delimited file."""
+    if path == Path("-"):
+        raise ValueError(f"{label} cannot use standard input")
+    if path.name.casefold().endswith(".npy.gz"):
+        raise ValueError(f"compressed .npy {label} is not supported; use uncompressed .npy")
+
+    if path.suffix.casefold() == ".npy":
+        values = _load_npy_array(path, label)
+        if not np.issubdtype(values.dtype, np.number) or np.issubdtype(
+            values.dtype, np.complexfloating
+        ):
+            raise ValueError(f"expected a real numeric {label} in {path}, got {values.dtype}")
+        if values.size == 0 or values.ndim != 1:
+            raise ValueError(f"expected a non-empty one-dimensional {label} in {path}")
+        return values
+
+    values, _ = _load_input(path, None)
+    if 1 not in values.shape:
+        raise ValueError(f"expected a non-empty one-dimensional {label} in {path}")
+    return values.reshape(-1)
 
 
 def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
