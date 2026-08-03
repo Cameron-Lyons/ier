@@ -64,6 +64,18 @@ result = screen(
 Missing required config is recorded in `result["errors"]` instead of aborting
 the whole screening run. `composite()` uses the same soft-fail policy.
 
+## Missing responses
+
+Missing-response rate is available as an opt-in registry index:
+
+```python
+result = screen(data, indices=["missing_rate"], thresholds={"missing_rate": 0.2})
+```
+
+It is not a default because planned skip logic can create legitimate omissions.
+Call `missing_rate(data, item_indices=[...])` directly when only required items
+should contribute to the rate.
+
 ## Flagging
 
 - Most indices use percentile thresholds (`percentile=95` by default).

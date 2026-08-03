@@ -8,7 +8,7 @@ For a comprehensive methods review, see
 
 ## Features
 
-- Multiple detection families: consistency, response patterns, response styles, outliers, response times, attention checks
+- Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Configurable multi-index consensus decisions for respondent-level screening
 - Fixed or sample-relative per-index screening thresholds

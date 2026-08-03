@@ -37,7 +37,7 @@ Composite-enabled indices include:
 
 `irv`, `longstring`, `longstring_pattern`, `mahad`, `psychsyn`, `psychant`,
 `person_total`, `markov`, `guttman`, `individual_reliability`, `evenodd`, `mad`,
-`lz`, `semantic_syn`, `semantic_ant`, `infrequency`
+`lz`, `semantic_syn`, `semantic_ant`, `infrequency`, `missing_rate`
 
 Screening-only response-style indices (`u3_poly`, `midpoint`, `acquiescence`,
 `onset`) are excluded from composite combination because they measure different

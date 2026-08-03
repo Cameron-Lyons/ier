@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-08-02
+
+### Added
+
+- Public `missing_rate()` and `missing_rate_flag()` helpers quantify response
+  omissions across all items or a validated item subset.
+- Opt-in `missing_rate` registry support for screening, composites, CLI output,
+  fixed thresholds, and index discovery without changing default workflows.
+
 ## [2.5.0] - 2026-08-02
 
 ### Added

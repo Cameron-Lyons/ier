@@ -77,7 +77,7 @@ def screen(
               "longstring_pattern", "mahad", "psychsyn", "psychant", "person_total",
               "markov", "u3_poly", "midpoint", "acquiescence", "guttman",
               "individual_reliability", "onset", "evenodd", "mad", "lz",
-              "semantic_syn", "semantic_ant", "infrequency".
+              "semantic_syn", "semantic_ant", "infrequency", "missing_rate".
     - options: Shared index configuration (``IndexOptions``).
     - percentile: Percentile cutoff for flagging (default 95th).
     - min_flags: Minimum number of per-index flags required for a respondent-level

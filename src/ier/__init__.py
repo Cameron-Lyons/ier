@@ -29,6 +29,8 @@ from .mahad import mahad_qqplot as mahad_qqplot
 from .markov import markov as markov
 from .markov import markov_flag as markov_flag
 from .markov import markov_summary as markov_summary
+from .missing import missing_rate as missing_rate
+from .missing import missing_rate_flag as missing_rate_flag
 from .onset import onset as onset
 from .onset import onset_flag as onset_flag
 from .person_total import person_total as person_total
@@ -109,6 +111,8 @@ __all__ = [
     "markov_flag",
     "markov_summary",
     "midpoint_responding",
+    "missing_rate",
+    "missing_rate_flag",
     "onset",
     "onset_flag",
     "person_total",
