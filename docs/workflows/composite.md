@@ -128,6 +128,7 @@ values (`NaN`) and follow each index's documented missing-data behavior.
 ier composite data.csv --indices irv longstring --method mean
 ier composite data.csv --indices irv longstring --weight irv=2 --weight longstring=0.5
 ier composite data.csv --indices irv longstring markov --min-valid-indices 2
+ier composite data.csv --indices irv longstring --include-components --format json
 ier composite data.csv --indices irv mad --strict
 ier composite data.csv --indices irv longstring --workers 4
 ier composite data.csv --format json --output composite.json
@@ -152,3 +153,13 @@ weight overrides; unlisted selected indices use weight 1. When supplied, the
 minimum valid-index rule and any soft failures are recorded alongside those
 fields. See the
 [versioned archive schema](../cli-output.md).
+
+Add `--include-components` when command-line results need respondent-level
+provenance. Every format then includes the successfully computed raw index
+scores and respondent-level availability counts. JSON and NPZ call the vector
+`valid_index_counts`, CSV uses `valid_index_count`, and text labels it
+`valid_indices`. Failed indices remain in the existing error metadata instead
+of appearing as score columns. Component values are the raw public index
+outputs, before composite direction correction, standardization, or weighting.
+JSON arrays and CSV rows remain streamed, while NPZ stores one typed array per
+successful index.

@@ -76,6 +76,8 @@ class TestCliJson(unittest.TestCase):
         self.assertEqual(composite_payload["scores"], [1.0, None, None, None, 5.0])
         self.assertEqual(composite_payload["respondent_ids"], identifiers)
         self.assertEqual(composite_payload["errors"], {})
+        self.assertNotIn("component_scores", composite_payload)
+        self.assertNotIn("valid_index_counts", composite_payload)
 
         diagnostic_output = StringIO()
         _write_composite_json(
@@ -123,6 +125,7 @@ class TestCliJson(unittest.TestCase):
             )
 
         output = StringIO()
+        component_output = StringIO()
         with (
             patch("ier._cli_output._JSON_ARRAY_CHUNK_SIZE", 2),
             patch("ier._cli_output.json.dumps", side_effect=recording_dumps),
@@ -132,8 +135,21 @@ class TestCliJson(unittest.TestCase):
                 _screen_result(),
                 ["one", "two", "three", "four", "five"],
             )
+            _write_composite_json(
+                component_output,
+                np.arange(5, dtype=float),
+                "mean",
+                component_scores={
+                    "first": np.arange(5, dtype=float),
+                    "second": np.arange(5, dtype=float) * 2.0,
+                },
+                valid_index_counts=np.full(5, 2, dtype=np.int_),
+            )
 
         self.assertEqual(json.loads(output.getvalue())["n_respondents"], 5)
+        component_payload = json.loads(component_output.getvalue())
+        self.assertEqual(component_payload["component_scores"]["second"], [0.0, 2.0, 4.0, 6.0, 8.0])
+        self.assertEqual(component_payload["valid_index_counts"], [2, 2, 2, 2, 2])
         self.assertTrue(chunk_lengths)
         self.assertLessEqual(max(chunk_lengths), 2)
         self.assertIn(1, chunk_lengths)

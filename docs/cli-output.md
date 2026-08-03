@@ -81,6 +81,14 @@ integer completeness requirement. JSON composite output uses equivalent
 optional `weights` and `min_valid_indices` fields. Aligned `error_names` and
 `error_messages` vectors preserve soft failures; JSON uses the `errors` object.
 
+With `--include-components`, composite NPZ adds `index_names`,
+`valid_index_counts`, and one `score__NAME` float vector per successful index.
+JSON adds `indices_used`, `valid_index_counts`, and a `component_scores` object;
+CSV adds `valid_index_count` and `NAME_score` columns; text shows the same fields
+for ranked respondents. These are raw public index scores before direction
+correction, standardization, and weighting. The aggregate `scores` vector is
+unchanged.
+
 ### Response-time schema
 
 `response-time` archives include `metric`, `flag_direction`, `threshold`,

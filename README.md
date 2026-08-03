@@ -21,6 +21,7 @@ For a comprehensive methods review, see
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Configurable soft or strict per-index failures during screening and composite scoring
 - Composite CLI diagnostics preserved across human-readable and structured outputs
+- Opt-in raw component scores and availability counts in every composite CLI format
 - Full type annotations (`py.typed`)
 
 ## Installation
@@ -95,6 +96,7 @@ ier screen data.csv --format npz --output screening.npz
 ier composite data.csv --indices irv longstring
 ier composite data.csv --indices irv longstring --weight irv=2 --weight longstring=0.5
 ier composite data.csv --indices irv longstring markov --min-valid-indices 2
+ier composite data.csv --indices irv longstring --include-components --format json
 ier composite data.csv --format csv --output scores.csv
 ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
@@ -150,6 +152,11 @@ includes an `errors` object, and NPZ includes aligned `error_names` and
 `error_messages` arrays. CSV remains a clean respondent-level table; use its
 standard-error stream to retain the diagnostic or pass `--strict` to fail
 immediately.
+
+Pass `ier composite --include-components` to audit how the aggregate was built.
+Text, JSON, CSV, and NPZ then include successful raw per-index scores and each
+respondent's valid-index count. The option is explicit because component arrays
+increase output size; the default aggregate-only path and schemas remain lean.
 
 All scoring commands accept `--format npz --output FILE.npz` for fast, typed,
 pickle-free result archives. NPZ preserves boolean flags, non-finite scores, and

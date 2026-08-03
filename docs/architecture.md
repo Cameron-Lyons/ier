@@ -53,6 +53,13 @@ through text, JSON, and NPZ serializers and mirror failures to standard error
 for every format. Score computation still runs once, and CSV remains a compact
 respondent table.
 
+Detailed composite output is explicit through `--include-components`. The CLI
+reuses `composite_summary()` so scoring still runs once, JSON wraps each
+component in the bounded array writer, CSV emits one row at a time, and NPZ
+writes separate typed members without stacking another respondent-by-index
+matrix. The default aggregate-only path does not allocate or serialize these
+details.
+
 Keeping parsing, matrix construction, serialization, and orchestration separate
 makes format-specific changes independently testable without adding runtime
 packages or coupling them to statistical index implementations.
