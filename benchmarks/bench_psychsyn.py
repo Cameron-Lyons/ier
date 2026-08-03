@@ -7,6 +7,8 @@ a high cutoff isolates the bounded no-pair discovery path.
 Usage:
     uv run python benchmarks/bench_psychsyn.py
     uv run python benchmarks/bench_psychsyn.py --respondents 16000 --items 50
+    uv run python benchmarks/bench_psychsyn.py --respondents 100000 --items 80 \
+        --critval 0.99 --missing-rate 0 --independent
     uv run python benchmarks/bench_psychsyn.py --respondents 200 --items 3000 \
         --critval 0.99 --missing-rate 0 --independent
 """

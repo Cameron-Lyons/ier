@@ -14,7 +14,7 @@ For a comprehensive methods review, see
 - Validated, pickle-free score, timing-result, and timing-model archive persistence
 - Auto-detecting result/model archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
-- Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
+- Bounded complete and pairwise-complete discovery and scoring for psychometric synonyms
 - Reproducible psychometric missing-response retries across shared and CLI workflows
 - Contracted, active-row-compacted LZ estimation for complete and missing responses
 - Externally calibrated LZ parameters across Python and CLI scoring workflows

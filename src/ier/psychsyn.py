@@ -24,10 +24,13 @@ _PSYCHSYN_BATCH_ELEMENTS = 262_144
 _PSYCHSYN_CORRELATION_BLOCK_ELEMENTS = 262_144
 
 
-def _normalized_item_columns(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Center and normalize finite, nonconstant item columns in bounded blocks."""
+def _complete_item_normalization(
+    x: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return column offsets, norms, and usability without retaining a matrix copy."""
     n_rows, n_items = x.shape
-    normalized = np.zeros((n_rows, n_items), dtype=float)
+    item_offsets = np.empty(n_items)
+    item_norms = np.empty(n_items)
     valid_columns = np.zeros(n_items, dtype=bool)
     block_columns = max(1, _PSYCHSYN_CORRELATION_BLOCK_ELEMENTS // max(1, n_rows))
 
@@ -36,39 +39,98 @@ def _normalized_item_columns(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         block = np.array(x[:, start:stop], dtype=float, copy=True)
         finite = np.isfinite(block).all(axis=0)
         block[:, ~finite] = 0.0
-        block -= np.mean(block, axis=0, keepdims=True)
+        block_offsets = np.mean(block, axis=0)
+        block -= block_offsets
         norms = np.sqrt(np.einsum("ij,ij->j", block, block))
         usable = finite & (norms > 0.0)
-        np.divide(
-            block,
-            norms,
-            out=block,
-            where=usable[np.newaxis, :],
-        )
-        block[:, ~usable] = 0.0
-        normalized[:, start:stop] = block
+        item_offsets[start:stop] = block_offsets
+        item_norms[start:stop] = norms
         valid_columns[start:stop] = usable
 
-    return normalized, valid_columns
+    return item_offsets, item_norms, valid_columns
+
+
+def _normalized_complete_item_block(
+    x: np.ndarray,
+    item_offsets: np.ndarray,
+    item_norms: np.ndarray,
+    valid_columns: np.ndarray,
+    row_start: int,
+    row_stop: int,
+    column_start: int,
+    column_stop: int,
+) -> np.ndarray:
+    """Copy and normalize one bounded complete-data item block."""
+    block = np.array(
+        x[row_start:row_stop, column_start:column_stop],
+        dtype=float,
+        copy=True,
+    )
+    block -= item_offsets[column_start:column_stop]
+    usable = valid_columns[column_start:column_stop]
+    np.divide(
+        block,
+        item_norms[column_start:column_stop],
+        out=block,
+        where=usable[np.newaxis, :],
+    )
+    block[:, ~usable] = 0.0
+    return block
 
 
 def _iter_item_correlation_tiles(
-    normalized: np.ndarray,
+    x: np.ndarray,
+    item_offsets: np.ndarray,
+    item_norms: np.ndarray,
     valid_columns: np.ndarray,
 ) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    """Yield strict-lower-triangle item correlations in bounded square tiles."""
-    n_items = normalized.shape[1]
+    """Yield complete-data item correlations from bounded triangular tiles."""
+    n_rows, n_items = x.shape
     tile_width = max(1, isqrt(_PSYCHSYN_CORRELATION_BLOCK_ELEMENTS))
     all_indices = np.arange(n_items, dtype=np.intp)
 
     for row_start in range(0, n_items, tile_width):
         row_stop = min(row_start + tile_width, n_items)
         row_indices = all_indices[row_start:row_stop]
-        row_values = normalized[:, row_start:row_stop]
         for column_start in range(0, row_stop, tile_width):
             column_stop = min(column_start + tile_width, row_stop)
             column_indices = all_indices[column_start:column_stop]
-            correlations = row_values.T @ normalized[:, column_start:column_stop]
+            row_width = row_stop - row_start
+            column_width = column_stop - column_start
+            same_tile = row_start == column_start and row_stop == column_stop
+            workspace_width = row_width if same_tile else row_width + column_width
+            batch_rows = max(
+                1,
+                _PSYCHSYN_CORRELATION_BLOCK_ELEMENTS // workspace_width,
+            )
+            correlations = np.zeros((row_width, column_width))
+
+            for start in range(0, n_rows, batch_rows):
+                stop = min(start + batch_rows, n_rows)
+                row_values = _normalized_complete_item_block(
+                    x,
+                    item_offsets,
+                    item_norms,
+                    valid_columns,
+                    start,
+                    stop,
+                    row_start,
+                    row_stop,
+                )
+                if same_tile:
+                    column_values = row_values
+                else:
+                    column_values = _normalized_complete_item_block(
+                        x,
+                        item_offsets,
+                        item_norms,
+                        valid_columns,
+                        start,
+                        stop,
+                        column_start,
+                        column_stop,
+                    )
+                correlations += row_values.T @ column_values
             np.clip(correlations, -1.0, 1.0, out=correlations)
 
             lower_rows, lower_columns = np.nonzero(
@@ -257,8 +319,13 @@ def _iter_discovery_correlation_tiles(
 ) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
     """Use the fast complete-data kernel or pairwise-complete missing-data kernel."""
     if np.isfinite(x).all():
-        normalized, valid_columns = _normalized_item_columns(x)
-        yield from _iter_item_correlation_tiles(normalized, valid_columns)
+        item_offsets, item_norms, valid_columns = _complete_item_normalization(x)
+        yield from _iter_item_correlation_tiles(
+            x,
+            item_offsets,
+            item_norms,
+            valid_columns,
+        )
         return
 
     yield from _iter_pairwise_item_correlation_tiles(x)
