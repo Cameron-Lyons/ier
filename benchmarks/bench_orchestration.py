@@ -18,13 +18,13 @@ import numpy as np
 
 from ier._statistics import logistic_transform
 from ier.composite import _combine_scores
-from ier.screen import _count_flags
+from ier.screen import _reduce_screen_results
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-def _measure(operation: Callable[[], np.ndarray], repeats: int) -> tuple[float, float]:
+def _measure(operation: Callable[[], object], repeats: int) -> tuple[float, float]:
     timings: list[float] = []
     peaks: list[int] = []
     for _ in range(repeats):
@@ -94,7 +94,7 @@ def main() -> None:
         args.repeats,
     )
     screen_seconds, screen_peak = _measure(
-        lambda: _count_flags(flags, args.respondents),
+        lambda: _reduce_screen_results(scores, flags, args.respondents),
         args.repeats,
     )
     probability_scores = np.linspace(-1000.0, 1000.0, args.respondents)
@@ -110,7 +110,7 @@ def main() -> None:
     )
     print(f"composite: median={composite_seconds:.4f}s peak={composite_peak:.1f} MiB")
     print(f"logistic transform: median={probability_seconds:.4f}s peak={probability_peak:.1f} MiB")
-    print(f"screen flags: median={screen_seconds:.4f}s peak={screen_peak:.1f} MiB")
+    print(f"screen reductions: median={screen_seconds:.4f}s peak={screen_peak:.1f} MiB")
 
 
 if __name__ == "__main__":

@@ -103,6 +103,12 @@ class TestCliNpz(unittest.TestCase):
         )
         self.assertEqual(screen_result["summary_columns"].tolist(), ["mean", "std", "min", "max"])
         self.assertEqual(screen_result["summary_statistics"].shape, (2, 4))
+        self.assertEqual(screen_result["summary_n_valid"].tolist(), [3, 3])
+        self.assertEqual(screen_result["summary_n_unavailable"].tolist(), [0, 0])
+        np.testing.assert_allclose(
+            screen_result["summary_flag_rate"],
+            screen_result["summary_n_flagged"] / 3,
+        )
         self.assertEqual(screen_result["threshold_sources"].tolist(), ["percentile", "percentile"])
         self.assertEqual(screen_result["percentiles"].tolist(), [95.0, 95.0])
         self.assertEqual(screen_result["score__irv"].shape, (3,))
@@ -199,6 +205,9 @@ class TestCliNpz(unittest.TestCase):
         with np.load(out, allow_pickle=False) as archive:
             self.assertTrue(np.isnan(archive["score__psychsyn"]).all())
             self.assertTrue(np.isnan(archive["summary_statistics"]).all())
+            self.assertEqual(archive["summary_n_valid"].tolist(), [0])
+            self.assertEqual(archive["summary_n_unavailable"].tolist(), [3])
+            self.assertTrue(np.isnan(archive["summary_flag_rate"]).all())
             self.assertEqual(archive["min_valid_indices"].item(), 1)
             self.assertEqual(archive["valid_index_counts"].tolist(), [0, 0, 0])
             self.assertEqual(archive["consensus_eligible"].tolist(), [False, False, False])

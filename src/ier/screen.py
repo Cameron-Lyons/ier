@@ -79,20 +79,49 @@ def _resolve_screen_percentiles(
     return resolved
 
 
-def _count_flags(flags: Mapping[str, np.ndarray], n_respondents: int) -> np.ndarray:
-    """Count per-respondent flags without constructing an index matrix."""
-    counts = np.zeros(n_respondents, dtype=np.int_)
-    for values in flags.values():
-        counts += values
-    return counts
+def _reduce_screen_results(
+    scores: Mapping[str, np.ndarray],
+    flags: Mapping[str, np.ndarray],
+    n_respondents: int,
+) -> tuple[np.ndarray, np.ndarray, dict[str, ScreenIndexSummary]]:
+    """Accumulate respondent counts and per-index summaries without stacking."""
+    flag_counts = np.zeros(n_respondents, dtype=np.int_)
+    valid_index_counts = np.zeros(n_respondents, dtype=np.int_)
+    summary: dict[str, ScreenIndexSummary] = {}
 
+    for name, score_arr in scores.items():
+        flag_arr = flags[name]
+        flag_counts += flag_arr
+        valid_mask = ~np.isnan(score_arr)
+        valid_index_counts += valid_mask
+        valid = score_arr[valid_mask]
+        n_valid = len(valid)
+        n_flagged = int(np.count_nonzero(flag_arr))
+        flag_rate = n_flagged / n_valid if n_valid > 0 else float("nan")
+        if n_valid > 0:
+            summary[name] = {
+                "mean": float(np.mean(valid)),
+                "std": float(np.std(valid)),
+                "min": float(np.min(valid)),
+                "max": float(np.max(valid)),
+                "n_valid": n_valid,
+                "n_unavailable": n_respondents - n_valid,
+                "n_flagged": n_flagged,
+                "flag_rate": flag_rate,
+            }
+        else:
+            summary[name] = {
+                "mean": float("nan"),
+                "std": float("nan"),
+                "min": float("nan"),
+                "max": float("nan"),
+                "n_valid": 0,
+                "n_unavailable": n_respondents,
+                "n_flagged": n_flagged,
+                "flag_rate": flag_rate,
+            }
 
-def _count_valid_scores(scores: Mapping[str, np.ndarray], n_respondents: int) -> np.ndarray:
-    """Count available per-respondent scores without constructing an index matrix."""
-    counts = np.zeros(n_respondents, dtype=np.int_)
-    for values in scores.values():
-        counts += ~np.isnan(values)
-    return counts
+    return flag_counts, valid_index_counts, summary
 
 
 def screen(
@@ -162,7 +191,7 @@ def screen(
         - "indices_used": list of index names computed
         - "errors": dict mapping failed index names to error messages
         - "n_respondents": number of respondents
-        - "summary": dict mapping index name to summary statistics
+        - "summary": per-index moments, coverage counts, and valid-score flag rates
 
     Raises:
     - ValueError: If index names, fixed thresholds, or consensus settings are invalid.
@@ -234,34 +263,17 @@ def screen(
         threshold_sources[name] = "fixed" if explicit else "percentile"
         applied_percentiles[name] = None if explicit else tail_percentile
 
-    flag_counts = _count_flags(flags, n_respondents)
-    valid_index_counts = _count_valid_scores(scores, n_respondents)
+    flag_counts, valid_index_counts, summary = _reduce_screen_results(
+        scores,
+        flags,
+        n_respondents,
+    )
     consensus_eligible = (
         np.ones(n_respondents, dtype=bool)
         if min_valid_indices is None
         else valid_index_counts >= min_valid_indices
     )
     consensus_flags = (flag_counts >= min_flags) & consensus_eligible
-
-    summary: dict[str, ScreenIndexSummary] = {}
-    for name, score_arr in scores.items():
-        valid = score_arr[~np.isnan(score_arr)]
-        if len(valid) > 0:
-            summary[name] = {
-                "mean": float(np.mean(valid)),
-                "std": float(np.std(valid)),
-                "min": float(np.min(valid)),
-                "max": float(np.max(valid)),
-                "n_flagged": int(np.sum(flags[name])),
-            }
-        else:
-            summary[name] = {
-                "mean": float("nan"),
-                "std": float("nan"),
-                "min": float("nan"),
-                "max": float("nan"),
-                "n_flagged": 0,
-            }
 
     return {
         "scores": scores,

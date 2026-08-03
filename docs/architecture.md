@@ -33,10 +33,11 @@ _validation / _flagging    ← shared input checks and threshold helpers
   by default. `workers>1` uses a lazily imported standard-library thread pool,
   then records scores and failures in selection order. This keeps default import
   cost and resource use stable while allowing NumPy-heavy scorers to overlap.
-- **Bounded reductions.** Screening flag counts and composite mean, sum, and
-  maximum values accumulate one index at a time. Orchestration retains its
-  documented per-index result vectors but does not construct another complete
-  respondent-by-index matrix for final reductions.
+- **Bounded reductions.** Screening flag counts, valid-score counts, and summary
+  coverage share one index-at-a-time pass; composite mean, sum, and maximum values
+  use the same bounded approach. Orchestration retains its documented per-index
+  result vectors but does not construct another complete respondent-by-index
+  matrix for final reductions.
 
 ## Command-line boundaries
 

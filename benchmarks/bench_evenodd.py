@@ -53,7 +53,10 @@ def main() -> None:
         gc.collect()
         tracemalloc.start()
         started = time.perf_counter()
-        result = evenodd(data, factors)
+        scored = evenodd(data, factors)
+        if not isinstance(scored, np.ndarray):
+            raise RuntimeError("benchmark expected score-only even-odd output")
+        result = scored
         timings.append(time.perf_counter() - started)
         peaks.append(tracemalloc.get_traced_memory()[1])
         tracemalloc.stop()

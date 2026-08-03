@@ -48,4 +48,5 @@ class TestCheckScript(unittest.TestCase):
                 "run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing",
                 commands,
             )
+            self.assertIn("run --no-sync mypy src/ier benchmarks", commands)
             self.assertIn("run --no-sync mkdocs build --strict", commands)

@@ -26,7 +26,10 @@ def _measure(data: np.ndarray, repeats: int) -> tuple[float, float]:
         gc.collect()
         tracemalloc.start()
         started = time.perf_counter()
-        result = mahad(data)
+        scored = mahad(data)
+        if not isinstance(scored, np.ndarray):
+            raise RuntimeError("benchmark expected distance-only output")
+        result = scored
         timings.append(time.perf_counter() - started)
         peaks.append(tracemalloc.get_traced_memory()[1])
         tracemalloc.stop()

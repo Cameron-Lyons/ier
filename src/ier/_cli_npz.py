@@ -130,6 +130,18 @@ def _write_screen_npz(
                 [result["summary"][name]["n_flagged"] for name in names],
                 dtype=np.int64,
             ),
+            "summary_n_valid": np.asarray(
+                [result["summary"][name]["n_valid"] for name in names],
+                dtype=np.int64,
+            ),
+            "summary_n_unavailable": np.asarray(
+                [result["summary"][name]["n_unavailable"] for name in names],
+                dtype=np.int64,
+            ),
+            "summary_flag_rate": np.asarray(
+                [result["summary"][name]["flag_rate"] for name in names],
+                dtype=np.float64,
+            ),
         }
     )
     if result["min_valid_indices"] is not None:

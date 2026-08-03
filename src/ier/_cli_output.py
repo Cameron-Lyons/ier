@@ -229,7 +229,17 @@ def _emit_screen_text(
         + ", ".join(
             f"{name}={_screen_threshold_text(result, name)}" for name in result["thresholds"]
         ),
+        "index coverage:",
     ]
+    for name in result["indices_used"]:
+        stats = result["summary"][name]
+        rate = stats["flag_rate"]
+        rate_text = "n/a" if not np.isfinite(rate) else f"{rate:.1%}"
+        lines.append(
+            f"  {name}: valid={stats['n_valid']}/{result['n_respondents']}, "
+            f"unavailable={stats['n_unavailable']}, "
+            f"flagged={stats['n_flagged']}/{stats['n_valid']} ({rate_text})"
+        )
     if result["min_valid_indices"] is not None:
         lines.append(
             f"consensus eligible: {int(np.sum(result['consensus_eligible']))} "
@@ -282,7 +292,10 @@ def _write_screen_json(
             "std": stats["std"] if np.isfinite(stats["std"]) else None,
             "min": stats["min"] if np.isfinite(stats["min"]) else None,
             "max": stats["max"] if np.isfinite(stats["max"]) else None,
+            "n_valid": stats["n_valid"],
+            "n_unavailable": stats["n_unavailable"],
             "n_flagged": stats["n_flagged"],
+            "flag_rate": stats["flag_rate"] if np.isfinite(stats["flag_rate"]) else None,
         }
         for name, stats in result["summary"].items()
     }
