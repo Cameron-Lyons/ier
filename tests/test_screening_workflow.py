@@ -10,7 +10,7 @@ import pytest
 from ier import IndexOptions
 from ier.acquiescence import acquiescence, acquiescence_flag
 from ier.mahad import mahad
-from ier.screen import _count_flags, _count_valid_scores, screen
+from ier.screen import _reduce_screen_results, screen
 from ier.visualize import plot_distributions, plot_flag_counts, plot_flagged_heatmap
 
 
@@ -172,37 +172,47 @@ class TestScreen(unittest.TestCase):
         result = screen(self.data)
         self.assertEqual(len(result["flag_counts"]), 30)
 
-    def test_flag_counts_accumulate_without_stacking(self) -> None:
-        flags = {
-            "first": np.array([True, False, True, False]),
-            "second": np.array([False, True, True, False]),
-            "third": np.array([True, True, False, False]),
-        }
-
-        with patch(
-            "ier.screen.np.column_stack",
-            side_effect=AssertionError("flag matrix was constructed"),
-        ):
-            counts = _count_flags(flags, 4)
-
-        np.testing.assert_array_equal(counts, np.array([2, 2, 2, 0]))
-        self.assertEqual(counts.dtype, np.dtype(np.int_))
-
-    def test_valid_score_counts_accumulate_without_stacking(self) -> None:
+    def test_screen_reductions_accumulate_without_stacking(self) -> None:
         scores = {
             "first": np.array([1.0, np.nan, 3.0, np.nan]),
             "second": np.array([np.nan, 2.0, 3.0, np.nan]),
             "third": np.array([1.0, 2.0, np.nan, np.nan]),
         }
+        flags = {
+            "first": np.array([True, False, True, False]),
+            "second": np.array([False, True, False, False]),
+            "third": np.array([False, True, False, False]),
+        }
 
         with patch(
             "ier.screen.np.column_stack",
-            side_effect=AssertionError("score matrix was constructed"),
+            side_effect=AssertionError("screen matrix was constructed"),
         ):
-            counts = _count_valid_scores(scores, 4)
+            flag_counts, valid_counts, summary = _reduce_screen_results(scores, flags, 4)
 
-        np.testing.assert_array_equal(counts, np.array([2, 2, 2, 0]))
-        self.assertEqual(counts.dtype, np.dtype(np.int_))
+        np.testing.assert_array_equal(flag_counts, np.array([1, 2, 1, 0]))
+        np.testing.assert_array_equal(valid_counts, np.array([2, 2, 2, 0]))
+        self.assertEqual(flag_counts.dtype, np.dtype(np.int_))
+        self.assertEqual(valid_counts.dtype, np.dtype(np.int_))
+        self.assertEqual(summary["first"]["n_valid"], 2)
+        self.assertEqual(summary["first"]["n_unavailable"], 2)
+        self.assertEqual(summary["first"]["n_flagged"], 2)
+        self.assertEqual(summary["first"]["flag_rate"], 1.0)
+        self.assertEqual(summary["second"]["flag_rate"], 0.5)
+
+    def test_screen_reductions_report_unavailable_index(self) -> None:
+        scores = {"missing": np.array([np.nan, np.nan])}
+        flags = {"missing": np.array([False, False])}
+
+        flag_counts, valid_counts, summary = _reduce_screen_results(scores, flags, 2)
+
+        np.testing.assert_array_equal(flag_counts, [0, 0])
+        np.testing.assert_array_equal(valid_counts, [0, 0])
+        self.assertEqual(summary["missing"]["n_valid"], 0)
+        self.assertEqual(summary["missing"]["n_unavailable"], 2)
+        self.assertEqual(summary["missing"]["n_flagged"], 0)
+        self.assertTrue(np.isnan(summary["missing"]["flag_rate"]))
+        self.assertTrue(np.isnan(summary["missing"]["mean"]))
 
     def test_default_consensus_requires_two_index_flags(self) -> None:
         result = screen(self.data)
@@ -458,7 +468,10 @@ class TestScreen(unittest.TestCase):
         self.assertIn("std", stats)
         self.assertIn("min", stats)
         self.assertIn("max", stats)
+        self.assertEqual(stats["n_valid"], len(self.data))
+        self.assertEqual(stats["n_unavailable"], 0)
         self.assertIn("n_flagged", stats)
+        self.assertEqual(stats["flag_rate"], stats["n_flagged"] / len(self.data))
 
     def test_all_score_lengths_match(self) -> None:
         result = screen(self.data)

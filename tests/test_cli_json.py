@@ -48,7 +48,10 @@ def _screen_result() -> ScreenResult:
                 "std": np.inf,
                 "min": -np.inf,
                 "max": 5.0,
+                "n_valid": 4,
+                "n_unavailable": 1,
                 "n_flagged": 3,
+                "flag_rate": 0.75,
             }
         },
     }
@@ -73,6 +76,9 @@ class TestCliJson(unittest.TestCase):
         self.assertEqual(screen_payload["scores"]["example"], [1.0, None, None, None, 5.0])
         self.assertEqual(screen_payload["flags"]["example"], [False, True, False, True, True])
         self.assertEqual(screen_payload["summary"]["example"]["mean"], None)
+        self.assertEqual(screen_payload["summary"]["example"]["n_valid"], 4)
+        self.assertEqual(screen_payload["summary"]["example"]["n_unavailable"], 1)
+        self.assertEqual(screen_payload["summary"]["example"]["flag_rate"], 0.75)
         self.assertEqual(screen_payload["respondent_ids"], identifiers)
 
         composite_output = StringIO()

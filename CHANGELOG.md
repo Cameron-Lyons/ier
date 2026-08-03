@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.21] - 2026-08-03
+
+### Added
+
+- Per-index screening summaries now report `n_valid`, `n_unavailable`,
+  `n_flagged`, and `flag_rate`. The rate uses valid scores as its denominator
+  and is unavailable when an index has no valid scores.
+- Text, JSON, and NPZ screening output expose the new coverage metrics. NPZ
+  archives retain aligned valid, unavailable, and rate arrays.
+
+### Changed
+
+- Respondent flag counts, valid-score counts, and per-index summaries now share
+  one non-stacking reduction pass. On a 500,000-respondent, 20-index benchmark
+  with 10% unavailable scores, median reduction time falls from 29.90 to 27.51 ms
+  with peak temporary allocation unchanged at about 15.0 MiB.
+- Strict type checking now covers all benchmark modules in addition to the
+  library, preventing synthetic result fixtures from drifting from public types.
+
+### Fixed
+
+- The CLI output benchmark again runs for JSON, CSV, and NPZ screening results
+  after its synthetic fixture fell behind recently added result fields.
+
 ## [2.19.20] - 2026-08-03
 
 ### Added

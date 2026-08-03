@@ -74,9 +74,12 @@ unset values. CSV includes `valid_index_count` and `consensus_eligible` columns
 for every respondent but intentionally omits global cutoff metadata.
 
 Each successful index has a `score__NAME` float vector and `flag__NAME` boolean
-vector. Summary values use `summary_columns`, `summary_statistics`, and
-`summary_n_flagged`. Soft failures are stored in aligned `error_names` and
-`error_messages` Unicode vectors.
+vector. Summary values use `summary_columns`, `summary_statistics`,
+`summary_n_flagged`, `summary_n_valid`, `summary_n_unavailable`, and
+`summary_flag_rate`. The rate uses valid scores as its denominator and is `NaN`
+when an index has no available scores. JSON exposes the same values inside each
+index summary and uses `null` for an unavailable rate. Soft failures are stored
+in aligned `error_names` and `error_messages` Unicode vectors.
 
 ### Composite schema
 

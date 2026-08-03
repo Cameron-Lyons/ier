@@ -1579,6 +1579,8 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("(tail percentile=80)", stdout.getvalue())
         self.assertIn("longstring=2 (fixed)", stdout.getvalue())
+        self.assertIn("index coverage:", stdout.getvalue())
+        self.assertIn("irv: valid=3/3, unavailable=0", stdout.getvalue())
 
     def test_screen_custom_consensus_threshold(self) -> None:
         out = self.root / "screen-consensus.json"
@@ -1699,6 +1701,9 @@ class TestCli(unittest.TestCase):
         payload = json.loads(out.read_text(encoding="utf-8"))
         self.assertEqual(payload["scores"]["psychsyn"], [None, None, None])
         self.assertIsNone(payload["summary"]["psychsyn"]["mean"])
+        self.assertEqual(payload["summary"]["psychsyn"]["n_valid"], 0)
+        self.assertEqual(payload["summary"]["psychsyn"]["n_unavailable"], 3)
+        self.assertIsNone(payload["summary"]["psychsyn"]["flag_rate"])
 
     def test_composite_json_uses_null_for_all_non_finite_values(self) -> None:
         text = _emit_composite_json(

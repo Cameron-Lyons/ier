@@ -67,6 +67,7 @@ result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print("Indices:", result["indices_used"])
 print("Flag counts:", result["flag_counts"])
 print("Valid index counts:", result["valid_index_counts"])
+print("IRV coverage:", result["summary"]["irv"])
 print("Consensus flags:", result["consensus_flags"])
 
 scores = composite(data, indices=["irv", "longstring", "person_total", "markov"])
@@ -158,6 +159,10 @@ After index scoring, screening flag counts and composite scores are reduced one
 index at a time. Large multi-index workflows therefore avoid a second
 respondent-by-index matrix while retaining every per-index score and flag in the
 result.
+
+Each screening index summary reports valid and unavailable score counts plus the
+flagged count and valid-score flag rate. This makes coverage differences visible
+without recomputing them from the retained arrays.
 
 Set `screen(..., min_valid_indices=N)` or CLI `--min-valid-indices N` to require
 at least `N` available index scores before a respondent is eligible for a

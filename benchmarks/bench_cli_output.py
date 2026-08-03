@@ -44,13 +44,19 @@ def _make_screen_result(n_respondents: int, n_indices: int) -> ScreenResult:
     names = [f"score_{index}" for index in range(n_indices)]
     values = np.linspace(0.0, 1.0, n_respondents)
     flags = values > 0.95
+    n_flagged = int(np.count_nonzero(flags))
     return {
         "scores": {name: values for name in names},
         "flags": {name: flags for name in names},
         "thresholds": {name: 0.95 for name in names},
-        "flag_counts": np.zeros(n_respondents, dtype=np.int_),
-        "consensus_flags": np.zeros(n_respondents, dtype=np.bool_),
+        "threshold_sources": {name: "fixed" for name in names},
+        "percentiles": {name: None for name in names},
+        "flag_counts": flags.astype(np.int_) * n_indices,
+        "valid_index_counts": np.full(n_respondents, n_indices, dtype=np.int_),
+        "consensus_eligible": np.ones(n_respondents, dtype=np.bool_),
+        "consensus_flags": flags if n_indices >= 2 else np.zeros_like(flags),
         "min_flags": 2,
+        "min_valid_indices": None,
         "n_indices": n_indices,
         "indices_used": names,
         "errors": {},
@@ -61,7 +67,10 @@ def _make_screen_result(n_respondents: int, n_indices: int) -> ScreenResult:
                 "std": 0.3,
                 "min": 0.0,
                 "max": 1.0,
-                "n_flagged": int(np.sum(flags)),
+                "n_valid": n_respondents,
+                "n_unavailable": 0,
+                "n_flagged": n_flagged,
+                "flag_rate": n_flagged / n_respondents,
             }
             for name in names
         },

@@ -33,7 +33,7 @@ print(result["errors"])
 | `min_valid_indices` | Required available scores for consensus, or `None` |
 | `indices_used` | Successfully computed indices |
 | `errors` | Soft failures (missing config, invalid data for an index) |
-| `summary` | Mean/std/min/max/`n_flagged` per index |
+| `summary` | Mean/std/min/max, valid/unavailable counts, flagged count, and valid-score flag rate per index |
 | `n_respondents` / `n_indices` | Size metadata |
 
 ## Defaults

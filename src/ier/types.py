@@ -41,7 +41,10 @@ class ScreenIndexSummary(TypedDict):
     std: float
     min: float
     max: float
+    n_valid: int
+    n_unavailable: int
     n_flagged: int
+    flag_rate: float
 
 
 class ScreenResult(TypedDict):

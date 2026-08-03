@@ -25,7 +25,7 @@ echo "==> ruff format"
 "${RUN[@]}" ruff format --check .
 
 echo "==> mypy"
-"${RUN[@]}" mypy src/ier
+"${RUN[@]}" mypy src/ier benchmarks
 
 if [[ "${SKIP_DOCS:-0}" != "1" ]]; then
   echo "==> mkdocs"
