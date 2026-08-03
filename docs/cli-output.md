@@ -1,7 +1,7 @@
 # CLI Output Formats
 
-The three scoring commands support human-readable summaries, interoperable text
-formats, and lossless NumPy archives:
+Scoring and archive-reflagging commands support human-readable summaries,
+interoperable text formats, and lossless NumPy archives:
 
 | Format | Destination | Best for |
 |--------|-------------|----------|
@@ -28,6 +28,7 @@ Write archives from any scoring command:
 
 ```bash
 ier screen responses.npy --indices irv longstring --format npz --output screening.npz
+ier screen-reflag screening.npz --percentile 99 --format npz --output stricter.npz
 ier composite responses.csv --format npz --output composite.npz
 ier response-time timings.csv --format npz --output timing.npz
 ```
@@ -78,6 +79,23 @@ schema. It accepts compact public archives, screen CLI archives, and composite
 CLI archives written with `--include-components`. Aggregate-only composite and
 response-time archives do not contain reusable registered-index vectors and are
 rejected with a contextual error.
+
+Reuse validated registered-index scores directly from the CLI:
+
+```bash
+ier screen-reflag screening.npz --percentile 99 --min-flags 3 --format json
+ier screen-reflag screening.npz --indices irv longstring \
+  --threshold longstring=8 --index-percentile irv=90 \
+  --format npz --output screening.npz
+```
+
+`screen-reflag` accepts compact public score archives, full screen archives,
+and detailed composite archives. It optionally selects stored index names in
+the requested order, reapplies the same fixed or percentile per-index rules,
+coverage requirement, and consensus count as `screen`, and preserves respondent
+identifiers and archived soft failures. The shared serializers produce the same
+screen text, JSON, CSV, and NPZ contracts. An NPZ destination may be the input
+path because validation and loading finish before atomic replacement starts.
 
 ### Common fields
 

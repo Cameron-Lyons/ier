@@ -11,13 +11,21 @@ from __future__ import annotations
 import argparse
 import gc
 import statistics
+import tempfile
 import time
 import tracemalloc
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import IndexOptions, screen, screen_scores
+from ier import (
+    IndexOptions,
+    load_score_archive,
+    save_score_archive,
+    screen,
+    screen_scores,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -96,10 +104,47 @@ def main() -> None:
         ]
         reused_sensitivity_timings.append(time.perf_counter() - start)
 
-    for direct, reused in zip(direct_results, reused_results, strict=True):
+    with tempfile.TemporaryDirectory() as directory:
+        archive_path = Path(directory) / "scores.npz"
+        save_score_archive(archive_path, result["scores"])
+        load_score_archive(archive_path)
+        archived_sensitivity_timings: list[float] = []
+        for _ in range(args.repeats):
+            start = time.perf_counter()
+            archived_results = [
+                screen_scores(
+                    load_score_archive(archive_path)["scores"],
+                    percentile=float(value),
+                )
+                for value in sensitivity_percentiles
+            ]
+            archived_sensitivity_timings.append(time.perf_counter() - start)
+
+        archived_sensitivity_peak = _peak_mib(
+            lambda: [
+                screen_scores(
+                    load_score_archive(archive_path)["scores"],
+                    percentile=float(value),
+                )
+                for value in sensitivity_percentiles
+            ]
+        )
+
+    for direct, reused, archived in zip(
+        direct_results,
+        reused_results,
+        archived_results,
+        strict=True,
+    ):
         if direct["thresholds"] != reused["thresholds"]:
             raise RuntimeError("reused scores produced different thresholds")
+        if direct["thresholds"] != archived["thresholds"]:
+            raise RuntimeError("archived scores produced different thresholds")
         np.testing.assert_array_equal(direct["consensus_flags"], reused["consensus_flags"])
+        np.testing.assert_array_equal(
+            direct["consensus_flags"],
+            archived["consensus_flags"],
+        )
 
     full_sensitivity_peak = _peak_mib(
         lambda: [
@@ -123,11 +168,17 @@ def main() -> None:
     )
     full_median = statistics.median(full_sensitivity_timings)
     reused_median = statistics.median(reused_sensitivity_timings)
+    archived_median = statistics.median(archived_sensitivity_timings)
     print(
         f"sensitivity scenarios={args.sensitivity_scenarios}: "
         f"full={full_median:.4f}s reused={reused_median:.4f}s "
         f"speedup={full_median / reused_median:.1f}x "
         f"peak={full_sensitivity_peak:.1f}/{reused_sensitivity_peak:.1f} MiB"
+    )
+    print(
+        f"archived sensitivity: median={archived_median:.4f}s "
+        f"speedup={full_median / archived_median:.1f}x "
+        f"peak={archived_sensitivity_peak:.1f} MiB"
     )
 
 

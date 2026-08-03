@@ -47,6 +47,11 @@ _validation / _flagging    ← shared input checks and threshold helpers
   `response_time_score_flags()` reapplies low- or high-tail cutoffs to retained
   direct timing scores or mixture probabilities. All three support sensitivity
   analysis without rerunning scorers.
+- **Archive-backed decisions.** The screening and response-time reflag commands
+  load validated retained vectors before resolving cutoffs, then share the same
+  decision and output-dispatch paths as their original scoring commands. NPZ
+  output can therefore atomically replace the source without retaining the raw
+  input matrix or adding a runtime dependency.
 
 ## Command-line boundaries
 
@@ -237,7 +242,8 @@ Plotting remains optional and reports a centralized install hint from
 - Hand-locked regression fixtures live in `tests/test_golden_parity.py` and
   JSON under `tests/fixtures/parity/`.
 - Detection-rate simulation: `benchmarks/bench_detection.py`.
-- Throughput microbench: `benchmarks/bench_screen.py`.
+- Screening throughput plus in-memory and archive-backed sensitivity reuse:
+  `benchmarks/bench_screen.py`.
 - Multi-factor even–odd throughput and memory: `benchmarks/bench_evenodd.py`.
 - Psychometric synonym missing-data throughput and memory: `benchmarks/bench_psychsyn.py`.
 - Predefined semantic/MAD pair throughput and memory: `benchmarks/bench_pair_differences.py`.
