@@ -11,7 +11,9 @@ from ier import (
     composite_summary,
     fit_psychsyn_model,
     fit_response_time_mixture,
+    flag_consensus,
     load_archive,
+    load_flag_consensus_archive,
     load_psychsyn_model,
     load_response_time_archive,
     load_response_time_mixture_model,
@@ -20,6 +22,7 @@ from ier import (
     psychsyn_model_scores,
     response_time_mixture_scores,
     response_time_score_flags,
+    save_flag_consensus_archive,
     save_psychsyn_model,
     save_response_time_archive,
     save_response_time_mixture_model,
@@ -591,6 +594,7 @@ def test_generic_archive_loader_inspects_psychsyn_model(tmp_path: Path) -> None:
 def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Path) -> None:
     score_path = tmp_path / "scores.npz"
     timing_path = tmp_path / "timing.npz"
+    consensus_path = tmp_path / "consensus.npz"
     model_path = tmp_path / "timing-model.npz"
     save_score_archive(
         score_path,
@@ -604,6 +608,15 @@ def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Pa
         threshold=1.0,
         threshold_source="fixed",
     )
+    save_flag_consensus_archive(
+        consensus_path,
+        {
+            "irv": np.asarray([False, True]),
+            "response_time": np.asarray([True, False]),
+        },
+        scores={"irv": [0.1, 0.2]},
+        min_flags=1,
+    )
     model = fit_response_time_mixture(
         np.asarray([[0.4], [0.5], [4.0], [5.0]]),
         random_seed=42,
@@ -612,6 +625,7 @@ def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Pa
 
     score_archive = load_archive(score_path)
     timing_archive = load_archive(timing_path)
+    consensus_archive = load_archive(consensus_path)
     model_archive = load_archive(model_path)
 
     assert score_archive["result_type"] == "screen"
@@ -620,6 +634,9 @@ def test_generic_archive_loader_auto_detects_supported_result_types(tmp_path: Pa
     assert timing_archive["result_type"] == "response_time"
     assert timing_archive["threshold_source"] == "fixed"
     np.testing.assert_array_equal(timing_archive["flags"], [True, False])
+    assert consensus_archive["result_type"] == "flag_consensus"
+    assert consensus_archive["signal_names"] == ["irv", "response_time"]
+    np.testing.assert_array_equal(consensus_archive["consensus_flags"], [True, True])
     assert model_archive["result_type"] == "response_time_mixture_model"
     assert model_archive["schema_version"] == 1
     assert model_archive["n_components"] == model.n_components
@@ -645,6 +662,155 @@ def test_generic_archive_loader_rejects_plain_and_unknown_results(tmp_path: Path
         load_archive(plain)
     with pytest.raises(ValueError, match="screen.*composite.*response_time.*mixture_model"):
         load_archive(unknown)
+
+
+def test_flag_consensus_archive_round_trip_supports_reuse(tmp_path: Path) -> None:
+    destination = tmp_path / "consensus.npz"
+    flags = {
+        "pattern": np.asarray([True, False, False]),
+        "response_time": np.asarray([False, True, True]),
+    }
+    scores = {"pattern": np.asarray([1.0, np.nan, 3.0])}
+    respondent_ids = ["case-a", "case-b", "case-c"]
+
+    save_flag_consensus_archive(
+        destination,
+        flags,
+        scores=scores,
+        min_flags=1,
+        min_valid_signals=2,
+        respondent_ids=respondent_ids,
+    )
+
+    with np.load(destination, allow_pickle=False) as raw:
+        assert raw.files == [
+            "schema_version",
+            "result_type",
+            "n_respondents",
+            "n_signals",
+            "signal_names",
+            "score_names",
+            "min_flags",
+            "min_valid_signals",
+            "flag_counts",
+            "valid_signal_counts",
+            "consensus_eligible",
+            "consensus_flags",
+            "flag__0",
+            "flag__1",
+            "score__0",
+            "respondent_ids",
+        ]
+        assert all(not raw[name].dtype.hasobject for name in raw.files)
+        assert raw["flag_counts"].dtype == np.uint8
+        assert raw["valid_signal_counts"].dtype == np.uint8
+
+    loaded = load_flag_consensus_archive(destination)
+    reused = flag_consensus(
+        loaded["flags"],
+        scores=loaded["scores"],
+        min_flags=2,
+    )
+
+    assert loaded["schema_version"] == 1
+    assert loaded["result_type"] == "flag_consensus"
+    assert loaded["signal_names"] == ["pattern", "response_time"]
+    assert list(loaded["scores"]) == ["pattern"]
+    assert loaded["min_flags"] == 1
+    assert loaded["min_valid_signals"] == 2
+    assert loaded["respondent_ids"] == respondent_ids
+    np.testing.assert_array_equal(loaded["flag_counts"], [1, 1, 1])
+    np.testing.assert_array_equal(loaded["valid_signal_counts"], [2, 1, 2])
+    np.testing.assert_array_equal(loaded["consensus_eligible"], [True, False, True])
+    np.testing.assert_array_equal(loaded["consensus_flags"], [True, False, True])
+    np.testing.assert_array_equal(reused["consensus_flags"], [False, False, False])
+
+
+def _flag_consensus_payload() -> dict[str, np.ndarray]:
+    return {
+        "schema_version": np.asarray(1, dtype=np.int64),
+        "result_type": np.asarray("flag_consensus", dtype=np.str_),
+        "n_respondents": np.asarray(2, dtype=np.int64),
+        "n_signals": np.asarray(2, dtype=np.int64),
+        "signal_names": np.asarray(["pattern", "timing"], dtype=np.str_),
+        "score_names": np.asarray(["pattern"], dtype=np.str_),
+        "min_flags": np.asarray(1, dtype=np.int64),
+        "min_valid_signals": np.asarray(2, dtype=np.int64),
+        "flag_counts": np.asarray([1, 1], dtype=np.int64),
+        "valid_signal_counts": np.asarray([2, 1], dtype=np.int64),
+        "consensus_eligible": np.asarray([True, False], dtype=np.bool_),
+        "consensus_flags": np.asarray([True, False], dtype=np.bool_),
+        "flag__0": np.asarray([True, False], dtype=np.bool_),
+        "flag__1": np.asarray([False, True], dtype=np.bool_),
+        "score__0": np.asarray([1.0, np.nan], dtype=np.float64),
+    }
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"schema_version": np.asarray(2)}, "unsupported.*schema version"),
+        ({"result_type": np.asarray("screen")}, "result_type"),
+        ({"n_respondents": np.asarray(0)}, "must be positive"),
+        ({"n_signals": np.asarray(3)}, "signal_names must match"),
+        (
+            {"signal_names": np.asarray(["pattern", "pattern"])},
+            "signal names must be unique",
+        ),
+        ({"score_names": np.asarray(["other"])}, "must be selected signals"),
+        ({"flag__0": np.asarray([1, 0])}, "boolean vector"),
+        ({"score__0": np.asarray([np.inf, np.nan])}, "finite values or NaN"),
+        ({"score__0": np.asarray([np.nan, np.nan])}, "false where scores"),
+        ({"min_valid_signals": np.asarray(3)}, "cannot exceed"),
+        ({"flag_counts": np.asarray([0, 1])}, "flag_counts is inconsistent"),
+        ({"unexpected": np.asarray(1)}, "unexpected member"),
+    ],
+)
+def test_malformed_flag_consensus_archive_is_rejected(
+    tmp_path: Path,
+    updates: dict[str, np.ndarray],
+    message: str,
+) -> None:
+    payload = _flag_consensus_payload()
+    payload.update(updates)
+    destination = tmp_path / "malformed-consensus.npz"
+    np.savez(destination, **payload)
+
+    with pytest.raises(ValueError, match=message):
+        load_flag_consensus_archive(destination)
+
+
+def test_flag_consensus_archive_requires_complete_pickle_free_npz(tmp_path: Path) -> None:
+    missing_payload = _flag_consensus_payload()
+    missing_payload.pop("flag__1")
+    missing = tmp_path / "missing-consensus.npz"
+    np.savez(missing, **missing_payload)
+
+    unsafe_payload = _flag_consensus_payload()
+    unsafe_payload["score__0"] = np.asarray([object(), object()], dtype=object)
+    unsafe = tmp_path / "unsafe-consensus.npz"
+    np.savez(unsafe, **unsafe_payload)
+
+    with pytest.raises(ValueError, match="missing required member: flag__1"):
+        load_flag_consensus_archive(missing)
+    with pytest.raises(ValueError, match="not pickle-free"):
+        load_flag_consensus_archive(unsafe)
+
+
+def test_flag_consensus_archive_writer_validates_before_replacing(tmp_path: Path) -> None:
+    destination = tmp_path / "consensus.npz"
+    destination.write_bytes(b"keep")
+
+    with pytest.raises(ValueError, match="false where scores"):
+        save_flag_consensus_archive(
+            destination,
+            {"pattern": [True]},
+            scores={"pattern": [np.nan]},
+        )
+    assert destination.read_bytes() == b"keep"
+
+    with pytest.raises(ValueError, match="end in .npz"):
+        save_flag_consensus_archive(tmp_path / "consensus.json", {"pattern": [True]})
 
 
 def _response_time_payload() -> dict[str, np.ndarray]:

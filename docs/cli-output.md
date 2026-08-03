@@ -71,10 +71,10 @@ ier archive-info timing-model.npz --format json
 ```
 
 The text and strict-JSON summaries omit respondent vectors. Score archives list
-stored indices and soft failures; response-time archives report the metric,
-tail direction, cutoff provenance, and aggregate flag rate. Timing-model archives
-report component count, transform, fastest-component position, and validated
-weights, means, and variances.
+stored indices and soft failures; flag-consensus archives report their signals,
+availability coverage, decision settings, and aggregate flag rate; response-time
+archives report the metric, tail direction, cutoff provenance, and aggregate flag
+rate. Model archives report compact calibration metadata.
 
 For validated score reuse, prefer the public save/load pair. The writer creates
 a compact score-only archive; full CLI archives retain the additional flags and
@@ -103,6 +103,54 @@ schema. It accepts compact public archives, screen CLI archives, and composite
 CLI archives written with `--include-components`. Aggregate-only composite and
 response-time archives do not contain reusable registered-index vectors and are
 rejected with a contextual error.
+
+### Flag-consensus archives
+
+Persist already aligned cross-domain decisions without retaining either source
+matrix:
+
+```python
+from ier import (
+    flag_consensus,
+    load_flag_consensus_archive,
+    save_flag_consensus_archive,
+)
+
+save_flag_consensus_archive(
+    "consensus.npz",
+    {**screened["flags"], "response_time": timing_flags},
+    scores={**screened["scores"], "response_time": timing_scores},
+    min_flags=2,
+    min_valid_signals=3,
+    respondent_ids=respondent_ids,
+)
+saved = load_flag_consensus_archive("consensus.npz")
+revised = flag_consensus(
+    saved["flags"],
+    scores=saved["scores"],
+    min_flags=3,
+)
+```
+
+The versioned archive stores ordered signal names, every Boolean vector, only
+the supplied score subset, aggregate counts, eligibility, final decisions, and
+optional IDs. Signal members use numeric positions, so user-provided names never
+become archive paths. The loader rejects missing, extra, object-typed, unaligned,
+or internally inconsistent members and recomputes the full decision before
+returning. Omitted scores retain the documented fully-available meaning.
+
+| Member | Type |
+| --- | --- |
+| `schema_version` / `result_type` | Integer `1` / Unicode `flag_consensus` |
+| `n_respondents` / `n_signals` | Positive integer scalars |
+| `signal_names` / `score_names` | Ordered Unicode vectors |
+| `flag__N` | Boolean vector for signal position `N` |
+| `score__N` | Optional float availability vector for signal position `N` |
+| `flag_counts` / `valid_signal_counts` | Smallest unsigned vectors covering `n_signals` |
+| `consensus_eligible` / `consensus_flags` | Boolean vectors |
+| `min_flags` | Positive integer scalar |
+| `min_valid_signals` | Integer scalar; `0` represents no coverage minimum |
+| `respondent_ids` | Optional unique Unicode vector |
 
 ### Merging score archives
 

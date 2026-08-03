@@ -33,6 +33,7 @@ from ier import (
     psychsyn,
     psychsyn_model_scores,
     response_time_mixture_scores,
+    save_flag_consensus_archive,
     save_psychsyn_model,
     save_response_time_archive,
     save_response_time_mixture_model,
@@ -313,6 +314,59 @@ class TestCli(unittest.TestCase):
                 "percentile": None,
                 "n_flagged": 2,
                 "flag_rate": 2 / 3,
+            },
+        )
+
+    def test_archive_info_reports_reusable_flag_consensus(self) -> None:
+        archive = self.root / "consensus.npz"
+        output = self.root / "consensus-info.json"
+        save_flag_consensus_archive(
+            archive,
+            {
+                "irv": np.asarray([False, True, False]),
+                "response_time": np.asarray([True, True, False]),
+            },
+            scores={"irv": [0.1, 0.8, np.nan]},
+            min_flags=2,
+            min_valid_signals=2,
+            respondent_ids=["case-a", "case-b", "case-c"],
+        )
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            text_code = main(["archive-info", str(archive)])
+            json_code = main(
+                [
+                    "archive-info",
+                    str(archive),
+                    "--format",
+                    "json",
+                    "--output",
+                    str(output),
+                ]
+            )
+
+        self.assertEqual(text_code, 0)
+        self.assertEqual(json_code, 0)
+        self.assertIn("result type: flag_consensus", stdout.getvalue())
+        self.assertIn("signals (2): irv, response_time", stdout.getvalue())
+        self.assertIn("consensus eligible: 2/3", stdout.getvalue())
+        self.assertIn("consensus flagged: 1/3", stdout.getvalue())
+        self.assertEqual(
+            json.loads(output.read_text(encoding="utf-8")),
+            {
+                "schema_version": 1,
+                "result_type": "flag_consensus",
+                "n_respondents": 3,
+                "has_respondent_ids": True,
+                "n_signals": 2,
+                "signals": ["irv", "response_time"],
+                "availability_scores": ["irv"],
+                "min_flags": 2,
+                "min_valid_signals": 2,
+                "n_eligible": 2,
+                "n_consensus_flagged": 1,
+                "consensus_rate": 1 / 3,
             },
         )
 

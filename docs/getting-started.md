@@ -371,6 +371,33 @@ If the result type is not known beforehand, use the generic validated loader or
 inspect its metadata from the command line:
 
 ```python
+from ier import (
+    flag_consensus,
+    load_flag_consensus_archive,
+    save_flag_consensus_archive,
+)
+
+save_flag_consensus_archive(
+    "consensus.npz",
+    {**screened["flags"], "response_time": timing_flags},
+    scores={**screened["scores"], "response_time": timing_scores},
+    min_flags=2,
+    min_valid_signals=3,
+    respondent_ids=respondent_ids,
+)
+saved_consensus = load_flag_consensus_archive("consensus.npz")
+stricter = flag_consensus(
+    saved_consensus["flags"],
+    scores=saved_consensus["scores"],
+    min_flags=3,
+)
+```
+
+The loader disables pickling and recomputes counts, coverage, eligibility, and
+final decisions before accepting the file. Arbitrary signal names are stored by
+numeric position rather than as archive paths.
+
+```python
 from ier import load_archive
 
 saved = load_archive("results.npz")
@@ -383,8 +410,8 @@ ier archive-info results.npz --format json --output archive-metadata.json
 ier archive-info timing-model.npz --format json
 ```
 
-Both paths auto-detect screen, composite, response-time, and timing-model archives
-and run the same complete pickle-disabled validators as the specialized loaders.
+Both paths auto-detect screen, composite, response-time, flag-consensus, and model
+archives and run the same complete pickle-disabled validators as the specialized loaders.
 Generic model results expose read-only parameter vectors in a typed mapping;
 `load_response_time_mixture_model()` remains the direct scoring boundary.
 

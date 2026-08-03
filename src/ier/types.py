@@ -112,7 +112,26 @@ class ResponseTimeArchive(TypedDict):
     respondent_ids: list[str] | None
 
 
-ResultArchive: TypeAlias = ScoreArchive | ResponseTimeArchive
+class FlagConsensusArchive(TypedDict):
+    """Validated reusable flag-consensus result loaded from an NPZ archive."""
+
+    schema_version: int
+    result_type: Literal["flag_consensus"]
+    n_respondents: int
+    n_signals: int
+    signal_names: list[str]
+    scores: dict[str, FloatArray]
+    flags: dict[str, BoolArray]
+    flag_counts: IntArray
+    valid_signal_counts: IntArray
+    consensus_eligible: BoolArray
+    consensus_flags: BoolArray
+    min_flags: int
+    min_valid_signals: int | None
+    respondent_ids: list[str] | None
+
+
+ResultArchive: TypeAlias = ScoreArchive | ResponseTimeArchive | FlagConsensusArchive
 
 
 class ResponseTimeMixtureModelArchive(TypedDict):

@@ -5,6 +5,7 @@
       members:
         - IndexOptions
         - FlagConsensusResult
+        - FlagConsensusArchive
         - InspectableArchive
         - MahadSummary
         - MarkovSummary
@@ -23,12 +24,14 @@
         - index_catalog
         - flag_consensus
         - load_archive
+        - load_flag_consensus_archive
         - load_psychsyn_model
         - load_score_archive
         - merge_score_archives
         - load_response_time_archive
         - load_response_time_mixture_model
         - save_response_time_archive
+        - save_flag_consensus_archive
         - save_psychsyn_model
         - save_response_time_mixture_model
         - save_score_archive

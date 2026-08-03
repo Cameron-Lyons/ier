@@ -17,6 +17,7 @@ from ier._registry import composite_index_names, validate_index_names
 from ier._validation import validate_score_array, validate_score_vectors
 from ier.psychsyn import PsychsynModel
 from ier.response_time import ResponseTimeMixtureModel
+from ier.screen import flag_consensus
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
 
     from ier.types import (
         BoolArray,
+        FlagConsensusArchive,
         InspectableArchive,
         ResponseTimeArchive,
         ResponseTimeFlagDirection,
@@ -36,6 +38,7 @@ if TYPE_CHECKING:
     )
 
 _ARCHIVE_SCHEMA_VERSION = 1
+_FLAG_CONSENSUS_ARCHIVE_SCHEMA_VERSION = 1
 _RESPONSE_TIME_ARCHIVE_SCHEMA_VERSION = 2
 _RESPONSE_TIME_MIXTURE_MODEL_SCHEMA_VERSION = 1
 _PSYCHSYN_MODEL_SCHEMA_VERSION = 1
@@ -227,6 +230,20 @@ def _validate_boolean_vector(
     if len(array) != n_respondents:
         raise ValueError(f"{name} must match n_respondents")
     return cast("BoolArray", array)
+
+
+def _integer_vector(
+    archive: NpzFile,
+    name: str,
+    n_respondents: int,
+) -> np.ndarray:
+    """Load one respondent-aligned integer vector."""
+    value = _require_member(archive, name)
+    if value.ndim != 1 or value.dtype.kind not in "iu":
+        raise ValueError(f"NPZ archive member {name} must be an integer vector")
+    if len(value) != n_respondents:
+        raise ValueError(f"NPZ archive member {name} must match n_respondents")
+    return np.asarray(value, dtype=np.int_)
 
 
 def _load_errors(
@@ -529,6 +546,131 @@ def _read_response_time_archive(archive: NpzFile) -> ResponseTimeArchive:
         "scores": scores,
         "flags": flags,
         "respondent_ids": respondent_ids,
+    }
+
+
+def _read_flag_consensus_archive(archive: NpzFile) -> FlagConsensusArchive:
+    """Validate one open NPZ archive and extract its reusable consensus payload."""
+    if len(archive.files) != len(set(archive.files)):
+        raise ValueError("flag-consensus archive member names must be unique")
+
+    schema_version = _integer_scalar(archive, "schema_version")
+    if schema_version != _FLAG_CONSENSUS_ARCHIVE_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported flag-consensus archive schema version: {schema_version}; "
+            f"expected {_FLAG_CONSENSUS_ARCHIVE_SCHEMA_VERSION}"
+        )
+    result_type = _string_scalar(archive, "result_type")
+    if result_type != "flag_consensus":
+        raise ValueError("flag-consensus archive result_type must be 'flag_consensus'")
+
+    n_respondents = _integer_scalar(archive, "n_respondents")
+    if n_respondents < 1:
+        raise ValueError("flag-consensus archive n_respondents must be positive")
+    n_signals = _integer_scalar(archive, "n_signals")
+    if n_signals < 1:
+        raise ValueError("flag-consensus archive n_signals must be positive")
+
+    signal_names = _string_vector(archive, "signal_names")
+    if len(signal_names) != n_signals:
+        raise ValueError("flag-consensus archive signal_names must match n_signals")
+    if any(not name.strip() for name in signal_names):
+        raise ValueError("flag-consensus archive signal names must be nonblank")
+    if len(signal_names) != len(set(signal_names)):
+        raise ValueError("flag-consensus archive signal names must be unique")
+
+    score_names = _string_vector(archive, "score_names")
+    if any(not name.strip() for name in score_names):
+        raise ValueError("flag-consensus archive score names must be nonblank")
+    if len(score_names) != len(set(score_names)):
+        raise ValueError("flag-consensus archive score names must be unique")
+    if not set(score_names).issubset(signal_names):
+        raise ValueError("flag-consensus archive score names must be selected signals")
+
+    signal_positions = {name: index for index, name in enumerate(signal_names)}
+    flag_members = {f"flag__{index}" for index in range(n_signals)}
+    score_members = {f"score__{signal_positions[name]}" for name in score_names}
+    base_members = {
+        "schema_version",
+        "result_type",
+        "n_respondents",
+        "n_signals",
+        "signal_names",
+        "score_names",
+        "min_flags",
+        "min_valid_signals",
+        "flag_counts",
+        "valid_signal_counts",
+        "consensus_eligible",
+        "consensus_flags",
+        "respondent_ids",
+    }
+    unexpected = set(archive.files) - base_members - flag_members - score_members
+    if unexpected:
+        raise ValueError(f"flag-consensus archive contains unexpected member: {min(unexpected)}")
+
+    flags = {
+        name: _validate_boolean_vector(
+            _require_member(archive, f"flag__{index}"),
+            n_respondents,
+            name=f"flag-consensus archive flags for {name}",
+        )
+        for index, name in enumerate(signal_names)
+    }
+    scores: dict[str, np.ndarray] = {}
+    for name in score_names:
+        score = validate_score_array(
+            _require_member(archive, f"score__{signal_positions[name]}"),
+            name=f"flag-consensus archive scores for {name}",
+        )
+        if len(score) != n_respondents:
+            raise ValueError("flag-consensus archive scores must match n_respondents")
+        scores[name] = score
+
+    min_flags = _integer_scalar(archive, "min_flags")
+    stored_min_valid_signals = _integer_scalar(archive, "min_valid_signals")
+    min_valid_signals = None if stored_min_valid_signals == 0 else stored_min_valid_signals
+    expected = flag_consensus(
+        flags,
+        scores=scores,
+        min_flags=min_flags,
+        min_valid_signals=min_valid_signals,
+    )
+
+    for name, expected_integers in (
+        ("flag_counts", expected["flag_counts"]),
+        ("valid_signal_counts", expected["valid_signal_counts"]),
+    ):
+        stored_integers = _integer_vector(archive, name, n_respondents)
+        if not np.array_equal(stored_integers, expected_integers):
+            raise ValueError(f"flag-consensus archive {name} is inconsistent with its signals")
+    for name, expected_booleans in (
+        ("consensus_eligible", expected["consensus_eligible"]),
+        ("consensus_flags", expected["consensus_flags"]),
+    ):
+        stored_booleans = _validate_boolean_vector(
+            _require_member(archive, name),
+            n_respondents,
+            name=f"flag-consensus archive {name}",
+        )
+        if not np.array_equal(stored_booleans, expected_booleans):
+            raise ValueError(f"flag-consensus archive {name} is inconsistent with its signals")
+
+    return {
+        "schema_version": schema_version,
+        "result_type": "flag_consensus",
+        "n_respondents": n_respondents,
+        "n_signals": n_signals,
+        "signal_names": signal_names,
+        "scores": scores,
+        "flags": flags,
+        "flag_counts": expected["flag_counts"],
+        "valid_signal_counts": expected["valid_signal_counts"],
+        "consensus_eligible": expected["consensus_eligible"],
+        "consensus_flags": expected["consensus_flags"],
+        "min_flags": min_flags,
+        "min_valid_signals": min_valid_signals,
+        "respondent_ids": _load_respondent_ids(archive, n_respondents),
     }
 
 
@@ -891,6 +1033,105 @@ def save_response_time_archive(
     _write_npz_archive(destination, payload)
 
 
+def save_flag_consensus_archive(
+    path: str | Path,
+    flags: Mapping[str, ArrayLike],
+    *,
+    scores: Mapping[str, ArrayLike] | None = None,
+    min_flags: int = 2,
+    min_valid_signals: int | None = None,
+    respondent_ids: Sequence[str] | None = None,
+) -> None:
+    """
+    Save reusable aligned flags and their consensus as a pickle-free NPZ archive.
+
+    The archive retains every Boolean signal, optional score vectors used for
+    availability, aggregate counts, eligibility, and the final decision. All
+    fields are validated and recomputed before an atomic replacement. Omitted
+    score vectors remain fully available when the archive is re-evaluated.
+
+    Parameters:
+    - path: Explicit destination ending in ``.npz``.
+    - flags: Ordered mapping of aligned, one-dimensional Boolean signals.
+    - scores: Optional subset mapping of aligned numeric availability vectors.
+    - min_flags: Minimum flag count required for consensus.
+    - min_valid_signals: Optional minimum available-signal count for eligibility.
+    - respondent_ids: Optional aligned, unique, nonblank string identifiers.
+
+    Example:
+        >>> from ier import save_flag_consensus_archive
+        >>> save_flag_consensus_archive(
+        ...     "consensus.npz",
+        ...     {**screened["flags"], "response_time": timing_flags},
+        ...     scores={**screened["scores"], "response_time": timing_scores},
+        ...     min_flags=2,
+        ... )
+    """
+    destination = Path(path)
+    if destination.suffix.casefold() != ".npz":
+        raise ValueError("flag-consensus archive output path must end in .npz")
+
+    result = flag_consensus(
+        flags,
+        scores=scores,
+        min_flags=min_flags,
+        min_valid_signals=min_valid_signals,
+    )
+    validated_flags = {name: np.asarray(values) for name, values in flags.items()}
+    validated_scores = (
+        {}
+        if scores is None
+        else {
+            name: validate_score_array(values, name=f"scores for {name}")
+            for name, values in scores.items()
+        }
+    )
+    signal_names = list(validated_flags)
+    score_names = list(validated_scores)
+    signal_positions = {name: index for index, name in enumerate(signal_names)}
+    count_dtype = np.min_scalar_type(result["n_signals"])
+
+    validated_ids: list[str] | None = None
+    if respondent_ids is not None:
+        if isinstance(respondent_ids, (str, bytes)):
+            raise TypeError("respondent_ids must be a sequence of strings")
+        validated_ids = _validate_respondent_ids(
+            list(respondent_ids),
+            result["n_respondents"],
+        )
+
+    payload = {
+        "schema_version": np.asarray(
+            _FLAG_CONSENSUS_ARCHIVE_SCHEMA_VERSION,
+            dtype=np.int64,
+        ),
+        "result_type": np.asarray("flag_consensus", dtype=np.str_),
+        "n_respondents": np.asarray(result["n_respondents"], dtype=np.int64),
+        "n_signals": np.asarray(result["n_signals"], dtype=np.int64),
+        "signal_names": np.asarray(signal_names, dtype=np.str_),
+        "score_names": np.asarray(score_names, dtype=np.str_),
+        "min_flags": np.asarray(result["min_flags"], dtype=np.int64),
+        "min_valid_signals": np.asarray(
+            0 if result["min_valid_signals"] is None else result["min_valid_signals"],
+            dtype=np.int64,
+        ),
+        "flag_counts": np.asarray(result["flag_counts"], dtype=count_dtype),
+        "valid_signal_counts": np.asarray(
+            result["valid_signal_counts"],
+            dtype=count_dtype,
+        ),
+        "consensus_eligible": result["consensus_eligible"],
+        "consensus_flags": result["consensus_flags"],
+    }
+    for index, name in enumerate(signal_names):
+        payload[f"flag__{index}"] = validated_flags[name]
+    for name, values in validated_scores.items():
+        payload[f"score__{signal_positions[name]}"] = values
+    if validated_ids is not None:
+        payload["respondent_ids"] = np.asarray(validated_ids, dtype=np.str_)
+    _write_npz_archive(destination, payload)
+
+
 def load_score_archive(path: str | Path) -> ScoreArchive:
     """
     Load reusable registered-index scores from a versioned NPZ archive.
@@ -921,6 +1162,35 @@ def load_score_archive(path: str | Path) -> ScoreArchive:
     """
     with _open_npz_archive(path, label="score") as archive:
         return _read_score_archive(archive)
+
+
+def load_flag_consensus_archive(path: str | Path) -> FlagConsensusArchive:
+    """
+    Load and fully validate a reusable flag-consensus NPZ archive.
+
+    Pickling is disabled. The loader validates every declared signal and optional
+    score vector, recomputes availability and consensus from those vectors, and
+    rejects any stored aggregate that disagrees. The returned mappings can be
+    passed directly to ``flag_consensus()`` with different decision thresholds.
+
+    Parameters:
+    - path: Path written by ``save_flag_consensus_archive()``.
+
+    Returns:
+    - A ``FlagConsensusArchive`` with reusable inputs, aggregate decisions, and
+      optional respondent identifiers.
+
+    Example:
+        >>> from ier import flag_consensus, load_flag_consensus_archive
+        >>> saved = load_flag_consensus_archive("consensus.npz")
+        >>> stricter = flag_consensus(
+        ...     saved["flags"],
+        ...     scores=saved["scores"],
+        ...     min_flags=3,
+        ... )
+    """
+    with _open_npz_archive(path, label="flag-consensus") as archive:
+        return _read_flag_consensus_archive(archive)
 
 
 def merge_score_archives(
@@ -1040,7 +1310,7 @@ def load_archive(path: str | Path) -> InspectableArchive:
     Load and auto-detect any supported result or model archive.
 
     Pickling is always disabled. The archive's declared ``result_type`` selects
-    the complete score, response-time, or model validator, so callers can
+    the complete score, response-time, consensus, or model validator, so callers can
     inspect supported archives without opening raw NPZ members or guessing which
     specialized loader to call. Generic model results retain validated read-only
     parameter arrays; the dedicated model loader returns the scoring dataclass.
@@ -1049,7 +1319,7 @@ def load_archive(path: str | Path) -> InspectableArchive:
     - path: Path to a supported versioned NPZ result archive.
 
     Returns:
-    - A fully validated score, response-time, or model archive mapping.
+    - A fully validated score, response-time, consensus, or model archive mapping.
 
     Example:
         >>> from ier import load_archive
@@ -1060,6 +1330,8 @@ def load_archive(path: str | Path) -> InspectableArchive:
         result_type = _string_scalar(archive, "result_type")
         if result_type == "response_time":
             return _read_response_time_archive(archive)
+        if result_type == "flag_consensus":
+            return _read_flag_consensus_archive(archive)
         if result_type in {"screen", "composite"}:
             return _read_score_archive(archive)
         if result_type == "response_time_mixture_model":
@@ -1087,7 +1359,7 @@ def load_archive(path: str | Path) -> InspectableArchive:
             }
         raise ValueError(
             "archive result_type must be 'screen', 'composite', 'response_time', "
-            "'response_time_mixture_model', or 'psychsyn_model'"
+            "'flag_consensus', 'response_time_mixture_model', or 'psychsyn_model'"
         )
 
 

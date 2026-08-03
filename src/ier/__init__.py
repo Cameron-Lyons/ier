@@ -8,11 +8,13 @@ from ._validation import MatrixLike as MatrixLike
 from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
 from .archive import load_archive as load_archive
+from .archive import load_flag_consensus_archive as load_flag_consensus_archive
 from .archive import load_psychsyn_model as load_psychsyn_model
 from .archive import load_response_time_archive as load_response_time_archive
 from .archive import load_response_time_mixture_model as load_response_time_mixture_model
 from .archive import load_score_archive as load_score_archive
 from .archive import merge_score_archives as merge_score_archives
+from .archive import save_flag_consensus_archive as save_flag_consensus_archive
 from .archive import save_psychsyn_model as save_psychsyn_model
 from .archive import save_response_time_archive as save_response_time_archive
 from .archive import save_response_time_mixture_model as save_response_time_mixture_model
@@ -72,6 +74,7 @@ from .semantic import semantic_syn_flag as semantic_syn_flag
 from .types import BoolArray as BoolArray
 from .types import CompositeMethod as CompositeMethod
 from .types import CompositeSummary as CompositeSummary
+from .types import FlagConsensusArchive as FlagConsensusArchive
 from .types import FlagConsensusResult as FlagConsensusResult
 from .types import FloatArray as FloatArray
 from .types import IndexCatalog as IndexCatalog
@@ -125,6 +128,7 @@ __all__ = [
     "evenodd",
     "FloatArray",
     "flag_consensus",
+    "FlagConsensusArchive",
     "FlagConsensusResult",
     "guttman",
     "guttman_flag",
@@ -146,6 +150,7 @@ __all__ = [
     "longstring_pattern",
     "longstring_scores",
     "load_archive",
+    "load_flag_consensus_archive",
     "load_psychsyn_model",
     "load_response_time_archive",
     "load_response_time_mixture_model",
@@ -198,6 +203,7 @@ __all__ = [
     "screen",
     "screen_scores",
     "save_response_time_archive",
+    "save_flag_consensus_archive",
     "save_psychsyn_model",
     "save_response_time_mixture_model",
     "save_score_archive",
