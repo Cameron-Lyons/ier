@@ -38,51 +38,16 @@ jobs:
           PUBLISH_TARGET: ${{ inputs.target }}
         run: echo "Manual publish requested for $PUBLISH_TARGET"
 
-  test:
-    name: Run tests before publish
+  ci:
+    name: Test and build distribution
     needs: validate-release
     uses: ./.github/workflows/ci.yml
     secrets: inherit
 
-  build:
-    name: Build distribution
-    runs-on: ubuntu-latest
-    needs: test
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Set up Python
-        run: uv python install 3.14
-
-      - name: Build package
-        run: uv build
-
-      - name: Verify package metadata
-        run: uv run --no-project python scripts/check_dist.py dist/*
-
-      - name: Check package
-        run: uvx twine check dist/*
-
-      - name: Smoke-test built wheel
-        run: uv run --isolated --no-project --with dist/*.whl python scripts/smoke_test_install.py
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: dist
-          path: dist/
-
   test-install:
     name: Test installation
     runs-on: ubuntu-latest
-    needs: build
+    needs: ci
 
     steps:
       - name: Checkout repository
@@ -109,7 +74,7 @@ jobs:
   publish-testpypi:
     name: Publish to TestPyPI
     runs-on: ubuntu-latest
-    needs: [build, test-install]
+    needs: test-install
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
     permissions:
       contents: read
@@ -133,7 +98,7 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: [build, test-install]
+    needs: test-install
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
     permissions:
       contents: read

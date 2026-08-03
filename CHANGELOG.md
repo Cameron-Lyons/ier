@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.71] - 2026-08-03
+
+### Added
+
+- Shared `screen()`, `composite()`, and registry workflows now accept immutable
+  `psychsyn_model` and `psychant_model` calibrations through `IndexOptions`, with
+  matching `--psychsyn-model` and `--psychant-model` CLI flags. Fixed models
+  bypass pair discovery, preserve retry seeds and missing-value policy, validate
+  synonym/antonym mode and item count through the established strict/soft error
+  policy, and are safe to reuse with parallel workers. CLI model files are
+  validated before response input and cannot be combined with the matching
+  discovery threshold. The maintained benchmark covers shared fixed-model
+  screening. No dependency is added.
+
 ## [2.19.70] - 2026-08-03
 
 ### Added
