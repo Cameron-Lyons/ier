@@ -11,7 +11,15 @@ from typing import Literal, overload
 
 import numpy as np
 
-from ier._validation import MatrixLike, iter_rows, validate_matrix_input
+from ier._row_statistics import compressed_row_groups, row_slices
+from ier._validation import MatrixLike, validate_matrix_input
+
+_MISSING_COMPRESSION_BATCH_ELEMENTS = 131_072
+
+
+def _has_missing(x: np.ndarray) -> bool:
+    """Check for missing responses without allocating a full-size mask."""
+    return any(np.isnan(x[start:stop]).any() for start, stop in row_slices(len(x), x.shape[1]))
 
 
 def _run_length_encode(message: str) -> list[tuple[str, int]]:
@@ -195,7 +203,7 @@ def longstring_pattern(
     """
     x_array = validate_matrix_input(x, min_columns=2, check_type=False)
 
-    has_missing = np.isnan(x_array).any()
+    has_missing = _has_missing(x_array)
     if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
 
@@ -204,12 +212,12 @@ def longstring_pattern(
         return _longest_repeating_patterns(x_array, max_pattern_length)
 
     result = np.zeros(n_rows, dtype=float)
-
-    for i, row in enumerate(iter_rows(x_array, na_rm)):
-        if len(row) < 4:
-            continue
-
-        result[i] = _longest_repeating_pattern(row, max_pattern_length)
+    for rows, compressed in compressed_row_groups(
+        x_array,
+        min_columns=4,
+        max_elements=_MISSING_COMPRESSION_BATCH_ELEMENTS,
+    ):
+        result[rows] = _longest_repeating_patterns(compressed, max_pattern_length)
 
     return result
 
@@ -226,7 +234,7 @@ def longstring_scores(
     """
     x_array = validate_matrix_input(x, min_columns=1, check_type=False)
 
-    has_missing = np.isnan(x_array).any()
+    has_missing = _has_missing(x_array)
     if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
 
@@ -234,15 +242,12 @@ def longstring_scores(
         return _longstring_scores_complete(x_array)
 
     scores = np.zeros(x_array.shape[0], dtype=float)
-
-    for i, row in enumerate(x_array):
-        row_data = row[~np.isnan(row)] if na_rm else row
-        if row_data.size == 0:
-            continue
-
-        change_points = np.flatnonzero(np.diff(row_data) != 0) + 1
-        run_lengths = np.diff(np.concatenate(([0], change_points, [row_data.size])))
-        scores[i] = float(np.max(run_lengths))
+    for rows, compressed in compressed_row_groups(
+        x_array,
+        min_columns=1,
+        max_elements=_MISSING_COMPRESSION_BATCH_ELEMENTS,
+    ):
+        scores[rows] = _longstring_scores_complete(compressed)
 
     return scores
 

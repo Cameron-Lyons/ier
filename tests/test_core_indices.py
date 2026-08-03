@@ -17,6 +17,7 @@ from ier.longstring import (
     _run_length_decode,
     _run_length_encode,
     longstring,
+    longstring_scores,
 )
 from ier.mahad import _compute_mahalanobis_distance, mahad, mahad_summary
 from ier.psychsyn import (
@@ -144,6 +145,40 @@ class TestLongstring(unittest.TestCase):
         self.assertEqual(longstring("abcdef"), ("a", 1))
 
         self.assertEqual(longstring("aaaa"), ("a", 4))
+
+    def test_missing_numeric_rows_use_bounded_compressed_batches(self) -> None:
+        """Numeric longest runs retain missing-removal order in bounded groups."""
+        from ier.longstring import _longstring_scores_complete
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(257, 60)).astype(float)
+        data[rng.random(data.shape) < 0.15] = np.nan
+        data[0] = np.nan
+        data[1, 1:] = np.nan
+        original = data.copy()
+        expected = np.zeros(len(data))
+        for row_index, row in enumerate(data):
+            retained = row[~np.isnan(row)]
+            if retained.size:
+                boundaries = np.flatnonzero(np.diff(retained) != 0) + 1
+                expected[row_index] = np.max(
+                    np.diff(np.concatenate(([0], boundaries, [retained.size])))
+                )
+
+        with (
+            patch("ier.longstring._MISSING_COMPRESSION_BATCH_ELEMENTS", 300),
+            patch(
+                "ier.longstring._longstring_scores_complete",
+                wraps=_longstring_scores_complete,
+            ) as grouped,
+        ):
+            result = longstring_scores(data)
+
+        self.assertGreater(grouped.call_count, 1)
+        self.assertTrue(all(call.args[0].size <= 300 for call in grouped.call_args_list))
+        self.assertTrue(all(not np.isnan(call.args[0]).any() for call in grouped.call_args_list))
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(data, original)
 
 
 class TestIRV(unittest.TestCase):

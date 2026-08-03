@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 
 from ier._flagging import threshold_flags
+from ier._row_statistics import compressed_row_groups
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -61,23 +62,18 @@ def markov(
     if not has_missing:
         return _markov_complete(x_array)
 
-    valid_counts = x_array.shape[1] - np.count_nonzero(np.isnan(x_array), axis=1)
-    return _markov_missing(x_array, valid_counts)
+    return _markov_missing(x_array)
 
 
-def _markov_missing(x: np.ndarray, valid_counts: np.ndarray) -> np.ndarray:
+def _markov_missing(x: np.ndarray) -> np.ndarray:
     """Compress equal-length missing-response rows into bounded dense batches."""
     result = np.full(len(x), np.nan)
-    batch_rows = max(1, _MISSING_COMPRESSION_BATCH_CELLS // x.shape[1])
-
-    for count_value in np.unique(valid_counts[valid_counts >= 2]):
-        count = int(count_value)
-        row_indices = np.flatnonzero(valid_counts == count)
-        for start in range(0, len(row_indices), batch_rows):
-            rows = row_indices[start : start + batch_rows]
-            selected = x[rows]
-            compressed = selected[~np.isnan(selected)].reshape(len(rows), count)
-            result[rows] = _markov_complete(compressed)
+    for rows, compressed in compressed_row_groups(
+        x,
+        min_columns=2,
+        max_elements=_MISSING_COMPRESSION_BATCH_CELLS,
+    ):
+        result[rows] = _markov_complete(compressed)
     return result
 
 

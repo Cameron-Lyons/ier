@@ -7,7 +7,7 @@ import numpy as np
 
 from ier.guttman import guttman, guttman_flag
 from ier.infrequency import infrequency, infrequency_flag
-from ier.longstring import longstring_pattern
+from ier.longstring import _longest_repeating_pattern, longstring_pattern
 from ier.lz import (
     _compute_lz,
     _compute_lz_row,
@@ -1457,6 +1457,37 @@ class TestLongstringPattern(unittest.TestCase):
                         max_pattern_length=max_pattern_length,
                     )
                     np.testing.assert_array_equal(result, row_path_result)
+
+    def test_missing_rows_use_bounded_compressed_batches(self) -> None:
+        """Missing-response patterns retain scalar semantics in bounded groups."""
+        from ier.longstring import _longest_repeating_patterns
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(257, 60)).astype(float)
+        data[rng.random(data.shape) < 0.15] = np.nan
+        data[0] = np.nan
+        data[1, 3:] = np.nan
+        original = data.copy()
+        expected = np.zeros(len(data))
+        for row_index, row in enumerate(data):
+            retained = row[~np.isnan(row)]
+            if retained.size >= 4:
+                expected[row_index] = _longest_repeating_pattern(retained, 5)
+
+        with (
+            patch("ier.longstring._MISSING_COMPRESSION_BATCH_ELEMENTS", 300),
+            patch(
+                "ier.longstring._longest_repeating_patterns",
+                wraps=_longest_repeating_patterns,
+            ) as grouped,
+        ):
+            result = longstring_pattern(data, max_pattern_length=5)
+
+        self.assertGreater(grouped.call_count, 1)
+        self.assertTrue(all(call.args[0].size <= 300 for call in grouped.call_args_list))
+        self.assertTrue(all(not np.isnan(call.args[0]).any() for call in grouped.call_args_list))
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(data, original)
 
     def test_complete_matrix_fast_path_handles_wide_sequences(self) -> None:
         """Pattern counts remain exact after the workspace widens past uint8."""

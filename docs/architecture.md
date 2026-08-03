@@ -208,6 +208,13 @@ evaluate the equivalent count form of conditional entropy. Missing-response rows
 are grouped by retained length and compressed in bounded batches, preserving the
 post-removal response order while reusing the same dense or sparse kernel.
 
+Numeric longest-run and repeating-pattern indices use the shared retained-length
+compression iterator when responses are missing. Each bounded group preserves
+post-removal item order and reuses the complete-response vectorized kernel,
+avoiding respondent-wise array construction. Markov and carelessness-onset
+scoring share the same grouping primitive with index-specific minimum lengths
+and workspace limits.
+
 Even–odd consistency reduces factor correlations directly into respondent-level
 sums and valid-factor counts. Factors with exactly two paired observations use
 the closed-form product of response-difference signs, avoiding centered matrices;
@@ -276,6 +283,7 @@ Plotting remains optional and reports a centralized install hint from
 - Carelessness-onset throughput and memory: `benchmarks/bench_onset.py`.
 - Person–total correlation throughput and memory: `benchmarks/bench_person_total.py`.
 - Row-wise response reduction throughput and memory: `benchmarks/bench_row_reductions.py`.
+- Longest-run and repeating-pattern throughput and memory: `benchmarks/bench_longstring.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
 - Response-time mixture EM, scoring, in-memory cutoff reuse, and archive-backed
