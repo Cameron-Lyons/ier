@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.1] - 2026-08-02
+
+### Changed
+
+- CLI matrix loading, text/JSON/CSV serialization, and command coordination now
+  live in focused internal modules. The coordinator is roughly half its prior
+  size while input memory use, serialization throughput, output schemas, and the
+  NumPy-only runtime dependency remain unchanged.
+
 ## [2.11.0] - 2026-08-02
 
 ### Added
