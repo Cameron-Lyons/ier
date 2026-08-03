@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import load_flag_consensus_archive, save_flag_consensus_archive
+from ier import flag_consensus, load_flag_consensus_archive, save_flag_consensus_archive
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -83,6 +83,17 @@ def main() -> None:
             lambda: load_flag_consensus_archive(destination),
             args.repeats,
         )
+
+        def reflag() -> object:
+            archived = load_flag_consensus_archive(destination)
+            return flag_consensus(
+                archived["flags"],
+                scores=archived["scores"],
+                min_flags=min(3, args.signals),
+                min_valid_signals=max(1, args.signals - 2),
+            )
+
+        reflag_time, reflag_peak = _measure(reflag, args.repeats)
         loaded = load_flag_consensus_archive(destination)
         assert loaded["n_respondents"] == args.respondents
         assert loaded["n_signals"] == args.signals
@@ -95,6 +106,7 @@ def main() -> None:
     print(f"archive size: {archive_size:.1f} MiB")
     print(f"validated save: median={save_time:.4f}s peak={save_peak:.1f} MiB")
     print(f"validated load: median={load_time:.4f}s peak={load_peak:.1f} MiB")
+    print(f"validated reload + reflag: median={reflag_time:.4f}s peak={reflag_peak:.1f} MiB")
 
 
 if __name__ == "__main__":

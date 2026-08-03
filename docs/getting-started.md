@@ -427,6 +427,19 @@ equal counts are treated as shared row order. Mixed or mismatched identity
 metadata is rejected. Text, JSON, CSV, and reusable NPZ outputs share the same
 aligned result.
 
+Reapply only the final consensus rule from the command line:
+
+```bash
+ier consensus-reflag consensus.npz --min-flags 3 --format json
+ier consensus-reflag consensus.npz --min-valid-signals 4 \
+  --format npz --output consensus.npz
+ier consensus-reflag consensus.npz --no-min-valid-signals --format csv
+```
+
+Omitted options retain their stored values. The explicit `--no-min-valid-signals`
+form removes an existing availability requirement. All formats preserve stored
+signals, scores, and respondent IDs, and NPZ may atomically replace its source.
+
 ```python
 from ier import load_archive
 

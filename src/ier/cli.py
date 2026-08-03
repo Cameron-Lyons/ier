@@ -24,6 +24,7 @@ from ier import (
     flag_consensus_archives,
     index_catalog,
     load_archive,
+    load_flag_consensus_archive,
     load_psychsyn_model,
     load_response_time_archive,
     load_response_time_mixture_model,
@@ -44,6 +45,7 @@ from ier._cli_input import _load_boolean_matrix, _load_input, _load_numeric_vect
 from ier._cli_npz import _require_npz_output_path
 from ier._cli_results import (
     flag_response_time_scores,
+    reflag_consensus_result,
     valid_score_counts,
     write_archive_info_result,
     write_composite_result,
@@ -651,6 +653,35 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_output_options(archive_consensus_parser)
 
+    consensus_reflag_parser = sub.add_parser(
+        "consensus-reflag",
+        help="Reapply agreement or coverage rules to stored consensus signals.",
+    )
+    consensus_reflag_parser.add_argument(
+        "archive",
+        type=Path,
+        help="Validated reusable flag-consensus archive",
+    )
+    consensus_reflag_parser.add_argument(
+        "--min-flags",
+        type=int,
+        default=None,
+        help="Override the stored minimum flag count (default: preserve stored value)",
+    )
+    consensus_coverage = consensus_reflag_parser.add_mutually_exclusive_group()
+    consensus_coverage.add_argument(
+        "--min-valid-signals",
+        type=int,
+        default=None,
+        help="Override the stored minimum available-signal count",
+    )
+    consensus_coverage.add_argument(
+        "--no-min-valid-signals",
+        action="store_true",
+        help="Remove the stored availability requirement",
+    )
+    _add_output_options(consensus_reflag_parser)
+
     screen_parser = sub.add_parser("screen", help="Run multi-index screening on a matrix.")
     screen_parser.add_argument(
         "data",
@@ -1064,6 +1095,16 @@ def _run_command(args: argparse.Namespace) -> int:
             timing_name=args.timing_name,
             min_flags=args.min_flags,
             min_valid_signals=args.min_valid_signals,
+        )
+        return write_flag_consensus_result(args, consensus_result)
+
+    if args.command == "consensus-reflag":
+        consensus_archive = load_flag_consensus_archive(args.archive)
+        consensus_result = reflag_consensus_result(
+            consensus_archive,
+            min_flags=args.min_flags,
+            min_valid_signals=args.min_valid_signals,
+            clear_min_valid_signals=args.no_min_valid_signals,
         )
         return write_flag_consensus_result(args, consensus_result)
 

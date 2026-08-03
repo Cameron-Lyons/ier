@@ -36,6 +36,7 @@ from ier._cli_output import (
 from ier._flagging import resolve_threshold, threshold_flags
 from ier._statistics import logistic_transform
 from ier.archive import save_flag_consensus_archive
+from ier.screen import flag_consensus
 
 if TYPE_CHECKING:
     import argparse
@@ -94,6 +95,40 @@ def write_flag_consensus_result(
             args.output,
         )
     return 0
+
+
+def reflag_consensus_result(
+    archive: FlagConsensusArchive,
+    *,
+    min_flags: int | None,
+    min_valid_signals: int | None,
+    clear_min_valid_signals: bool,
+) -> FlagConsensusArchive:
+    """Recompute stored consensus decisions while retaining reusable inputs."""
+    effective_min_flags = archive["min_flags"] if min_flags is None else min_flags
+    if clear_min_valid_signals:
+        effective_min_valid_signals = None
+    elif min_valid_signals is None:
+        effective_min_valid_signals = archive["min_valid_signals"]
+    else:
+        effective_min_valid_signals = min_valid_signals
+
+    revised = flag_consensus(
+        archive["flags"],
+        scores=archive["scores"],
+        min_flags=effective_min_flags,
+        min_valid_signals=effective_min_valid_signals,
+    )
+    result = archive.copy()
+    result["n_respondents"] = revised["n_respondents"]
+    result["n_signals"] = revised["n_signals"]
+    result["flag_counts"] = revised["flag_counts"]
+    result["valid_signal_counts"] = revised["valid_signal_counts"]
+    result["consensus_eligible"] = revised["consensus_eligible"]
+    result["consensus_flags"] = revised["consensus_flags"]
+    result["min_flags"] = revised["min_flags"]
+    result["min_valid_signals"] = revised["min_valid_signals"]
+    return result
 
 
 def write_index_catalog_result(args: argparse.Namespace, catalog: IndexCatalog) -> int:

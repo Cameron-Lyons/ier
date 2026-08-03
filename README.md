@@ -13,7 +13,7 @@ For a comprehensive methods review, see
 - Reusable `screen_scores()`, `composite_scores()`, `response_time_score_flags()`, and `flag_consensus()` layers
 - Validated, pickle-free score, timing-result, flag-consensus, and model persistence
 - Auto-detecting result/model archive loading and text/JSON metadata inspection
-- Archive-backed screening, composite, and timing sensitivity commands without rescoring
+- Archive-backed screening, composite, timing, and consensus sensitivity without rescoring
 - Direct score-archive plus timing-archive consensus with respondent-ID alignment
 - Safe score-archive merging with respondent-ID alignment and atomic in-place output
 - Bounded complete and pairwise-complete discovery and scoring for psychometric synonyms
@@ -442,6 +442,20 @@ different counts or ID sets, duplicate or missing selections, and timing-name
 conflicts are rejected. Text summarizes coverage and top counts; JSON and CSV
 preserve aligned respondent detail; NPZ uses the reusable consensus schema. No
 source matrix is loaded and no additional dependency is required.
+
+Revisit only the final agreement or availability rule without rebuilding the
+cross-domain archive:
+
+```bash
+ier consensus-reflag consensus.npz --min-flags 3 --format json
+ier consensus-reflag consensus.npz --min-valid-signals 4 \
+  --format npz --output stricter-consensus.npz
+ier consensus-reflag consensus.npz --no-min-valid-signals --format csv
+```
+
+Unspecified settings preserve their archived values. Every output retains the
+stored signals, availability scores, and respondent IDs; NPZ may safely replace
+the source because validation and recomputation finish before atomic output.
 
 When the archive type is not known in advance, `load_archive()` reads the
 declared result type and applies the complete score, response-time, consensus, or

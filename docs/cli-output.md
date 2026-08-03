@@ -157,6 +157,20 @@ rejected. Text reports signal coverage and ranked flag counts. Strict JSON and
 streaming CSV include aligned per-respondent scores, flags, availability, and
 decisions. NPZ writes the table below through atomic replacement.
 
+Recompute only the final archived decision without changing its signal inputs:
+
+```bash
+ier consensus-reflag consensus.npz --min-flags 3 --format json
+ier consensus-reflag consensus.npz --min-valid-signals 4 \
+  --format npz --output consensus.npz
+ier consensus-reflag consensus.npz --no-min-valid-signals --format csv
+```
+
+The command preserves any setting without an explicit override. The negative
+coverage option removes a stored availability requirement. Text, JSON, and CSV
+use the same respondent-level serializers as `archive-consensus`; NPZ retains
+the schema below and can atomically replace the validated input.
+
 | Member | Type |
 | --- | --- |
 | `schema_version` / `result_type` | Integer `1` / Unicode `flag_consensus` |
