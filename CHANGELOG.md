@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.13] - 2026-08-03
+
+### Added
+
+- The carelessness-onset benchmark now accepts a configurable missing-response
+  rate for reproducing both complete and missing-data workloads.
+
+### Changed
+
+- Missing-response onset detection now compresses bounded row blocks into
+  equal retained-length groups and reuses the vectorized complete-response
+  kernel instead of calculating each respondent independently. On a
+  10,000-respondent, 80-item benchmark with 10% missing responses, median time
+  falls from 1.049 seconds to 19.9 ms. Peak temporary allocation rises from
+  0.3 to a bounded 2.6 MiB, without adding a dependency.
+
 ## [2.19.12] - 2026-08-03
 
 ### Added

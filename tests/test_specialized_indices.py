@@ -1297,6 +1297,46 @@ class TestMarkov(unittest.TestCase):
 class TestOnset(unittest.TestCase):
     """Tests for carelessness onset detection."""
 
+    @staticmethod
+    def _expanded_missing_onset(
+        data: np.ndarray,
+        *,
+        window_size: int,
+        min_items: int,
+    ) -> np.ndarray:
+        """Evaluate the established row-wise definition for regression checks."""
+        from ier.onset import _SHAO_ZHANG_CRITICAL_VALUE
+
+        result = np.full(len(data), np.nan)
+        for row_index, raw_row in enumerate(data):
+            row = raw_row[~np.isnan(raw_row)]
+            if len(row) < min_items:
+                continue
+            windows = np.lib.stride_tricks.sliding_window_view(row, window_size)
+            series = np.std(windows, axis=1)
+            n_observations = len(series)
+            if n_observations < 3:
+                continue
+
+            prefix_sum = np.cumsum(series)
+            prefix_square_sum = np.cumsum(series * series)
+            centered_prefix = np.cumsum(series - np.mean(series))
+            trim = max(1, n_observations // 10)
+            candidates = np.arange(trim, n_observations - trim)
+            if len(candidates) == 0:
+                continue
+
+            prefix_positions = candidates - 1
+            variances = (
+                prefix_square_sum[prefix_positions] - prefix_sum[prefix_positions] ** 2 / candidates
+            )
+            variances = np.maximum(variances, 1e-10)
+            statistics = centered_prefix[candidates] ** 2 / variances
+            offset = int(np.argmax(statistics))
+            if statistics[offset] > _SHAO_ZHANG_CRITICAL_VALUE:
+                result[row_index] = float(trim + offset + window_size - 1)
+        return result
+
     def test_basic_functionality(self) -> None:
         """Test basic onset detection."""
         rng = np.random.default_rng(42)
@@ -1343,6 +1383,34 @@ class TestOnset(unittest.TestCase):
         data[0, 5] = np.nan
         result = onset(data, window_size=5, min_items=10, na_rm=True)
         self.assertEqual(len(result), 1)
+
+    def test_missing_rows_are_grouped_in_bounded_batches(self) -> None:
+        """Compressed groups preserve the scalar definition and input values."""
+        from ier.onset import _onset_complete
+
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(503, 40)).astype(float)
+        data[rng.random(data.shape) < 0.2] = np.nan
+        data[0] = np.nan
+        data[1, 15:] = np.nan
+        data[2] = rng.integers(1, 6, size=40)
+        original = data.copy()
+        expected = self._expanded_missing_onset(
+            data,
+            window_size=7,
+            min_items=20,
+        )
+
+        with (
+            patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 120),
+            patch("ier.onset._onset_complete", wraps=_onset_complete) as grouped,
+        ):
+            result = onset(data, window_size=7, min_items=20)
+
+        self.assertGreater(grouped.call_count, 2)
+        self.assertTrue(all(call.args[0].size <= 120 for call in grouped.call_args_list))
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(data, original)
 
     def test_complete_fast_path_matches_missing_data_row_path(self) -> None:
         """Complete batches preserve established row-wise changepoints."""
