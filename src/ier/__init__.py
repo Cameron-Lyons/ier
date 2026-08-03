@@ -62,6 +62,7 @@ from .response_time import response_time_flag as response_time_flag
 from .response_time import response_time_mixture as response_time_mixture
 from .response_time import response_time_mixture_scores as response_time_mixture_scores
 from .response_time import response_time_score_flags as response_time_score_flags
+from .screen import flag_consensus as flag_consensus
 from .screen import screen as screen
 from .screen import screen_scores as screen_scores
 from .semantic import semantic_ant as semantic_ant
@@ -71,6 +72,7 @@ from .semantic import semantic_syn_flag as semantic_syn_flag
 from .types import BoolArray as BoolArray
 from .types import CompositeMethod as CompositeMethod
 from .types import CompositeSummary as CompositeSummary
+from .types import FlagConsensusResult as FlagConsensusResult
 from .types import FloatArray as FloatArray
 from .types import IndexCatalog as IndexCatalog
 from .types import IndexErrorMap as IndexErrorMap
@@ -122,6 +124,8 @@ __all__ = [
     "CompositeSummary",
     "evenodd",
     "FloatArray",
+    "flag_consensus",
+    "FlagConsensusResult",
     "guttman",
     "guttman_flag",
     "individual_reliability",

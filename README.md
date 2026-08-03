@@ -10,7 +10,7 @@ For a comprehensive methods review, see
 
 - Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
-- Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
+- Reusable `screen_scores()`, `composite_scores()`, `response_time_score_flags()`, and `flag_consensus()` layers
 - Validated, pickle-free score, timing-result, and timing-model archive persistence
 - Auto-detecting result/model archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
@@ -293,6 +293,28 @@ Set `screen(..., min_valid_indices=N)` or CLI `--min-valid-indices N` to require
 at least `N` available index scores before a respondent is eligible for a
 consensus decision. Results always include per-respondent `valid_index_counts`
 and `consensus_eligible`; omitting the requirement preserves existing decisions.
+
+Combine separately scored response-pattern and timing decisions without mixing
+their input matrices:
+
+```python
+from ier import flag_consensus, response_time, response_time_score_flags, screen
+
+screened = screen(responses, indices=["irv", "longstring"])
+timing_scores = response_time(timings, metric="median")
+timing_flags = response_time_score_flags(timing_scores, threshold=1.0)
+combined = flag_consensus(
+    {**screened["flags"], "response_time": timing_flags},
+    scores={**screened["scores"], "response_time": timing_scores},
+    min_flags=2,
+    min_valid_signals=3,
+)
+```
+
+All vectors must already share respondent order. Optional score vectors mark
+`NaN` signals unavailable, allowing `min_valid_signals` to withhold consensus
+when too little evidence exists. Counts are accumulated one signal at a time,
+without building a respondent-by-signal matrix.
 
 Use `screen(..., percentiles={"irv": 90, "longstring": 99})` or repeat CLI
 `--index-percentile INDEX=VALUE` to tune sample-relative sensitivity by signal.

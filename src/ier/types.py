@@ -51,6 +51,19 @@ class ScreenIndexSummary(TypedDict):
     flag_rate: float
 
 
+class FlagConsensusResult(TypedDict):
+    """Return value for flag_consensus()."""
+
+    flag_counts: IntArray
+    valid_signal_counts: IntArray
+    consensus_eligible: BoolArray
+    consensus_flags: BoolArray
+    min_flags: int
+    min_valid_signals: int | None
+    n_signals: int
+    n_respondents: int
+
+
 class ScreenResult(TypedDict):
     """Return value for screen()."""
 

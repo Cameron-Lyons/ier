@@ -13,7 +13,9 @@ structure, and base rate of IER.
 2. **Require enough evaluable signals.** When missing inputs can make component
    scores unavailable, set `min_valid_indices` so consensus is withheld rather
    than inferred from too little evidence. Inspect `valid_index_counts` and
-   `consensus_eligible` in the result.
+   `consensus_eligible` in the result. For separately scored domains, pass aligned
+   flags and optional score vectors to `flag_consensus()` and use
+   `min_valid_signals` for the equivalent rule.
 3. **Use sample-relative percentiles carefully.** Default `screen(..., percentile=95)`
    and `composite_flag(..., percentile=95)` are convenient starting points, not
    gold standards. With small *N*, percentiles are unstable. When signal families

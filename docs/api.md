@@ -4,6 +4,7 @@
     options:
       members:
         - IndexOptions
+        - FlagConsensusResult
         - InspectableArchive
         - MahadSummary
         - MarkovSummary
@@ -20,6 +21,7 @@
         - ScoreArchive
         - __version__
         - index_catalog
+        - flag_consensus
         - load_archive
         - load_psychsyn_model
         - load_score_archive
