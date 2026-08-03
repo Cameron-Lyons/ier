@@ -30,6 +30,8 @@ Write archives from any scoring command:
 ier screen responses.npy --indices irv longstring --format npz --output screening.npz
 ier screen-reflag screening.npz --percentile 99 --format npz --output stricter.npz
 ier composite responses.csv --format npz --output composite.npz
+ier composite-recombine composite.npz --weight irv=2 \
+  --include-components --format npz --output reweighted.npz
 ier response-time timings.csv --format npz --output timing.npz
 ```
 
@@ -96,6 +98,24 @@ coverage requirement, and consensus count as `screen`, and preserves respondent
 identifiers and archived soft failures. The shared serializers produce the same
 screen text, JSON, CSV, and NPZ contracts. An NPZ destination may be the input
 path because validation and loading finish before atomic replacement starts.
+
+Recombine retained composite components through the same validated boundary:
+
+```bash
+ier composite-recombine composite.npz --weight irv=2 --method mean --format json
+ier composite-recombine composite.npz --indices irv longstring --method max \
+  --no-standardize --min-valid-indices 2 --include-components \
+  --format npz --output composite.npz
+```
+
+`composite-recombine` accepts compact composite archives, compatible screen
+archives, and detailed composite output. It optionally selects unique stored
+components in order, then reuses the same direction correction, mean/sum/max
+reductions, weights, standardization, completeness, fixed or percentile flags,
+uncalibrated probability transform, and serializers as `composite`. Identifiers
+and archived soft failures are preserved. In-place NPZ replacement requires
+`--include-components`, preventing a reusable source from being silently
+replaced by aggregate-only output.
 
 ### Common fields
 

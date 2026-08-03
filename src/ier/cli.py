@@ -18,6 +18,7 @@ from ier import (
     ScreenResult,
     __version__,
     composite,
+    composite_scores,
     composite_summary,
     index_catalog,
     load_response_time_archive,
@@ -259,6 +260,69 @@ def _add_screen_decision_options(
     )
 
 
+def _add_composite_decision_options(
+    parser: argparse.ArgumentParser,
+    *,
+    indices_help: str,
+    methods: tuple[str, ...],
+) -> None:
+    """Add reusable composite combination and decision controls."""
+    parser.add_argument(
+        "--indices",
+        nargs="+",
+        default=None,
+        help=indices_help,
+    )
+    parser.add_argument(
+        "--method",
+        choices=methods,
+        default="mean",
+    )
+    parser.add_argument(
+        "--standardize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Standardize each directed component before combining (default: true)",
+    )
+    composite_flagging = parser.add_mutually_exclusive_group()
+    composite_flagging.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Flag scores at or above a fixed cutoff",
+    )
+    composite_flagging.add_argument(
+        "--percentile",
+        type=float,
+        default=None,
+        help="Flag scores strictly above a sample percentile",
+    )
+    parser.add_argument(
+        "--weight",
+        action="append",
+        default=None,
+        metavar="INDEX=VALUE",
+        help="Positive index weight override; repeat for multiple indices",
+    )
+    parser.add_argument(
+        "--min-valid-indices",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Require at least N available component scores per respondent",
+    )
+    parser.add_argument(
+        "--include-components",
+        action="store_true",
+        help="Include raw component scores and per-respondent availability counts",
+    )
+    parser.add_argument(
+        "--include-probability",
+        action="store_true",
+        help="Include uncalibrated logistic composite values alongside scores",
+    )
+
+
 def _add_shared_options(parser: argparse.ArgumentParser) -> None:
     _add_matrix_input_options(parser)
     parser.add_argument("--scale-min", type=float, default=None)
@@ -357,61 +421,28 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="CSV/TSV/whitespace or .npy item scores; use '-' for standard input",
     )
-    composite_parser.add_argument(
-        "--indices",
-        nargs="+",
-        default=None,
-        help="Index names to include (default: package composite defaults)",
-    )
-    composite_parser.add_argument(
-        "--method",
-        choices=["mean", "sum", "max", "best_subset"],
-        default="mean",
-    )
-    composite_parser.add_argument(
-        "--standardize",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Standardize each directed component before combining (default: true)",
-    )
-    composite_flagging = composite_parser.add_mutually_exclusive_group()
-    composite_flagging.add_argument(
-        "--threshold",
-        type=float,
-        default=None,
-        help="Flag scores at or above a fixed cutoff",
-    )
-    composite_flagging.add_argument(
-        "--percentile",
-        type=float,
-        default=None,
-        help="Flag scores strictly above a sample percentile",
-    )
-    composite_parser.add_argument(
-        "--weight",
-        action="append",
-        default=None,
-        metavar="INDEX=VALUE",
-        help="Positive index weight override; repeat for multiple indices",
-    )
-    composite_parser.add_argument(
-        "--min-valid-indices",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Require at least N available component scores per respondent",
-    )
-    composite_parser.add_argument(
-        "--include-components",
-        action="store_true",
-        help="Include raw component scores and per-respondent availability counts",
-    )
-    composite_parser.add_argument(
-        "--include-probability",
-        action="store_true",
-        help="Include uncalibrated logistic composite values alongside scores",
+    _add_composite_decision_options(
+        composite_parser,
+        indices_help="Index names to include (default: package composite defaults)",
+        methods=("mean", "sum", "max", "best_subset"),
     )
     _add_shared_options(composite_parser)
+
+    composite_recombine_parser = sub.add_parser(
+        "composite-recombine",
+        help="Recombine stored component scores without rescoring.",
+    )
+    composite_recombine_parser.add_argument(
+        "archive",
+        type=Path,
+        help="Validated score .npz archive to reuse",
+    )
+    _add_composite_decision_options(
+        composite_recombine_parser,
+        indices_help="Stored component names to reuse, in order (default: all)",
+        methods=("mean", "sum", "max"),
+    )
+    _add_output_options(composite_recombine_parser)
 
     response_time_parser = sub.add_parser(
         "response-time",
@@ -578,6 +609,111 @@ def _write_screen_result(
     return 0
 
 
+def _valid_score_counts(scores: IndexScoreMap) -> np.ndarray:
+    """Count available stored components with one respondent-sized accumulator."""
+    n_respondents = len(next(iter(scores.values())))
+    counts = np.zeros(n_respondents, dtype=np.int_)
+    for values in scores.values():
+        counts += ~np.isnan(values)
+    return counts
+
+
+def _write_composite_result(
+    args: argparse.Namespace,
+    scores: np.ndarray,
+    respondent_ids: list[str] | None,
+    weights: dict[str, float] | None,
+    errors: dict[str, str],
+    component_scores: IndexScoreMap | None,
+    valid_index_counts: np.ndarray | None,
+) -> int:
+    """Derive optional composite fields and write the selected CLI format."""
+    composite_flags: np.ndarray | None = None
+    flag_threshold: float | None = None
+    flag_percentile: float | None = args.percentile
+    if args.threshold is not None or flag_percentile is not None:
+        comparison_percentile = 95.0 if flag_percentile is None else flag_percentile
+        flag_threshold = resolve_threshold(scores, args.threshold, comparison_percentile)
+        composite_flags = threshold_flags(
+            scores,
+            threshold=flag_threshold,
+            percentile=comparison_percentile,
+            direction="high",
+            inclusive=args.threshold is not None,
+        )
+    probabilities = logistic_transform(scores) if args.include_probability else None
+
+    if args.format == "json":
+        _write_json_output(
+            args.output,
+            lambda handle: _write_composite_json(
+                handle,
+                scores,
+                args.method,
+                respondent_ids,
+                weights,
+                args.min_valid_indices,
+                errors,
+                component_scores,
+                valid_index_counts,
+                standardized=args.standardize,
+                flags=composite_flags,
+                flag_threshold=flag_threshold,
+                flag_percentile=flag_percentile,
+                probabilities=probabilities,
+            ),
+        )
+    elif args.format == "csv":
+        with _output_stream(args.output) as handle:
+            _write_composite_csv(
+                handle,
+                scores,
+                respondent_ids,
+                component_scores,
+                valid_index_counts,
+                composite_flags,
+                probabilities,
+            )
+    elif args.format == "npz":
+        _write_composite_npz(
+            args.output,
+            scores,
+            args.method,
+            respondent_ids,
+            weights,
+            args.min_valid_indices,
+            errors,
+            component_scores,
+            valid_index_counts,
+            standardized=args.standardize,
+            flags=composite_flags,
+            flag_threshold=flag_threshold,
+            flag_percentile=flag_percentile,
+            probabilities=probabilities,
+        )
+    else:
+        _write_output(
+            _emit_composite_text(
+                scores,
+                args.method,
+                args.top,
+                respondent_ids,
+                weights,
+                args.min_valid_indices,
+                errors,
+                component_scores,
+                valid_index_counts,
+                standardized=args.standardize,
+                flags=composite_flags,
+                flag_threshold=flag_threshold,
+                flag_percentile=flag_percentile,
+                probabilities=probabilities,
+            ),
+            args.output,
+        )
+    return 0
+
+
 def _flag_response_time_scores(
     scores: np.ndarray,
     direction: ResponseTimeFlagDirection,
@@ -717,6 +853,39 @@ def _run_command(args: argparse.Namespace) -> int:
         _report_soft_errors(result["errors"])
         return _write_screen_result(args, result, score_archive["respondent_ids"])
 
+    if args.command == "composite-recombine":
+        score_archive = load_score_archive(args.archive)
+        selected_scores = _select_archive_scores(score_archive["scores"], args.indices)
+        if (
+            args.format == "npz"
+            and args.output is not None
+            and args.output.resolve() == args.archive.resolve()
+            and not args.include_components
+        ):
+            raise ValueError(
+                "in-place composite archive output requires --include-components "
+                "to preserve reusable scores"
+            )
+        weights = _parse_weights(args.weight)
+        scores = composite_scores(
+            selected_scores,
+            method=args.method,
+            standardize=args.standardize,
+            weights=weights,
+            min_valid_indices=args.min_valid_indices,
+        )
+        errors = score_archive["errors"].copy()
+        _report_soft_errors(errors)
+        return _write_composite_result(
+            args,
+            scores,
+            score_archive["respondent_ids"],
+            weights,
+            errors,
+            selected_scores if args.include_components else None,
+            _valid_score_counts(selected_scores) if args.include_components else None,
+        )
+
     matrix, respondent_ids = _load_input(
         args.data,
         args.delimiter,
@@ -803,92 +972,15 @@ def _run_command(args: argparse.Namespace) -> int:
             return 1
         scores, errors = scores_result
     _report_soft_errors(errors)
-
-    composite_flags: np.ndarray | None = None
-    flag_threshold: float | None = None
-    flag_percentile: float | None = args.percentile
-    if args.threshold is not None or flag_percentile is not None:
-        comparison_percentile = 95.0 if flag_percentile is None else flag_percentile
-        flag_threshold = resolve_threshold(scores, args.threshold, comparison_percentile)
-        composite_flags = threshold_flags(
-            scores,
-            threshold=flag_threshold,
-            percentile=comparison_percentile,
-            direction="high",
-            inclusive=args.threshold is not None,
-        )
-    probabilities = logistic_transform(scores) if args.include_probability else None
-
-    if args.format == "json":
-        _write_json_output(
-            args.output,
-            lambda handle: _write_composite_json(
-                handle,
-                scores,
-                args.method,
-                respondent_ids,
-                weights,
-                args.min_valid_indices,
-                errors,
-                component_scores,
-                valid_index_counts,
-                standardized=args.standardize,
-                flags=composite_flags,
-                flag_threshold=flag_threshold,
-                flag_percentile=flag_percentile,
-                probabilities=probabilities,
-            ),
-        )
-        return 0
-    elif args.format == "csv":
-        with _output_stream(args.output) as handle:
-            _write_composite_csv(
-                handle,
-                scores,
-                respondent_ids,
-                component_scores,
-                valid_index_counts,
-                composite_flags,
-                probabilities,
-            )
-        return 0
-    elif args.format == "npz":
-        _write_composite_npz(
-            args.output,
-            scores,
-            args.method,
-            respondent_ids,
-            weights,
-            args.min_valid_indices,
-            errors,
-            component_scores,
-            valid_index_counts,
-            standardized=args.standardize,
-            flags=composite_flags,
-            flag_threshold=flag_threshold,
-            flag_percentile=flag_percentile,
-            probabilities=probabilities,
-        )
-        return 0
-    else:
-        text = _emit_composite_text(
-            scores,
-            args.method,
-            args.top,
-            respondent_ids,
-            weights,
-            args.min_valid_indices,
-            errors,
-            component_scores,
-            valid_index_counts,
-            standardized=args.standardize,
-            flags=composite_flags,
-            flag_threshold=flag_threshold,
-            flag_percentile=flag_percentile,
-            probabilities=probabilities,
-        )
-    _write_output(text, args.output)
-    return 0
+    return _write_composite_result(
+        args,
+        scores,
+        respondent_ids,
+        weights,
+        errors,
+        component_scores,
+        valid_index_counts,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

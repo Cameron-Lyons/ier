@@ -47,11 +47,13 @@ _validation / _flagging    ← shared input checks and threshold helpers
   `response_time_score_flags()` reapplies low- or high-tail cutoffs to retained
   direct timing scores or mixture probabilities. All three support sensitivity
   analysis without rerunning scorers.
-- **Archive-backed decisions.** The screening and response-time reflag commands
-  load validated retained vectors before resolving cutoffs, then share the same
-  decision and output-dispatch paths as their original scoring commands. NPZ
-  output can therefore atomically replace the source without retaining the raw
-  input matrix or adding a runtime dependency.
+- **Archive-backed decisions.** Screening reflagging, composite recombination,
+  and response-time reflagging load validated retained vectors before applying
+  new decisions. They share cutoff, combination, probability, and output paths
+  with their original scoring commands. NPZ output can therefore atomically
+  replace a reusable source without retaining the raw input matrix or adding a
+  runtime dependency; composite replacement explicitly requires component
+  retention.
 
 ## Command-line boundaries
 
@@ -259,7 +261,8 @@ Plotting remains optional and reports a centralized install hint from
   CLI cutoff reuse:
   `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
-- Reusable composite sensitivity analysis: `benchmarks/bench_composite.py`.
+- In-memory and archive-backed composite sensitivity analysis:
+  `benchmarks/bench_composite.py`.
 - Validated and atomic score and response-time archive loading, saving, and
   cutoff-provenance verification:
   `benchmarks/bench_archive.py`.

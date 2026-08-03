@@ -148,7 +148,7 @@ and use `method="mean"` once its raw scores have been retained.
 
 On the bundled 10,000-respondent, 80-item benchmark, evaluating five weight
 scenarios from retained scores takes 1.4 ms and 0.7 MiB peak temporary allocation
-instead of 39.7 ms and 12.9 MiB for five full runs, a 27.9x speedup without
+instead of 39.6 ms and 12.9 MiB for five full runs, a 28.4x speedup without
 another dependency.
 
 Component scores exported with `ier composite --include-components --format npz`
@@ -169,6 +169,25 @@ reweighted = composite_scores(saved["scores"], weights={"irv": 2.0})
 
 Aggregate-only composite archives intentionally fail this load because they do
 not contain the raw registered-index vectors needed for a new combination.
+
+Command-line workflows can reuse the same archives directly:
+
+```bash
+ier composite-recombine composite.npz --weight irv=2 --weight longstring=0.5 \
+  --min-valid-indices 2 --percentile 95 --format json
+ier composite-recombine composite.npz --indices irv longstring --method max \
+  --no-standardize --include-components --include-probability \
+  --format npz --output revised.npz
+```
+
+The optional `--indices` list selects and orders unique retained components;
+omitting it uses every stored vector. Mean, sum, and maximum reductions are
+available, while `best_subset` remains a raw-matrix selection workflow. Stored
+identifiers and soft failures are preserved across text, JSON, CSV, and NPZ.
+Replacing the source NPZ requires `--include-components` so later recombination
+remains possible. Five scenarios that each reload the archive take 3.2 ms and
+1.2 MiB peak traced allocation on the same benchmark, versus 39.6 ms and
+12.9 MiB for full recomputation, a 12.4x speedup.
 
 ## Composite completeness
 
@@ -223,6 +242,9 @@ ier composite data.csv --format json --output composite.json
 ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
 ier composite data.npy --indices irv longstring --format json
 ier composite data.npy --indices irv longstring --format npz --output composite.npz
+ier composite-recombine composite.npz --weight irv=2 --format json
+ier composite-recombine composite.npz --method max --include-components \
+  --format npz --output revised.npz
 ```
 
 Uncompressed `.npy` matrices are memory-mapped read-only. They must be non-empty,

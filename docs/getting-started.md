@@ -251,6 +251,23 @@ uses all of them. The command validates the archive, preserves respondent IDs
 and stored soft failures, and supports text, JSON, CSV, and NPZ. An NPZ output
 may safely replace the input archive through atomic replacement.
 
+Recombine retained composite components with new weights, reductions, or
+decision rules without rescoring the response matrix:
+
+```bash
+ier composite-recombine composite.npz --weight irv=2 --weight longstring=0.5 \
+  --min-valid-indices 2 --percentile 95 --format json
+ier composite-recombine composite.npz --indices irv longstring --method max \
+  --no-standardize --include-components --include-probability \
+  --format npz --output revised.npz
+```
+
+The source may be a compact composite score archive, compatible screen output,
+or composite NPZ written with `--include-components`. Stored vectors retain
+their public directions and requested order; identifiers and diagnostics are
+carried forward. In-place NPZ output requires `--include-components` to avoid
+discarding the reusable source vectors.
+
 Response-time results have matching `save_response_time_archive()` and
 `load_response_time_archive()` boundaries; retained `scores` feed directly into
 `response_time_score_flags()` and can be written back with revised flags. Current
