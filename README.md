@@ -16,6 +16,7 @@ For a comprehensive methods review, see
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
 - Contracted, active-row-compacted LZ estimation for complete and missing responses
+- Externally calibrated LZ parameters across screening and composite workflows
 - Allocation-bounded split-half reliability with stable raw-moment correlations
 - Exact low-allocation two-point correlations for common even-odd factor designs
 - Batched dense, sparse, and grouped missing-response Markov entropy scoring

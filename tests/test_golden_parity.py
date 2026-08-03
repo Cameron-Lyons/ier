@@ -435,3 +435,66 @@ class TestIndexOptionsApi(unittest.TestCase):
             options=IndexOptions(longstring_max_pattern_length=3),
         )
         self.assertEqual(len(scores), len(GOLDEN_MATRIX))
+
+    def test_lz_parameters_flow_through_screen_and_composite(self) -> None:
+        difficulty = np.linspace(-1.25, 1.25, PARITY_MATRIX.shape[1])
+        discrimination = np.linspace(0.6, 1.8, PARITY_MATRIX.shape[1])
+        theta = np.linspace(-1.5, 1.5, PARITY_MATRIX.shape[0])
+        options = IndexOptions(
+            lz_difficulty=difficulty,
+            lz_discrimination=discrimination,
+            lz_theta=theta,
+            lz_model="2pl",
+        )
+        missing = PARITY_MATRIX.copy()
+        missing[0, 1] = np.nan
+
+        for data in (PARITY_MATRIX, missing):
+            with self.subTest(missing=np.isnan(data).any()):
+                original = data.copy()
+                expected = lz(
+                    data,
+                    difficulty=difficulty,
+                    discrimination=discrimination,
+                    theta=theta,
+                    model="2pl",
+                )
+                screened = screen(data, indices=["lz"], options=options)
+                combined = composite(
+                    data,
+                    indices=["lz"],
+                    options=options,
+                    standardize=False,
+                )
+
+                np.testing.assert_array_equal(screened["scores"]["lz"], expected)
+                np.testing.assert_array_equal(combined, -expected)
+                np.testing.assert_array_equal(data, original)
+
+    def test_lz_partial_1pl_options_retain_direct_fallbacks(self) -> None:
+        difficulty = np.linspace(-1.25, 1.25, PARITY_MATRIX.shape[1])
+        expected = lz(PARITY_MATRIX, difficulty=difficulty, model="1pl")
+
+        result = screen(
+            PARITY_MATRIX,
+            indices=["lz"],
+            options=IndexOptions(lz_difficulty=difficulty, lz_model="1pl"),
+        )
+
+        np.testing.assert_array_equal(result["scores"]["lz"], expected)
+
+    def test_lz_option_errors_follow_orchestration_failure_policy(self) -> None:
+        options = IndexOptions(lz_difficulty=[0.0])
+
+        result = screen(PARITY_MATRIX, indices=["lz"], options=options)
+
+        self.assertEqual(result["indices_used"], [])
+        self.assertEqual(
+            result["errors"],
+            {"lz": "difficulty length must match number of items"},
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "index 'lz' failed: difficulty length must match number of items",
+        ):
+            screen(PARITY_MATRIX, indices=["lz"], options=options, strict=True)

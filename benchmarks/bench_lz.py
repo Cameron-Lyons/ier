@@ -5,6 +5,8 @@ Usage:
     uv run python benchmarks/bench_lz.py --respondents 20000 --items 100 --repeats 5
     uv run python benchmarks/bench_lz.py --respondents 2000 --items 200 \
         --missing-rate 0.05
+    uv run python benchmarks/bench_lz.py --respondents 20000 --items 80 \
+        --precomputed-parameters
     uv run python benchmarks/bench_lz.py --respondents 5000 --items 1000 \
         --discrimination-only
 """
@@ -16,11 +18,15 @@ import gc
 import statistics
 import time
 import tracemalloc
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import lz
+from ier import IndexOptions, lz, screen
 from ier.lz import _estimate_discrimination
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def main() -> None:
@@ -32,6 +38,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--missing-rate", type=float, default=0.0)
     parser.add_argument("--discrimination-only", action="store_true")
+    parser.add_argument(
+        "--precomputed-parameters",
+        action="store_true",
+        help="Score LZ through screen() with supplied item and ability parameters",
+    )
     args = parser.parse_args()
 
     if args.respondents < 2 or args.items < 2 or args.repeats < 1 or args.warmup < 0:
@@ -41,6 +52,8 @@ def main() -> None:
         )
     if not 0.0 <= args.missing_rate < 1.0:
         parser.error("missing-rate must be at least 0 and less than 1")
+    if args.discrimination_only and args.precomputed_parameters:
+        parser.error("discrimination-only and precomputed-parameters are mutually exclusive")
 
     rng = np.random.default_rng(args.seed)
     data = rng.integers(0, 2, size=(args.respondents, args.items)).astype(float)
@@ -48,8 +61,25 @@ def main() -> None:
     data[1] = 1.0
     if args.missing_rate:
         data[rng.random(data.shape) < args.missing_rate] = np.nan
-    scorer = _estimate_discrimination if args.discrimination_only else lz
-    label = "discrimination" if args.discrimination_only else "lz"
+    scorer: Callable[[np.ndarray], np.ndarray]
+    if args.discrimination_only:
+        scorer = _estimate_discrimination
+        label = "discrimination"
+    elif args.precomputed_parameters:
+        options = IndexOptions(
+            lz_difficulty=np.linspace(-2.0, 2.0, args.items),
+            lz_discrimination=np.linspace(0.6, 1.8, args.items),
+            lz_theta=np.linspace(-2.0, 2.0, args.respondents),
+        )
+
+        def score_precomputed(values: np.ndarray) -> np.ndarray:
+            return screen(values, indices=["lz"], options=options, min_flags=1)["scores"]["lz"]
+
+        scorer = score_precomputed
+        label = "orchestrated precomputed lz"
+    else:
+        scorer = lz
+        label = "lz"
 
     for _ in range(args.warmup):
         scorer(data)

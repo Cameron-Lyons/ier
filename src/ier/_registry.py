@@ -52,6 +52,10 @@ class IndexOptions:
     onset_min_items: int = 20
     reliability_n_splits: int = 100
     reliability_random_seed: int | None = None
+    lz_difficulty: np.ndarray | list[float] | None = None
+    lz_discrimination: np.ndarray | list[float] | None = None
+    lz_theta: np.ndarray | list[float] | None = None
+    lz_model: Literal["1pl", "2pl"] = "2pl"
     semantic_item_pairs: list[tuple[int, int]] | None = None
     infrequency_item_indices: list[int] | None = None
     infrequency_expected_responses: list[float] | None = None
@@ -182,6 +186,17 @@ def _reliability_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
         x,
         n_splits=options.reliability_n_splits,
         random_seed=options.reliability_random_seed,
+    )
+
+
+def _lz_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
+    return lz(
+        x,
+        difficulty=options.lz_difficulty,
+        discrimination=options.lz_discrimination,
+        theta=options.lz_theta,
+        model=options.lz_model,
+        na_rm=options.na_rm,
     )
 
 
@@ -357,7 +372,7 @@ INDEX_REGISTRY: dict[str, IndexSpec] = {
     ),
     "lz": IndexSpec(
         name="lz",
-        scorer=lambda x, options: lz(x, na_rm=options.na_rm),
+        scorer=_lz_scores,
         flag_direction="low",
         composite_multiplier=-1.0,
     ),
