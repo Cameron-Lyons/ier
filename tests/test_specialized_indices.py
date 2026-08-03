@@ -1688,6 +1688,20 @@ class TestMarkov(unittest.TestCase):
         self.assertIn("mean", summary)
         self.assertIn("n_total", summary)
 
+    def test_summary_handles_all_unavailable_rows(self) -> None:
+        """Rows with fewer than two responses produce defined coverage without warnings."""
+        data = [[1.0, np.nan, np.nan], [np.nan, 2.0, np.nan]]
+
+        summary = markov_summary(data)
+
+        self.assertEqual(summary["n_total"], 2)
+        self.assertEqual(summary["n_valid"], 0)
+        self.assertEqual(summary["n_missing"], 2)
+        statistics = np.array(
+            [summary["mean"], summary["std"], summary["min"], summary["max"], summary["median"]]
+        )
+        self.assertTrue(np.all(np.isnan(statistics)))
+
     def test_with_nan(self) -> None:
         """Test handling of NaN values."""
         data = [[1, np.nan, 3, 4, 5], [1, 2, 3, 4, 5]]
