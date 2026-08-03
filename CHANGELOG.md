@@ -5,6 +5,27 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.23] - 2026-08-03
+
+### Added
+
+- `composite_scores()` combines retained raw component vectors with automatic
+  direction correction, optional standardization and weights, mean/sum/max
+  reductions, and minimum-coverage masking. This enables composite sensitivity
+  analysis without recalculating any index.
+- A reproducible benchmark compares repeated full composite calculations with
+  reusable component scores and verifies equivalent outputs for every scenario.
+
+### Changed
+
+- Screening and composite reuse now share one validated score-vector boundary.
+  Composite direction multipliers and weights are applied one vector at a time,
+  avoiding a retained mapping of direction-corrected copies in regular detailed
+  runs. Composite APIs now reject non-Boolean standardization controls.
+- On a 10,000-respondent, 80-item benchmark, five weight scenarios fall from
+  39.7 to 1.4 ms and 12.9 to 0.7 MiB peak temporary allocation, a 27.9x speedup
+  without adding a dependency.
+
 ## [2.19.22] - 2026-08-03
 
 ### Added

@@ -1,6 +1,6 @@
 """Shared input validation utilities for careless detection functions."""
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, Protocol, TypeAlias
 
 import numpy as np
@@ -14,6 +14,40 @@ class SupportsArray(Protocol):
 
 
 MatrixLike: TypeAlias = Sequence[Sequence[float | int]] | np.ndarray | SupportsArray | ArrayLike
+
+
+def validate_score_vectors(
+    scores: Mapping[str, ArrayLike],
+) -> tuple[dict[str, np.ndarray], int]:
+    """Validate a non-empty, respondent-aligned mapping of reusable score vectors."""
+    if not isinstance(scores, Mapping):
+        raise TypeError("scores must be a mapping of registered index names to score arrays")
+    if not scores:
+        raise ValueError("scores must contain at least one registered index")
+
+    validated: dict[str, np.ndarray] = {}
+    n_respondents: int | None = None
+    for name, values in scores.items():
+        try:
+            score_arr = np.asarray(values, dtype=float)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"scores for {name} must be a one-dimensional numeric array"
+            ) from error
+        if score_arr.ndim != 1:
+            raise ValueError(f"scores for {name} must be one-dimensional")
+        if len(score_arr) == 0:
+            raise ValueError(f"scores for {name} cannot be empty")
+        if np.isinf(score_arr).any():
+            raise ValueError(f"scores for {name} must contain only finite values or NaN")
+        if n_respondents is None:
+            n_respondents = len(score_arr)
+        elif len(score_arr) != n_respondents:
+            raise ValueError("all score arrays must have the same respondent count")
+        validated[name] = score_arr
+
+    assert n_respondents is not None
+    return validated, n_respondents
 
 
 def iter_rows(x_array: np.ndarray, na_rm: bool) -> Iterator[np.ndarray]:

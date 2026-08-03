@@ -21,7 +21,7 @@ from ier._registry import (
     validate_min_valid_indices,
     validate_worker_count,
 )
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_matrix_input, validate_score_vectors
 from ier.types import IndexThresholdSourceMap, ScreenIndexSummary, ScreenResult
 
 
@@ -35,36 +35,9 @@ def _validate_min_flags(min_flags: int) -> int:
 def _validate_screen_scores(
     scores: Mapping[str, ArrayLike],
 ) -> tuple[dict[str, np.ndarray], int]:
-    """Validate reusable registered-index score vectors without stacking them."""
-    if not isinstance(scores, Mapping):
-        raise TypeError("scores must be a mapping of registered index names to score arrays")
-    if not scores:
-        raise ValueError("scores must contain at least one registered index")
-
-    names = list(scores)
-    validate_index_names(names)
-    validated: dict[str, np.ndarray] = {}
-    n_respondents: int | None = None
-    for name, values in scores.items():
-        try:
-            score_arr = np.asarray(values, dtype=float)
-        except (TypeError, ValueError) as error:
-            raise ValueError(
-                f"scores for {name} must be a one-dimensional numeric array"
-            ) from error
-        if score_arr.ndim != 1:
-            raise ValueError(f"scores for {name} must be one-dimensional")
-        if len(score_arr) == 0:
-            raise ValueError(f"scores for {name} cannot be empty")
-        if np.isinf(score_arr).any():
-            raise ValueError(f"scores for {name} must contain only finite values or NaN")
-        if n_respondents is None:
-            n_respondents = len(score_arr)
-        elif len(score_arr) != n_respondents:
-            raise ValueError("all score arrays must have the same respondent count")
-        validated[name] = score_arr
-
-    assert n_respondents is not None
+    """Validate reusable scores and restrict them to registered indices."""
+    validated, n_respondents = validate_score_vectors(scores)
+    validate_index_names(list(validated))
     return validated, n_respondents
 
 

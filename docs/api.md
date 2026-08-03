@@ -11,6 +11,7 @@
         - composite
         - composite_flag
         - composite_probability
+        - composite_scores
         - composite_summary
         - irv
         - longstring_scores

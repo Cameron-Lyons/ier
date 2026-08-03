@@ -10,6 +10,7 @@ from .acquiescence import acquiescence_flag as acquiescence_flag
 from .composite import composite as composite
 from .composite import composite_flag as composite_flag
 from .composite import composite_probability as composite_probability
+from .composite import composite_scores as composite_scores
 from .composite import composite_summary as composite_summary
 from .evenodd import evenodd as evenodd
 from .guttman import guttman as guttman
@@ -84,6 +85,7 @@ __all__ = [
     "composite_flag",
     "CompositeMethod",
     "composite_probability",
+    "composite_scores",
     "composite_summary",
     "CompositeSummary",
     "evenodd",

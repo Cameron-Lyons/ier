@@ -10,6 +10,7 @@ For a comprehensive methods review, see
 
 - Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
+- Reusable `screen_scores()` and `composite_scores()` decision layers
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format
@@ -185,6 +186,11 @@ percentile so exported decisions remain reproducible.
 All composite helpers accept optional positive finite `weights`. Weighting is
 applied after low-is-suspicious indices are direction-corrected and after
 optional standardization; unspecified selected indices retain weight 1.
+
+Use `composite_scores(details["indices"], ...)` with the raw component mapping
+from `composite_summary()` to compare weights, mean/sum/max reductions,
+standardization, or completeness rules without recalculating any index. Direction
+correction remains automatic and inputs are not mutated.
 
 Composite scores are standardized per index by default. Pass
 `ier composite --no-standardize` to combine directed scores in their original
