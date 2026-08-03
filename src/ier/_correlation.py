@@ -20,6 +20,13 @@ def row_correlations(
 
     left_values = left[:, :n_columns]
     right_values = right[:, :n_columns]
+    if n_columns == 2 and not np.isinf(left_values).any() and not np.isinf(right_values).any():
+        return _two_point_row_correlations(
+            left_values,
+            right_values,
+            zero_variance=zero_variance,
+        )
+
     has_missing = bool(np.isnan(left_values).any() or np.isnan(right_values).any())
 
     enough_values: np.ndarray | None = None
@@ -75,3 +82,28 @@ def row_correlations(
         correlations[~enough_values] = np.nan
 
     return correlations
+
+
+def _two_point_row_correlations(
+    left: np.ndarray,
+    right: np.ndarray,
+    *,
+    zero_variance: float,
+) -> np.ndarray:
+    """Correlate two paired observations from their difference signs."""
+    left_delta = np.empty(len(left), dtype=float)
+    right_delta = np.empty(len(right), dtype=float)
+    with np.errstate(over="ignore"):
+        np.subtract(left[:, 0], left[:, 1], out=left_delta, casting="unsafe")
+        np.subtract(right[:, 0], right[:, 1], out=right_delta, casting="unsafe")
+
+    zero_variance_rows: np.ndarray | None = None
+    if zero_variance != 0.0:
+        zero_variance_rows = (left_delta == 0.0) | (right_delta == 0.0)
+
+    np.sign(left_delta, out=left_delta)
+    np.sign(right_delta, out=right_delta)
+    np.multiply(left_delta, right_delta, out=left_delta)
+    if zero_variance_rows is not None:
+        left_delta[zero_variance_rows] = zero_variance
+    return left_delta

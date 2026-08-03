@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.40] - 2026-08-03
+
+### Performance
+
+- Row correlations with exactly two paired observations now use the exact
+  product of response-difference signs instead of constructing centered
+  matrices. On a 100,000-respondent even-odd benchmark with twenty four-item
+  factors, median time improved from 0.0831 to 0.0415 seconds and peak traced
+  allocation from 7.8 to 3.9 MiB. With 10% missing responses, median time
+  improved from 0.1534 to 0.0505 seconds and peak allocation from 10.5 to 3.9
+  MiB. Positive, negative, constant, missing, extreme finite, and caller-defined
+  unavailable-correlation behavior remains exact without adding a dependency.
+
 ## [2.19.39] - 2026-08-03
 
 ### Performance
