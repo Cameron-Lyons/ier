@@ -376,7 +376,9 @@ normal soft/strict index-error policy.
 
 Rows without any applicable selected items receive `NaN` and are not flagged.
 `missing_rate_flag()` accepts the same `applicable_mask` argument for direct
-flagging.
+flagging. Both direct and registry scoring traverse responses and masks in bounded
+row blocks, including when selecting required-item subsets, so peak workspace does
+not scale with the number of respondents.
 
 ## Flagging
 

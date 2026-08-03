@@ -213,7 +213,10 @@ respondent-specific branching, provide a Boolean `missing_applicable_mask` in
 Python or load one with CLI `--missing-applicable-mask PATH`; false cells are
 excluded from the missing-rate numerator and denominator. Mask files accept
 0/1 delimited text, transparent gzip text, or safe pickle-free `.npy` matrices.
-Boolean NumPy masks remain read-only memory maps.
+Boolean NumPy masks remain read-only memory maps. Missing-rate scoring traverses
+responses and applicability masks in bounded row blocks; selected item columns
+are copied only for the current block, so workspace does not grow with respondent
+count.
 
 `screen()` and all composite helpers accept `workers=N`; the corresponding CLI
 commands use `--workers N`. The default is sequential (`1`) for predictable

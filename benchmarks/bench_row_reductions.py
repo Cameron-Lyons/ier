@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import acquiescence, irv, midpoint_responding, response_pattern, u3_poly
+from ier import acquiescence, irv, midpoint_responding, missing_rate, response_pattern, u3_poly
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -72,6 +72,8 @@ def main() -> None:
     data = rng.integers(1, 6, size=(args.respondents, args.items)).astype(float)
     if args.missing_rate:
         data[rng.random(data.shape) < args.missing_rate] = np.nan
+    applicable = rng.random(data.shape) >= 0.15
+    required_items = list(range(0, args.items, 2))
 
     scorers: dict[str, Callable[[], Score]] = {
         "irv": lambda: irv(data),
@@ -80,6 +82,14 @@ def main() -> None:
         "u3_poly": lambda: u3_poly(data, scale_min=1, scale_max=5),
         "midpoint_responding": lambda: midpoint_responding(data, scale_min=1, scale_max=5),
         "response_pattern": lambda: response_pattern(data, scale_min=1, scale_max=5),
+        "missing_rate": lambda: missing_rate(data),
+        "missing_rate_subset": lambda: missing_rate(data, item_indices=required_items),
+        "missing_rate_applicable": lambda: missing_rate(data, applicable_mask=applicable),
+        "missing_rate_subset_applicable": lambda: missing_rate(
+            data,
+            item_indices=required_items,
+            applicable_mask=applicable,
+        ),
     }
 
     for _ in range(args.warmup):

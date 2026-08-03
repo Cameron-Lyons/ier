@@ -1,7 +1,9 @@
 """Tests for missing-response diagnostics and orchestration."""
 
 import unittest
+from collections.abc import Iterator
 from typing import Any, cast
+from unittest.mock import patch
 
 import numpy as np
 
@@ -59,6 +61,55 @@ class TestMissingRate(unittest.TestCase):
             [0.0, 0.0, 0.5, np.nan],
             equal_nan=True,
         )
+
+    def test_subset_and_applicability_are_reduced_in_bounded_row_blocks(self) -> None:
+        """Combined scoring preserves results without a full selected-matrix workspace."""
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(257, 80)).astype(float)
+        data[rng.random(data.shape) < 0.2] = np.nan
+        applicable = rng.random(data.shape) >= 0.15
+        item_indices = list(range(0, data.shape[1], 2))
+        original = data.copy()
+        original_applicable = applicable.copy()
+        selected = data[:, item_indices]
+        selected_applicable = applicable[:, item_indices]
+        expected = np.full(len(data), np.nan)
+        np.divide(
+            np.count_nonzero(np.isnan(selected) & selected_applicable, axis=1),
+            np.count_nonzero(selected_applicable, axis=1),
+            out=expected,
+            where=np.count_nonzero(selected_applicable, axis=1) > 0,
+        )
+        observed_shapes: list[tuple[int, ...]] = []
+        original_isnan = np.isnan
+
+        def small_row_slices(n_rows: int, n_columns: int) -> Iterator[tuple[int, int]]:
+            del n_columns
+            for start in range(0, n_rows, 17):
+                yield start, min(start + 17, n_rows)
+
+        def observed_isnan(values: np.ndarray) -> np.ndarray:
+            observed_shapes.append(values.shape)
+            return original_isnan(values)
+
+        with (
+            patch("ier.missing.row_slices", side_effect=small_row_slices) as slices,
+            patch("ier.missing.np.isnan", side_effect=observed_isnan),
+        ):
+            result = missing_rate(
+                data,
+                item_indices=item_indices,
+                applicable_mask=applicable,
+            )
+
+        slices.assert_called_once_with(len(data), len(item_indices))
+        self.assertTrue(observed_shapes)
+        self.assertTrue(
+            all(rows <= 17 and columns == len(item_indices) for rows, columns in observed_shapes)
+        )
+        np.testing.assert_allclose(result, expected, equal_nan=True)
+        np.testing.assert_array_equal(data, original)
+        np.testing.assert_array_equal(applicable, original_applicable)
 
     def test_large_subset_and_mask_match_direct_definition(self) -> None:
         rng = np.random.default_rng(20260803)
