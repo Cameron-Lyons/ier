@@ -1,4 +1,4 @@
-"""Bounded row-wise mean and standard-deviation reductions."""
+"""Bounded row-wise mean, median, and standard-deviation reductions."""
 
 from collections.abc import Iterator
 
@@ -20,6 +20,14 @@ def row_mean(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
     for start, stop in row_slices(len(x), x.shape[1]):
         means[start:stop] = _row_mean_block(x[start:stop], ignore_nan=ignore_nan)
     return means
+
+
+def row_median(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
+    """Calculate row medians without a complete partition workspace."""
+    medians = np.empty(len(x))
+    for start, stop in row_slices(len(x), x.shape[1]):
+        medians[start:stop] = _row_median_block(x[start:stop], ignore_nan=ignore_nan)
+    return medians
 
 
 def row_std(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
@@ -57,6 +65,19 @@ def _row_mean_block(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
         where=counts > 0,
     )
     return means
+
+
+def _row_median_block(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
+    """Reduce one bounded block to its row medians."""
+    if not ignore_nan:
+        result: np.ndarray = np.median(x, axis=1)
+        return result
+
+    available = np.any(~np.isnan(x), axis=1)
+    medians = np.full(len(x), np.nan)
+    if np.any(available):
+        medians[available] = np.nanmedian(x[available], axis=1)
+    return medians
 
 
 def _row_mean_std_block(

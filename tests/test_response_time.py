@@ -1,6 +1,7 @@
 """Unit tests for response-time IER helpers."""
 
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -42,6 +43,54 @@ class TestResponseTime(unittest.TestCase):
         times = [[1.0, 2.0, 3.0], [2.0, 2.0, 2.0]]
         cv = response_time_consistency(times)
         self.assertGreater(cv[0], cv[1])
+
+    def test_bounded_metrics_match_numpy_without_mutating_input(self) -> None:
+        rng = np.random.default_rng(20260803)
+        times = rng.lognormal(mean=1.0, sigma=0.5, size=(53, 11))
+        times[rng.random(times.shape) < 0.1] = np.nan
+        original = times.copy()
+
+        with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 30):
+            means = response_time(times, metric="mean")
+            medians = response_time(times, metric="median")
+            deviations = response_time(times, metric="sd")
+            consistency = response_time_consistency(times)
+
+        expected_means = np.nanmean(times, axis=1)
+        expected_deviations = np.nanstd(times, axis=1)
+        np.testing.assert_allclose(means, expected_means, rtol=0.0, atol=1e-15)
+        np.testing.assert_allclose(
+            medians,
+            np.nanmedian(times, axis=1),
+            rtol=0.0,
+            atol=1e-15,
+        )
+        np.testing.assert_allclose(
+            deviations,
+            expected_deviations,
+            rtol=0.0,
+            atol=1e-15,
+        )
+        np.testing.assert_allclose(
+            consistency,
+            expected_deviations / expected_means,
+            rtol=0.0,
+            atol=1e-15,
+        )
+        np.testing.assert_array_equal(times, original)
+
+    def test_all_missing_rows_are_unavailable_without_warning(self) -> None:
+        times = np.array([[np.nan, np.nan, np.nan], [1.0, 2.0, 3.0]])
+
+        for metric in ["mean", "median", "sd", "min"]:
+            with self.subTest(metric=metric):
+                result = response_time(times, metric=metric)
+                self.assertTrue(np.isnan(result[0]))
+                self.assertTrue(np.isfinite(result[1]))
+
+        consistency = response_time_consistency(times)
+        self.assertTrue(np.isnan(consistency[0]))
+        self.assertTrue(np.isfinite(consistency[1]))
 
 
 class TestResponseTimeMixture(unittest.TestCase):
@@ -200,6 +249,27 @@ class TestResponseTimeMixture(unittest.TestCase):
 
         self.assertTrue(np.isnan(result[0]))
         self.assertTrue(np.isfinite(result[1:]).all())
+
+    def test_bounded_medians_preserve_mixture_probabilities(self) -> None:
+        rng = np.random.default_rng(20260803)
+        times = np.vstack(
+            [
+                rng.lognormal(mean=-0.7, sigma=0.2, size=(20, 11)),
+                rng.lognormal(mean=1.2, sigma=0.35, size=(40, 11)),
+            ]
+        )
+        times[rng.random(times.shape) < 0.1] = np.nan
+        medians = np.nanmedian(times, axis=1)
+        expected = _em_gaussian_mixture(
+            np.log(medians),
+            2,
+            np.random.default_rng(42),
+        )
+
+        with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 30):
+            result = response_time_mixture(times, random_seed=42)
+
+        np.testing.assert_allclose(result, expected, rtol=0.0, atol=1e-15)
 
 
 if __name__ == "__main__":

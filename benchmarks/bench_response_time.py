@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import response_time_mixture
+from ier import response_time, response_time_consistency, response_time_mixture
 from ier.response_time import _em_gaussian_mixture
 
 if TYPE_CHECKING:
@@ -28,6 +28,7 @@ def _measure(
     *,
     repeats: int,
     warmup: int,
+    probability: bool = False,
 ) -> tuple[float, float]:
     for _ in range(warmup):
         operation()
@@ -45,7 +46,9 @@ def _measure(
         tracemalloc.stop()
 
     assert result is not None
-    if not np.isfinite(result).all() or np.any((result < 0.0) | (result > 1.0)):
+    if not np.isfinite(result).all():
+        raise RuntimeError("benchmark produced non-finite scores")
+    if probability and np.any((result < 0.0) | (result > 1.0)):
         raise RuntimeError("benchmark produced invalid mixture probabilities")
     return statistics.median(timings), statistics.median(peaks) / 1024 / 1024
 
@@ -53,8 +56,9 @@ def _measure(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--respondents", type=int, default=100_000)
-    parser.add_argument("--items", type=int, default=20)
+    parser.add_argument("--items", type=int, default=80)
     parser.add_argument("--components", type=int, default=2)
+    parser.add_argument("--missing-rate", type=float, default=0.1)
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
@@ -67,6 +71,8 @@ def main() -> None:
             "items and repeats must be positive; components must be at least 2; "
             "warmup cannot be negative"
         )
+    if not 0.0 <= args.missing_rate < 1.0:
+        parser.error("missing-rate must be at least 0 and less than 1")
 
     rng = np.random.default_rng(args.seed)
     fast = rng.lognormal(mean=-0.7, sigma=0.2, size=args.respondents // 5)
@@ -76,6 +82,19 @@ def main() -> None:
     log_medians = np.log(medians)
     item_noise = rng.lognormal(mean=0.0, sigma=0.15, size=(args.respondents, args.items))
     timings = medians[:, None] * item_noise
+    if args.missing_rate:
+        timings[rng.random(timings.shape) < args.missing_rate] = np.nan
+
+    summary_operations: dict[str, Callable[[], np.ndarray]] = {
+        "mean": lambda: response_time(timings, metric="mean"),
+        "median": lambda: response_time(timings, metric="median"),
+        "standard deviation": lambda: response_time(timings, metric="sd"),
+        "consistency": lambda: response_time_consistency(timings),
+    }
+    summary_measurements = {
+        name: _measure(operation, repeats=args.repeats, warmup=args.warmup)
+        for name, operation in summary_operations.items()
+    }
 
     core_seconds, core_peak = _measure(
         lambda: _em_gaussian_mixture(
@@ -94,12 +113,15 @@ def main() -> None:
         ),
         repeats=args.repeats,
         warmup=args.warmup,
+        probability=True,
     )
 
     print(
-        f"shape={timings.shape} components={args.components} repeats={args.repeats} "
-        f"warmup={args.warmup}"
+        f"shape={timings.shape} components={args.components} "
+        f"missing_rate={args.missing_rate} repeats={args.repeats} warmup={args.warmup}"
     )
+    for name, (seconds, peak) in summary_measurements.items():
+        print(f"{name}: median={seconds:.4f}s peak={peak:.1f} MiB")
     print(f"EM core: median={core_seconds:.4f}s peak={core_peak:.1f} MiB")
     print(f"public workflow: median={workflow_seconds:.4f}s peak={workflow_peak:.1f} MiB")
 
