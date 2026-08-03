@@ -22,6 +22,9 @@ from ier.mahad import _compute_mahalanobis_distance, mahad, mahad_summary
 from ier.psychsyn import (
     _compute_complete_person_scores,
     _compute_person_scores,
+    _discover_item_pairs,
+    _iter_item_correlation_tiles,
+    _normalized_item_columns,
     _resample_missing_correlations,
     compute_person_correlations,
     get_highly_correlated_pairs,
@@ -589,6 +592,82 @@ class TestPsychometricFunctions(unittest.TestCase):
         """Test critical value filtering respects minimum correlation threshold."""
         results: list[tuple[int, int, float]] = psychsyn_critval(self.data, min_correlation=0.5)
         self.assertTrue(all(abs(t[2]) >= 0.5 for t in results))
+
+    def test_bounded_pair_discovery_matches_correlation_matrix_reference(self) -> None:
+        """Triangular blocks preserve pair thresholds, order, and missing semantics."""
+        rng = np.random.default_rng(20260803)
+        data = rng.normal(size=(53, 17))
+        data[:, 2] = 1.0
+        data[0, 5] = np.nan
+        with np.errstate(divide="ignore", invalid="ignore"):
+            correlations = np.corrcoef(data, rowvar=False)
+        comparable = np.nan_to_num(correlations, nan=0.0)
+
+        for critval, anto in ((0.2, False), (-0.2, True), (0.0, False), (0.0, True)):
+            with self.subTest(critval=critval, anto=anto):
+                expected = get_highly_correlated_pairs(comparable, critval, anto)
+                actual = _discover_item_pairs(data, critval, anto)
+                np.testing.assert_array_equal(actual, expected)
+
+    def test_critical_value_catalog_matches_correlation_matrix_reference(self) -> None:
+        """Blockwise correlation catalogs retain values and ranking direction."""
+        rng = np.random.default_rng(37)
+        data = rng.normal(size=(71, 13))
+        data[:, 4] = 1.0
+        with np.errstate(divide="ignore", invalid="ignore"):
+            correlations = np.corrcoef(data, rowvar=False)
+        rows, columns = np.triu_indices(data.shape[1], k=1)
+        values = correlations[rows, columns]
+        selected = ~np.isnan(values) & (np.abs(values) >= 0.1)
+
+        for anto in (False, True):
+            with self.subTest(anto=anto):
+                order = np.argsort(values[selected]) if anto else np.argsort(-values[selected])
+                expected = [
+                    (
+                        int(rows[selected][index]),
+                        int(columns[selected][index]),
+                        values[selected][index],
+                    )
+                    for index in order
+                ]
+                actual = psychsyn_critval(data, anto=anto, min_correlation=0.1)
+                self.assertEqual(
+                    [(left, right) for left, right, _ in actual],
+                    [(left, right) for left, right, _ in expected],
+                )
+                np.testing.assert_allclose(
+                    [value for _, _, value in actual],
+                    [value for _, _, value in expected],
+                    rtol=0.0,
+                    atol=5e-16,
+                )
+
+    def test_item_correlation_tiles_obey_forced_workspace_bound(self) -> None:
+        """Forced tiny blocks cover each lower-triangle pair exactly once."""
+        rng = np.random.default_rng(41)
+        data = rng.normal(size=(5, 17))
+
+        with patch("ier.psychsyn._PSYCHSYN_CORRELATION_BLOCK_ELEMENTS", 25):
+            normalized, valid_columns = _normalized_item_columns(data)
+            tiles = list(_iter_item_correlation_tiles(normalized, valid_columns))
+
+        self.assertTrue(all(len(values) <= 25 for _, _, values in tiles))
+        pairs = np.concatenate([np.column_stack((rows, columns)) for rows, columns, _ in tiles])
+        expected = np.column_stack(np.tril_indices(data.shape[1], k=-1))
+        np.testing.assert_array_equal(
+            pairs[np.lexsort((pairs[:, 1], pairs[:, 0]))],
+            expected,
+        )
+
+    def test_public_pair_discovery_does_not_build_a_square_matrix(self) -> None:
+        """Both public discovery paths stay behind the bounded block implementation."""
+        with patch(
+            "ier.psychsyn.np.corrcoef",
+            side_effect=AssertionError("full item correlation matrix was constructed"),
+        ):
+            psychsyn(self.data)
+            psychsyn_critval(self.data)
 
     def test_psychsyn_anto(self) -> None:
         """Test psychsyn with antonym detection mode enabled."""

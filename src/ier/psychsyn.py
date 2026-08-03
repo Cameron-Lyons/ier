@@ -9,6 +9,8 @@ This module provides functions for detecting careless responding patterns by ana
 individuals respond to psychometrically similar (synonym) or opposite (antonym) items.
 """
 
+from collections.abc import Iterator
+from math import isqrt
 from typing import Any, Literal, overload
 
 import numpy as np
@@ -18,6 +20,94 @@ from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
 
 _PSYCHSYN_BATCH_ELEMENTS = 262_144
+_PSYCHSYN_CORRELATION_BLOCK_ELEMENTS = 262_144
+
+
+def _normalized_item_columns(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Center and normalize finite, nonconstant item columns in bounded blocks."""
+    n_rows, n_items = x.shape
+    normalized = np.zeros((n_rows, n_items), dtype=float)
+    valid_columns = np.zeros(n_items, dtype=bool)
+    block_columns = max(1, _PSYCHSYN_CORRELATION_BLOCK_ELEMENTS // max(1, n_rows))
+
+    for start in range(0, n_items, block_columns):
+        stop = min(start + block_columns, n_items)
+        block = np.array(x[:, start:stop], dtype=float, copy=True)
+        finite = np.isfinite(block).all(axis=0)
+        block[:, ~finite] = 0.0
+        block -= np.mean(block, axis=0, keepdims=True)
+        norms = np.sqrt(np.einsum("ij,ij->j", block, block))
+        usable = finite & (norms > 0.0)
+        np.divide(
+            block,
+            norms,
+            out=block,
+            where=usable[np.newaxis, :],
+        )
+        block[:, ~usable] = 0.0
+        normalized[:, start:stop] = block
+        valid_columns[start:stop] = usable
+
+    return normalized, valid_columns
+
+
+def _iter_item_correlation_tiles(
+    normalized: np.ndarray,
+    valid_columns: np.ndarray,
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Yield strict-lower-triangle item correlations in bounded square tiles."""
+    n_items = normalized.shape[1]
+    tile_width = max(1, isqrt(_PSYCHSYN_CORRELATION_BLOCK_ELEMENTS))
+    all_indices = np.arange(n_items, dtype=np.intp)
+
+    for row_start in range(0, n_items, tile_width):
+        row_stop = min(row_start + tile_width, n_items)
+        row_indices = all_indices[row_start:row_stop]
+        row_values = normalized[:, row_start:row_stop]
+        for column_start in range(0, row_stop, tile_width):
+            column_stop = min(column_start + tile_width, row_stop)
+            column_indices = all_indices[column_start:column_stop]
+            correlations = row_values.T @ normalized[:, column_start:column_stop]
+            np.clip(correlations, -1.0, 1.0, out=correlations)
+
+            lower_rows, lower_columns = np.nonzero(
+                row_indices[:, np.newaxis] > column_indices[np.newaxis, :]
+            )
+            if len(lower_rows) == 0:
+                continue
+            values = correlations[lower_rows, lower_columns]
+            usable = (
+                valid_columns[row_indices[lower_rows]]
+                & valid_columns[column_indices[lower_columns]]
+            )
+            values[~usable] = np.nan
+            yield (
+                row_indices[lower_rows],
+                column_indices[lower_columns],
+                values,
+            )
+
+
+def _discover_item_pairs(x: np.ndarray, critval: float, anto: bool) -> np.ndarray:
+    """Discover threshold-matching item pairs without a complete square matrix."""
+    normalized, valid_columns = _normalized_item_columns(x)
+    selected_blocks: list[np.ndarray] = []
+    for row_indices, column_indices, correlations in _iter_item_correlation_tiles(
+        normalized,
+        valid_columns,
+    ):
+        comparable = np.nan_to_num(correlations, nan=0.0)
+        selected = comparable <= critval if anto else comparable >= critval
+        if np.any(selected):
+            selected_blocks.append(
+                np.column_stack((row_indices[selected], column_indices[selected]))
+            )
+
+    if not selected_blocks:
+        return np.empty((0, 2), dtype=np.intp)
+    pairs = np.concatenate(selected_blocks)
+    ordered_pairs: np.ndarray = pairs[np.lexsort((pairs[:, 1], pairs[:, 0]))]
+    return ordered_pairs
 
 
 def get_highly_correlated_pairs(
@@ -166,11 +256,7 @@ def psychsyn(
 
     rng = np.random.default_rng(random_seed)
 
-    item_correlations = np.corrcoef(x_array, rowvar=False)
-
-    item_correlations[np.isnan(item_correlations)] = 0
-
-    item_pairs = get_highly_correlated_pairs(item_correlations, critval, anto)
+    item_pairs = _discover_item_pairs(x_array, critval, anto)
 
     if len(item_pairs) == 0:
         empty_scores = np.full(x_array.shape[0], np.nan)
@@ -343,22 +429,27 @@ def psychsyn_critval(
 
     x_array = validate_matrix_input(x, min_columns=2)
 
-    item_correlations = np.corrcoef(x_array, rowvar=False)
-    n_items = item_correlations.shape[0]
+    normalized, valid_columns = _normalized_item_columns(x_array)
+    pair_blocks: list[np.ndarray] = []
+    correlation_blocks: list[np.ndarray] = []
+    for row_indices, column_indices, correlations in _iter_item_correlation_tiles(
+        normalized,
+        valid_columns,
+    ):
+        selected = ~np.isnan(correlations) & (np.abs(correlations) >= min_correlation)
+        if np.any(selected):
+            pair_blocks.append(np.column_stack((column_indices[selected], row_indices[selected])))
+            correlation_blocks.append(correlations[selected])
 
-    i_indices, j_indices = np.triu_indices(n_items, k=1)
-    corr_values = item_correlations[i_indices, j_indices]
-
-    valid_mask = ~np.isnan(corr_values) & (np.abs(corr_values) >= min_correlation)
-    i_filtered = i_indices[valid_mask]
-    j_filtered = j_indices[valid_mask]
-    corr_filtered = corr_values[valid_mask]
+    if not pair_blocks:
+        return []
+    pairs = np.concatenate(pair_blocks)
+    corr_filtered = np.concatenate(correlation_blocks)
 
     sort_indices = np.argsort(corr_filtered) if anto else np.argsort(-corr_filtered)
 
     correlation_list: list[tuple[int, int, float]] = [
-        (int(i_filtered[idx]), int(j_filtered[idx]), float(corr_filtered[idx]))
-        for idx in sort_indices
+        (int(pairs[idx, 0]), int(pairs[idx, 1]), float(corr_filtered[idx])) for idx in sort_indices
     ]
 
     return correlation_list
