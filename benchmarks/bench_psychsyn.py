@@ -30,11 +30,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ier import (
+    IndexOptions,
     fit_psychsyn_model,
     load_psychsyn_model,
     psychsyn,
     psychsyn_model_scores,
     save_psychsyn_model,
+    screen,
 )
 
 if TYPE_CHECKING:
@@ -68,6 +70,21 @@ def _measure(
         result,
         diagnostic,
     )
+
+
+def _measure_action(operation: Callable[[], object], repeats: int) -> tuple[float, float]:
+    """Measure one shared workflow without retaining its structured result."""
+    timings: list[float] = []
+    peaks: list[int] = []
+    for _ in range(repeats):
+        gc.collect()
+        tracemalloc.start()
+        started = time.perf_counter()
+        operation()
+        timings.append(time.perf_counter() - started)
+        peaks.append(tracemalloc.get_traced_memory()[1])
+        tracemalloc.stop()
+    return statistics.median(timings), statistics.median(peaks) / 1024 / 1024
 
 
 def main() -> None:
@@ -126,6 +143,25 @@ def main() -> None:
     )
     np.testing.assert_array_equal(fixed_result, result)
     np.testing.assert_array_equal(fixed_diagnostic, diagnostic)
+    shared_options = IndexOptions(psychsyn_model=model)
+    shared_result = screen(
+        data,
+        indices=["psychsyn"],
+        options=shared_options,
+        thresholds={"psychsyn": 0.0},
+        min_flags=1,
+    )
+    np.testing.assert_array_equal(shared_result["scores"]["psychsyn"], fixed_result)
+    shared_seconds, shared_peak = _measure_action(
+        lambda: screen(
+            data,
+            indices=["psychsyn"],
+            options=shared_options,
+            thresholds={"psychsyn": 0.0},
+            min_flags=1,
+        ),
+        args.repeats,
+    )
 
     print(
         f"shape={data.shape} selected_pairs={model.n_pairs} "
@@ -141,6 +177,7 @@ def main() -> None:
         f"model archive: size={archive_bytes / 1024:.1f} KiB "
         f"load_median={statistics.median(load_timings):.4f}s"
     )
+    print(f"shared fixed-model screen: median={shared_seconds:.4f}s peak={shared_peak:.1f} MiB")
 
 
 if __name__ == "__main__":

@@ -231,6 +231,10 @@ Pair discovery can also be fitted once and reused across files or processes:
 ier psychsyn-fit reference.csv psychsyn-model.npz --item-columns q1,q2,q3,q4
 ier psychsyn-score later.csv psychsyn-model.npz --item-columns q1,q2,q3,q4 \
   --format npz --output later-scores.npz
+ier screen later.csv --indices psychsyn irv --psychsyn-model psychsyn-model.npz \
+  --item-columns q1,q2,q3,q4
+ier composite later.csv --indices psychsyn irv --psychsyn-model psychsyn-model.npz \
+  --item-columns q1,q2,q3,q4
 ier archive-info psychsyn-model.npz --format json
 ```
 
@@ -239,6 +243,10 @@ scores, low-tail flags, respondent identifiers, and cutoff provenance. Use
 `--threshold VALUE` for an inclusive fixed cutoff or `--percentile VALUE` for a
 sample-relative tail. Add `--antonym` to the fit command for a negative-pair
 calibration. The model enforces the reference item count and column order.
+The shared commands can combine fixed psychometric scores with any compatible
+registered indices and with parallel workers. Use `--psychant-model` for an
+antonym calibration. A model flag cannot be combined with its matching
+`--psychsyn-critval` or `--psychant-critval` discovery option.
 
 Balanced acquiescence scoring is available without preprocessing item polarity:
 

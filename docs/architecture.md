@@ -87,6 +87,11 @@ The command-line path is split by responsibility:
   cohort discovery. `psychsyn-score` validates that model and its item-count
   contract before applying fixed pairs through the standard one-index screen
   output path; pair discovery is never entered during scoring.
+- Shared screen and composite paths accept immutable synonym and antonym models
+  through `IndexOptions`. Registry scorers validate each model's mode and route
+  directly to fixed-pair scoring, including under parallel workers. CLI model
+  paths are loaded and checked before matrix input, and explicit discovery-
+  threshold conflicts are rejected rather than silently ignored.
 
 Screen and composite commands carry the registry's ordered soft-failure map
 through text, JSON, and NPZ serializers and mirror failures to standard error

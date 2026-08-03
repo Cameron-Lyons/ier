@@ -20,7 +20,7 @@ from ier.markov import markov
 from ier.missing import missing_rate
 from ier.onset import onset
 from ier.person_total import person_total
-from ier.psychsyn import psychant, psychsyn
+from ier.psychsyn import PsychsynModel, psychant, psychsyn, psychsyn_model_scores
 from ier.reliability import individual_reliability
 from ier.semantic import semantic_ant, semantic_syn
 from ier.types import IndexCatalog, InfrequencyMissingPolicy
@@ -68,6 +68,8 @@ class IndexOptions:
     mad_scale_min: float | None = None
     missing_item_indices: list[int] | None = None
     missing_applicable_mask: ArrayLike | None = None
+    psychsyn_model: PsychsynModel | None = None
+    psychant_model: PsychsynModel | None = None
 
 
 def resolve_index_options(options: IndexOptions | None = None) -> IndexOptions:
@@ -138,12 +140,25 @@ def _irv_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
 
 def _psychsyn_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
     with np.errstate(divide="ignore", invalid="ignore"):
-        result = psychsyn(
-            x,
-            critval=options.psychsyn_critval,
-            resample_na=options.na_rm,
-            random_seed=options.psychsyn_random_seed,
-        )
+        if options.psychsyn_model is None:
+            result = psychsyn(
+                x,
+                critval=options.psychsyn_critval,
+                resample_na=options.na_rm,
+                random_seed=options.psychsyn_random_seed,
+            )
+        else:
+            model = _validate_psychometric_model(
+                options.psychsyn_model,
+                expected_anto=False,
+                option="psychsyn_model",
+            )
+            result = psychsyn_model_scores(
+                x,
+                model,
+                resample_na=options.na_rm,
+                random_seed=options.psychsyn_random_seed,
+            )
     if not isinstance(result, np.ndarray):
         raise ValueError("psychsyn returned non-array output")
     return result
@@ -151,15 +166,43 @@ def _psychsyn_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
 
 def _psychant_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
     with np.errstate(divide="ignore", invalid="ignore"):
-        result = psychant(
-            x,
-            critval=options.psychant_critval,
-            resample_na=options.na_rm,
-            random_seed=options.psychant_random_seed,
-        )
+        if options.psychant_model is None:
+            result = psychant(
+                x,
+                critval=options.psychant_critval,
+                resample_na=options.na_rm,
+                random_seed=options.psychant_random_seed,
+            )
+        else:
+            model = _validate_psychometric_model(
+                options.psychant_model,
+                expected_anto=True,
+                option="psychant_model",
+            )
+            result = psychsyn_model_scores(
+                x,
+                model,
+                resample_na=options.na_rm,
+                random_seed=options.psychant_random_seed,
+            )
     if not isinstance(result, np.ndarray):
         raise ValueError("psychant returned non-array output")
     return result
+
+
+def _validate_psychometric_model(
+    model: object,
+    *,
+    expected_anto: bool,
+    option: str,
+) -> PsychsynModel:
+    """Validate one fixed model's type and registered-index mode."""
+    if not isinstance(model, PsychsynModel):
+        raise TypeError(f"{option} must be a PsychsynModel")
+    if model.anto != expected_anto:
+        expected = "antonym" if expected_anto else "synonym"
+        raise ValueError(f"{option} must be a psychometric {expected} model")
+    return model
 
 
 def _evenodd_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:

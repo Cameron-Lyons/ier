@@ -206,16 +206,24 @@ item relationships:
 
 ```python
 from ier import (
+    IndexOptions,
     fit_psychsyn_model,
     load_psychsyn_model,
     psychsyn_model_scores,
     save_psychsyn_model,
+    screen,
 )
 
 model = fit_psychsyn_model(reference_responses, critval=0.6)
 save_psychsyn_model("psychsyn-model.npz", model)
 model = load_psychsyn_model("psychsyn-model.npz")
 later_scores = psychsyn_model_scores(later_responses, model)
+
+calibrated_screen = screen(
+    later_responses,
+    indices=["psychsyn", "irv", "longstring"],
+    options=IndexOptions(psychsyn_model=model),
+)
 ```
 
 The archive is versioned, pickle-free, strictly validated, and atomically
@@ -227,11 +235,17 @@ screening outputs and cutoff provenance:
 ```bash
 ier psychsyn-fit reference.csv psychsyn-model.npz --critval 0.6
 ier psychsyn-score later.csv psychsyn-model.npz --format json --output scores.json
+ier screen later.csv --indices psychsyn irv --psychsyn-model psychsyn-model.npz
+ier composite later.csv --indices psychsyn irv --psychsyn-model psychsyn-model.npz
 ier archive-info psychsyn-model.npz --format json
 ```
 
 Use `--antonym` during fitting for negative pairs. Named item columns must be
-selected in the same order during fitting and scoring.
+selected in the same order during fitting and scoring. Shared Python workflows
+accept `psychsyn_model` and `psychant_model` through `IndexOptions`; the matching
+CLI flags cannot be combined with their discovery-threshold options. Retry seeds,
+missing-value policy, strict/soft failures, and parallel index scoring continue
+to apply to fixed models.
 
 Balanced acquiescence scoring pairs positively and negatively worded items to
 separate agreement tendency from item content. Python workflows accept

@@ -1604,6 +1604,143 @@ class TestCli(unittest.TestCase):
         self.assertIn("must end in .npz", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
+    def test_shared_commands_reuse_fixed_psychsyn_model_in_parallel(self) -> None:
+        data_path = self.root / "shared-psychsyn.csv"
+        data_path.write_text(
+            "participant,i1,i2,i3,i4\n"
+            "case-a,1,2,3,4\ncase-b,4,1,3,2\n"
+            "case-c,2,4,1,3\ncase-d,3,2,4,1\n",
+            encoding="utf-8",
+        )
+        data = np.asarray(
+            [
+                [1.0, 2.0, 3.0, 4.0],
+                [4.0, 1.0, 3.0, 2.0],
+                [2.0, 4.0, 1.0, 3.0],
+                [3.0, 2.0, 4.0, 1.0],
+            ]
+        )
+        model = PsychsynModel(
+            np.asarray([[1, 0], [2, 0], [2, 1]]),
+            n_items=4,
+        )
+        model_path = self.root / "shared-psychsyn-model.npz"
+        save_psychsyn_model(model_path, model)
+        expected = psychsyn_model_scores(data, model)
+        screen_output = self.root / "shared-screen.json"
+        composite_output = self.root / "shared-composite.json"
+
+        with patch("ier._registry.psychsyn", side_effect=AssertionError("rediscovered pairs")):
+            screen_code = main(
+                [
+                    "screen",
+                    str(data_path),
+                    "--id-column",
+                    "participant",
+                    "--indices",
+                    "psychsyn",
+                    "irv",
+                    "--psychsyn-model",
+                    str(model_path),
+                    "--workers",
+                    "2",
+                    "--min-flags",
+                    "1",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(screen_output),
+                ]
+            )
+            composite_code = main(
+                [
+                    "composite",
+                    str(data_path),
+                    "--id-column",
+                    "participant",
+                    "--indices",
+                    "psychsyn",
+                    "irv",
+                    "--psychsyn-model",
+                    str(model_path),
+                    "--workers",
+                    "2",
+                    "--no-standardize",
+                    "--include-components",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(composite_output),
+                ]
+            )
+
+        self.assertEqual(screen_code, 0)
+        self.assertEqual(composite_code, 0)
+        screen_payload = json.loads(screen_output.read_text(encoding="utf-8"))
+        composite_payload = json.loads(composite_output.read_text(encoding="utf-8"))
+        self.assertEqual(
+            screen_payload["respondent_ids"],
+            ["case-a", "case-b", "case-c", "case-d"],
+        )
+        np.testing.assert_allclose(screen_payload["scores"]["psychsyn"], expected)
+        np.testing.assert_allclose(
+            composite_payload["component_scores"]["psychsyn"],
+            expected,
+        )
+
+    def test_shared_psychsyn_model_options_validate_before_matrix_input(self) -> None:
+        pairs = np.asarray([[1, 0], [2, 0], [2, 1]])
+        synonym_path = self.root / "synonym-model.npz"
+        antonym_path = self.root / "antonym-model.npz"
+        save_psychsyn_model(synonym_path, PsychsynModel(pairs, n_items=5))
+        save_psychsyn_model(
+            antonym_path,
+            PsychsynModel(pairs, n_items=5, critval=-0.6, anto=True),
+        )
+        cases = [
+            (
+                ["--psychsyn-model", str(synonym_path), "--psychsyn-critval", "0.7"],
+                "cannot be combined with --psychsyn-critval",
+            ),
+            (
+                ["--psychant-model", str(antonym_path), "--psychant-critval", "-0.7"],
+                "cannot be combined with --psychant-critval",
+            ),
+            (
+                ["--psychsyn-model", str(antonym_path)],
+                "requires a psychometric synonym model",
+            ),
+            (
+                ["--psychant-model", str(synonym_path)],
+                "requires a psychometric antonym model",
+            ),
+            (
+                ["--psychsyn-model", str(self.root / "missing-model.npz")],
+                "No such file or directory",
+            ),
+        ]
+
+        for options, message in cases:
+            stderr = StringIO()
+            with (
+                self.subTest(options=options),
+                patch("sys.stderr", stderr),
+                patch("ier.cli._load_input", side_effect=AssertionError("loaded matrix")),
+            ):
+                code = main(
+                    [
+                        "screen",
+                        str(self.csv_path),
+                        "--indices",
+                        "psychsyn",
+                        *options,
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn(message, stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_response_time_uses_saved_model_without_refitting(self) -> None:
         reference = np.asarray(
             [

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from ier import IndexOptions
+from ier import IndexOptions, PsychsynModel, psychsyn_model_scores
 from ier.acquiescence import acquiescence, acquiescence_flag
 from ier.irv import irv
 from ier.mahad import mahad
@@ -495,6 +495,48 @@ class TestScreen(unittest.TestCase):
 
         np.testing.assert_array_equal(synonym_result["scores"]["psychsyn"], expected_syn)
         np.testing.assert_array_equal(antonym_result["scores"]["psychant"], expected_ant)
+
+    def test_fixed_psychometric_model_matches_direct_scoring_without_discovery(self) -> None:
+        data = np.asarray(
+            [
+                [1.0, 2.0, 3.0, 4.0],
+                [4.0, 1.0, 3.0, 2.0],
+                [2.0, 4.0, 1.0, 3.0],
+            ]
+        )
+        model = PsychsynModel(
+            np.asarray([[1, 0], [2, 0], [2, 1]]),
+            n_items=4,
+        )
+        expected = psychsyn_model_scores(data, model)
+
+        with patch("ier._registry.psychsyn", side_effect=AssertionError("rediscovered pairs")):
+            result = screen(
+                data,
+                indices=["psychsyn"],
+                options=IndexOptions(psychsyn_model=model),
+            )
+
+        np.testing.assert_array_equal(result["scores"]["psychsyn"], expected)
+
+    def test_fixed_psychometric_item_contract_obeys_soft_and_strict_policy(self) -> None:
+        model = PsychsynModel(
+            np.asarray([[1, 0], [2, 0], [2, 1]]),
+            n_items=3,
+        )
+        options = IndexOptions(psychsyn_model=model)
+
+        result = screen(self.data, indices=["psychsyn"], options=options)
+
+        self.assertEqual(result["scores"], {})
+        self.assertIn("model requires 3", result["errors"]["psychsyn"])
+        with self.assertRaisesRegex(ValueError, "model requires 3"):
+            screen(
+                self.data,
+                indices=["psychsyn"],
+                options=options,
+                strict=True,
+            )
 
     def test_invalid_index_raises(self) -> None:
         with self.assertRaises(ValueError):
