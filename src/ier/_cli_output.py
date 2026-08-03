@@ -220,6 +220,16 @@ def _archive_info_payload(archive: InspectableArchive) -> dict[str, object]:
             }
         )
         return payload
+    if archive["result_type"] == "psychsyn_model":
+        payload.update(
+            {
+                "n_items": archive["n_items"],
+                "n_pairs": archive["n_pairs"],
+                "critval": archive["critval"],
+                "mode": "antonym" if archive["anto"] else "synonym",
+            }
+        )
+        return payload
 
     payload.update(
         {
@@ -275,6 +285,16 @@ def _emit_archive_info_text(archive: InspectableArchive) -> str:
             )
         ):
             lines.append(f"  {component}: weight={weight:g} mean={mean:g} variance={variance:g}")
+        return "\n".join(lines)
+    if archive["result_type"] == "psychsyn_model":
+        lines.extend(
+            (
+                f"mode: {'antonym' if archive['anto'] else 'synonym'}",
+                f"items: {archive['n_items']}",
+                f"pairs: {archive['n_pairs']}",
+                f"correlation threshold: {archive['critval']:g}",
+            )
+        )
         return "\n".join(lines)
 
     lines.extend(

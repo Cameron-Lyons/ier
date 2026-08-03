@@ -8,9 +8,11 @@ from ._validation import MatrixLike as MatrixLike
 from .acquiescence import acquiescence as acquiescence
 from .acquiescence import acquiescence_flag as acquiescence_flag
 from .archive import load_archive as load_archive
+from .archive import load_psychsyn_model as load_psychsyn_model
 from .archive import load_response_time_archive as load_response_time_archive
 from .archive import load_response_time_mixture_model as load_response_time_mixture_model
 from .archive import load_score_archive as load_score_archive
+from .archive import save_psychsyn_model as save_psychsyn_model
 from .archive import save_response_time_archive as save_response_time_archive
 from .archive import save_response_time_mixture_model as save_response_time_mixture_model
 from .archive import save_score_archive as save_score_archive
@@ -79,6 +81,7 @@ from .types import InspectableArchive as InspectableArchive
 from .types import IntArray as IntArray
 from .types import MahadSummary as MahadSummary
 from .types import MarkovSummary as MarkovSummary
+from .types import PsychsynModelArchive as PsychsynModelArchive
 from .types import PsychsynSummary as PsychsynSummary
 from .types import ResponseTimeArchive as ResponseTimeArchive
 from .types import ResponseTimeFlagDirection as ResponseTimeFlagDirection
@@ -138,6 +141,7 @@ __all__ = [
     "longstring_pattern",
     "longstring_scores",
     "load_archive",
+    "load_psychsyn_model",
     "load_response_time_archive",
     "load_response_time_mixture_model",
     "load_score_archive",
@@ -166,6 +170,7 @@ __all__ = [
     "fit_psychsyn_model",
     "psychsyn",
     "PsychsynModel",
+    "PsychsynModelArchive",
     "psychsyn_model_scores",
     "psychsyn_summary",
     "PsychsynSummary",
@@ -187,6 +192,7 @@ __all__ = [
     "screen",
     "screen_scores",
     "save_response_time_archive",
+    "save_psychsyn_model",
     "save_response_time_mixture_model",
     "save_score_archive",
     "ScreenIndexSummary",

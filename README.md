@@ -16,6 +16,7 @@ For a comprehensive methods review, see
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded complete and pairwise-complete discovery and scoring for psychometric synonyms
 - Reusable immutable psychometric pair calibration for later cohorts
+- Atomic, pickle-free psychometric pair model persistence and CLI reuse
 - Reproducible psychometric missing-response retries across shared and CLI workflows
 - Contracted, active-row-compacted LZ estimation for complete and missing responses
 - Externally calibrated LZ parameters across Python and CLI scoring workflows
@@ -199,6 +200,38 @@ handling is enabled. Set `IndexOptions(psychsyn_random_seed=...)` or
 The CLI equivalents are `--psychsyn-random-seed` and
 `--psychant-random-seed`. Each scorer uses an isolated random stream and does
 not modify NumPy's process-wide state.
+
+Persist a fitted pair calibration when later cohorts must use the exact same
+item relationships:
+
+```python
+from ier import (
+    fit_psychsyn_model,
+    load_psychsyn_model,
+    psychsyn_model_scores,
+    save_psychsyn_model,
+)
+
+model = fit_psychsyn_model(reference_responses, critval=0.6)
+save_psychsyn_model("psychsyn-model.npz", model)
+model = load_psychsyn_model("psychsyn-model.npz")
+later_scores = psychsyn_model_scores(later_responses, model)
+```
+
+The archive is versioned, pickle-free, strictly validated, and atomically
+replaced. It records the fitted threshold, synonym/antonym mode, item count,
+and pair indices without adding a dependency. The model enforces the same item
+count and column order when applied. The command-line workflow uses the standard
+screening outputs and cutoff provenance:
+
+```bash
+ier psychsyn-fit reference.csv psychsyn-model.npz --critval 0.6
+ier psychsyn-score later.csv psychsyn-model.npz --format json --output scores.json
+ier archive-info psychsyn-model.npz --format json
+```
+
+Use `--antonym` during fitting for negative pairs. Named item columns must be
+selected in the same order during fitting and scoring.
 
 Balanced acquiescence scoring pairs positively and negatively worded items to
 separate agreement tendency from item content. Python workflows accept

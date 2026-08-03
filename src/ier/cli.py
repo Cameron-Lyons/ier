@@ -18,16 +18,20 @@ from ier import (
     composite,
     composite_scores,
     composite_summary,
+    fit_psychsyn_model,
     fit_response_time_mixture,
     index_catalog,
     load_archive,
+    load_psychsyn_model,
     load_response_time_archive,
     load_response_time_mixture_model,
     load_score_archive,
+    psychsyn_model_scores,
     response_time,
     response_time_consistency,
     response_time_mixture,
     response_time_mixture_scores,
+    save_psychsyn_model,
     save_response_time_mixture_model,
     screen,
     screen_scores,
@@ -510,7 +514,7 @@ def _build_parser() -> argparse.ArgumentParser:
     archive_info_parser.add_argument(
         "archive",
         type=Path,
-        help="Validated screen, composite, response-time, or timing-model .npz archive",
+        help="Validated result, response-time model, or psychometric-pair model .npz archive",
     )
     _add_metadata_output_options(archive_info_parser)
 
@@ -662,6 +666,70 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_output_options(response_time_reflag_parser)
 
+    psychsyn_fit_parser = sub.add_parser(
+        "psychsyn-fit",
+        help="Fit and save a reusable psychometric pair calibration.",
+    )
+    psychsyn_fit_parser.add_argument(
+        "data",
+        type=Path,
+        help="Reference CSV/TSV/whitespace or .npy response matrix",
+    )
+    psychsyn_fit_parser.add_argument(
+        "model",
+        type=Path,
+        help="Destination model archive ending in .npz",
+    )
+    psychsyn_fit_parser.add_argument(
+        "--critval",
+        type=float,
+        default=None,
+        help="Pair correlation threshold (default: 0.6, or -0.6 for --antonym)",
+    )
+    psychsyn_fit_parser.add_argument(
+        "--antonym",
+        action="store_true",
+        help="Fit negatively correlated antonym pairs instead of synonym pairs",
+    )
+    _add_matrix_input_options(psychsyn_fit_parser)
+
+    psychsyn_score_parser = sub.add_parser(
+        "psychsyn-score",
+        help="Score a matrix with a saved psychometric pair calibration.",
+    )
+    psychsyn_score_parser.add_argument(
+        "data",
+        type=Path,
+        help="CSV/TSV/whitespace or .npy responses; use '-' for standard input",
+    )
+    psychsyn_score_parser.add_argument(
+        "model",
+        type=Path,
+        help="Validated psychometric pair model archive",
+    )
+    psychsyn_score_cutoff = psychsyn_score_parser.add_mutually_exclusive_group()
+    psychsyn_score_cutoff.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Flag scores inclusively at or below a fixed cutoff",
+    )
+    psychsyn_score_cutoff.add_argument(
+        "--percentile",
+        type=float,
+        default=None,
+        help="Flag the lowest sample tail (default: 95, meaning the lowest 5 percent)",
+    )
+    psychsyn_score_parser.add_argument(
+        "--resample-na",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Retry missing-response pair scores (default: true)",
+    )
+    psychsyn_score_parser.add_argument("--random-seed", type=int, default=None)
+    _add_matrix_input_options(psychsyn_score_parser)
+    _add_output_options(psychsyn_score_parser)
+
     screen_reflag_parser = sub.add_parser(
         "screen-reflag",
         help="Reapply screening decisions to stored index scores without rescoring.",
@@ -776,17 +844,37 @@ def _run_command(args: argparse.Namespace) -> int:
             args.id_column,
             _parse_name_list(args.item_columns),
         )
-        model = fit_response_time_mixture(
+        mixture_fit = fit_response_time_mixture(
             matrix,
             n_components=args.components,
             log_transform=args.log_transform,
             random_seed=args.random_seed,
         )
-        save_response_time_mixture_model(args.model, model)
+        save_response_time_mixture_model(args.model, mixture_fit)
         print(
-            f"saved response-time mixture model with {model.n_components} components "
+            f"saved response-time mixture model with {mixture_fit.n_components} components "
             f"to {args.model}"
         )
+        return 0
+
+    if args.command == "psychsyn-fit":
+        if args.model.suffix.casefold() != ".npz":
+            raise ValueError("psychometric pair model output path must end in .npz")
+        matrix, _ = _load_input(
+            args.data,
+            args.delimiter,
+            args.id_column,
+            _parse_name_list(args.item_columns),
+        )
+        default_critval = -0.6 if args.antonym else 0.6
+        pair_fit = fit_psychsyn_model(
+            matrix,
+            critval=default_critval if args.critval is None else args.critval,
+            anto=args.antonym,
+        )
+        save_psychsyn_model(args.model, pair_fit)
+        mode = "antonym" if pair_fit.anto else "synonym"
+        print(f"saved psychometric {mode} model with {pair_fit.n_pairs} pairs to {args.model}")
         return 0
 
     if args.format == "npz":
@@ -859,6 +947,29 @@ def _run_command(args: argparse.Namespace) -> int:
             selected_scores if args.include_components else None,
             valid_score_counts(selected_scores) if args.include_components else None,
         )
+
+    if args.command == "psychsyn-score":
+        pair_model = load_psychsyn_model(args.model)
+        matrix, respondent_ids = _load_input(
+            args.data,
+            args.delimiter,
+            args.id_column,
+            _parse_name_list(args.item_columns),
+        )
+        scores = psychsyn_model_scores(
+            matrix,
+            pair_model,
+            resample_na=args.resample_na,
+            random_seed=args.random_seed,
+        )
+        name = "psychant" if pair_model.anto else "psychsyn"
+        result = screen_scores(
+            {name: scores},
+            percentile=95.0 if args.percentile is None else args.percentile,
+            min_flags=1,
+            thresholds=None if args.threshold is None else {name: args.threshold},
+        )
+        return write_screen_result(args, result, respondent_ids)
 
     response_metric: ResponseTimeMetric | None = None
     mixture_model: ResponseTimeMixtureModel | None = None

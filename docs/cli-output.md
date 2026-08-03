@@ -104,6 +104,37 @@ CLI archives written with `--include-components`. Aggregate-only composite and
 response-time archives do not contain reusable registered-index vectors and are
 rejected with a contextual error.
 
+### Psychometric pair model archives
+
+Reusable synonym and antonym calibrations have a dedicated model schema:
+
+| Member | Type |
+| --- | --- |
+| `schema_version` | Integer scalar (`1`) |
+| `result_type` | Unicode scalar (`psychsyn_model`) |
+| `n_items` | Integer scalar |
+| `critval` | Finite numeric scalar |
+| `anto` | Boolean scalar |
+| `item_pairs` | Two-column integer array |
+
+`save_psychsyn_model()` snapshots and validates the immutable model before
+atomically replacing its destination. `load_psychsyn_model()` rejects missing,
+extra, incorrectly typed, duplicate, self-referencing, or out-of-range pairs and
+returns an independently owned read-only array. Empty two-column pair arrays are
+valid. Generic `load_archive()` retains the validated pairs, while
+`archive-info` reports only the mode, threshold, item count, and pair count so
+metadata output remains bounded for wide calibrations.
+
+```bash
+ier psychsyn-fit reference.csv psychsyn-model.npz --critval 0.6
+ier psychsyn-score later.csv psychsyn-model.npz \
+  --format npz --output psychsyn-scores.npz
+```
+
+The scoring result is an ordinary one-index screen archive and can therefore be
+loaded with `load_score_archive()` or passed to `screen-reflag` without the
+response matrix.
+
 ### Response-time mixture model archives
 
 Persist a fitted reference-cohort calibration separately from respondent result

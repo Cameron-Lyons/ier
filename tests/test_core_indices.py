@@ -881,9 +881,18 @@ class TestPsychometricFunctions(unittest.TestCase):
 
         invalid_models: list[tuple[dict[str, object], str]] = [
             ({"item_pairs": np.empty((0, 2)), "n_items": 1}, "at least 2"),
+            (
+                {"item_pairs": np.empty((0, 2)), "n_items": np.iinfo(np.uint64).max},
+                "platform index range",
+            ),
             ({"item_pairs": np.array([0, 1]), "n_items": 3}, "two-column"),
             ({"item_pairs": np.array([[0.5, 1.0]]), "n_items": 3}, "integer"),
+            ({"item_pairs": np.array([[0 + 1j, 1]]), "n_items": 3}, "numeric"),
             ({"item_pairs": np.array([[0, 3]]), "n_items": 3}, "outside"),
+            (
+                {"item_pairs": np.array([[np.iinfo(np.uint64).max, 0]]), "n_items": 3},
+                "outside",
+            ),
             ({"item_pairs": np.array([[1, 1]]), "n_items": 3}, "itself"),
             (
                 {"item_pairs": np.array([[1, 0], [0, 1]]), "n_items": 3},

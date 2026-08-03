@@ -225,6 +225,21 @@ ier screen responses.csv --indices psychant --psychant-random-seed 29
 Seeds affect only retry draws for undefined within-person correlations. Each
 scorer uses an isolated random stream and leaves NumPy's global state untouched.
 
+Pair discovery can also be fitted once and reused across files or processes:
+
+```bash
+ier psychsyn-fit reference.csv psychsyn-model.npz --item-columns q1,q2,q3,q4
+ier psychsyn-score later.csv psychsyn-model.npz --item-columns q1,q2,q3,q4 \
+  --format npz --output later-scores.npz
+ier archive-info psychsyn-model.npz --format json
+```
+
+The second command emits the standard one-index screening result, including
+scores, low-tail flags, respondent identifiers, and cutoff provenance. Use
+`--threshold VALUE` for an inclusive fixed cutoff or `--percentile VALUE` for a
+sample-relative tail. Add `--antonym` to the fit command for a negative-pair
+calibration. The model enforces the reference item count and column order.
+
 Balanced acquiescence scoring is available without preprocessing item polarity:
 
 ```bash

@@ -69,9 +69,16 @@ Fit psychometric pairs once on a reference cohort and reuse the immutable
 calibration on later matrices with the same item count and column order:
 
 ```python
-from ier import fit_psychsyn_model, psychsyn_model_scores
+from ier import (
+    fit_psychsyn_model,
+    load_psychsyn_model,
+    psychsyn_model_scores,
+    save_psychsyn_model,
+)
 
 model = fit_psychsyn_model(reference_responses, critval=0.6)
+save_psychsyn_model("psychsyn-model.npz", model)
+model = load_psychsyn_model("psychsyn-model.npz")
 later_scores, usable_pairs = psychsyn_model_scores(
     later_responses,
     model,
@@ -81,6 +88,18 @@ later_scores, usable_pairs = psychsyn_model_scores(
 
 Fixed-model scoring never rediscovers pairs. The model retains the fitted
 threshold, synonym/antonym mode, item count, and a read-only owned pair array.
+Its versioned NPZ archive is pickle-free, strictly validated, and atomically
+replaced. The same fit-and-score boundary is available from the command line:
+
+```bash
+ier psychsyn-fit reference.csv psychsyn-model.npz --critval 0.6
+ier psychsyn-score later.csv psychsyn-model.npz --format json --output scores.json
+```
+
+Add `--antonym` when fitting an antonym model; its negative default threshold
+is `-0.6`. Scoring infers the correct registered index and low-tail direction
+from the saved mode. Named item selection must use the same order during both
+commands because the model deliberately stores positions, not source headers.
 
 `mahad_qqplot()` generates dependency-free theoretical chi-square coordinates
 in bounded vector batches. Plotting remains optional; with `plot=False`, large

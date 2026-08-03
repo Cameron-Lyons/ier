@@ -74,7 +74,8 @@ The command-line path is split by responsibility:
   low-level typed, pickle-free NumPy writer.
 - `archive.py` owns atomic same-directory staging, the shared stream writer, and
   public validated save/load boundaries for reusable registered score vectors
-  and response-time results, plus a dedicated mixture-calibration model schema.
+  and response-time results, plus dedicated response-time mixture and
+  psychometric-pair model schemas.
   Its generic result loader reads the declared result type once and dispatches
   to the same complete specialized validators. Generic model inspection returns
   a typed parameter mapping, while the dedicated model loader returns the
@@ -82,6 +83,10 @@ The command-line path is split by responsibility:
 - `response-time-fit` writes that model schema after fitting a selected reference
   matrix. `response-time --mixture-model` validates the model before loading the
   scoring matrix and applies one posterior expectation step without refitting.
+- `psychsyn-fit` writes an immutable positional pair calibration after reference-
+  cohort discovery. `psychsyn-score` validates that model and its item-count
+  contract before applying fixed pairs through the standard one-index screen
+  output path; pair discovery is never entered during scoring.
 
 Screen and composite commands carry the registry's ordered soft-failure map
 through text, JSON, and NPZ serializers and mirror failures to standard error
@@ -318,7 +323,8 @@ Plotting remains optional and reports a centralized install hint from
 - Screening throughput plus in-memory and archive-backed sensitivity reuse:
   `benchmarks/bench_screen.py`.
 - Multi-factor even–odd throughput and memory: `benchmarks/bench_evenodd.py`.
-- Psychometric synonym complete- and missing-data throughput and memory:
+- Psychometric synonym complete- and missing-data throughput, memory, and model
+  archive size/load latency:
   `benchmarks/bench_psychsyn.py`.
 - Predefined semantic/MAD pair throughput and memory: `benchmarks/bench_pair_differences.py`.
 - Mahalanobis covariance, distance, and Q-Q throughput and memory:

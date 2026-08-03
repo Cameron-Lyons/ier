@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.69] - 2026-08-03
+
+### Added
+
+- `save_psychsyn_model()` and `load_psychsyn_model()` add a strict versioned,
+  pickle-free NPZ boundary for reusable synonym and antonym calibrations. The
+  writer snapshots and validates the model before atomic replacement; the loader
+  rejects missing, extra, unsafe, incorrectly typed, duplicate, self-referencing,
+  and out-of-range pair data and reconstructs an owned read-only pair array.
+  Generic archive inspection exposes typed model metadata without dumping large
+  pair payloads. New `psychsyn-fit` and `psychsyn-score` commands provide named-
+  column reference fitting and fixed-pair scoring through existing text, JSON,
+  CSV, and NPZ screen outputs. The maintained benchmark round-trips the model and
+  reports archive size and load latency. No dependency is added.
+
 ## [2.19.68] - 2026-08-03
 
 ### Added
