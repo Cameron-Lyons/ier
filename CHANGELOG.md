@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.61] - 2026-08-03
+
+### Fixed
+
+- Summary helpers now return `NaN` distribution statistics and zero valid counts
+  for entirely unavailable score vectors without emitting runtime warnings. The
+  shared reducer compacts partially missing values once, preserves established
+  finite-value results and public return shapes, and adds no dependency.
+
 ## [2.19.60] - 2026-08-03
 
 ### Added

@@ -118,7 +118,9 @@ from `ier` for compact distribution, coverage, and method-specific diagnostics.
 Their return contracts are exposed as `MahadSummary`, `MarkovSummary`, and
 `PsychsynSummary`, so editors and static type checkers can discover every field
 without falling back to an unstructured dictionary. Calculations and missing-data
-semantics match the corresponding scoring functions.
+semantics match the corresponding scoring functions. If every score is unavailable,
+the distribution fields are `NaN` while the coverage fields report zero valid scores;
+this is a normal result and does not emit a runtime warning.
 
 ## Response-time indices (standalone — not in the registry)
 

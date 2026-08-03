@@ -445,6 +445,20 @@ class TestMahadFunction(unittest.TestCase):
         self.assertIn("outliers", summary)
         self.assertIn("total", summary)
 
+    def test_mahad_summary_reports_partially_missing_cohort(self) -> None:
+        """Available distances retain statistics when incomplete rows are removed."""
+        data = np.array([[1.0, 2.0], [2.0, 1.0], [3.0, 4.0], [4.0, 3.0], [np.nan, 2.0]])
+
+        summary = mahad_summary(data, na_rm=True)
+
+        self.assertEqual(summary["total"], 5)
+        self.assertEqual(summary["valid_count"], 4)
+        self.assertEqual(summary["missing_count"], 1)
+        statistics = np.array(
+            [summary["mean"], summary["std"], summary["min"], summary["max"], summary["median"]]
+        )
+        self.assertTrue(np.all(np.isfinite(statistics)))
+
 
 class TestEvenOddFunction(unittest.TestCase):
     """Test suite for even-odd consistency scoring function.
@@ -968,6 +982,27 @@ class TestPsychometricFunctions(unittest.TestCase):
         self.assertIn("std_score", summary)
         self.assertIn("item_pairs", summary)
         self.assertIn("total_individuals", summary)
+
+    def test_psychsyn_summary_handles_no_available_pairs(self) -> None:
+        """No qualifying item pairs produce defined coverage without warnings."""
+        data = np.array([[1.0, 2.0, 3.0], [3.0, 1.0, 2.0], [2.0, 3.0, 1.0]])
+
+        summary = psychsyn_summary(data, critval=0.99)
+
+        self.assertEqual(summary["item_pairs"], 0)
+        self.assertEqual(summary["total_individuals"], 3)
+        self.assertEqual(summary["valid_individuals"], 0)
+        self.assertEqual(summary["missing_individuals"], 3)
+        statistics = np.array(
+            [
+                summary["mean_score"],
+                summary["std_score"],
+                summary["min_score"],
+                summary["max_score"],
+                summary["median_score"],
+            ]
+        )
+        self.assertTrue(np.all(np.isnan(statistics)))
 
     def test_psychsyn_validation(self) -> None:
         """Test psychsyn raises appropriate errors for invalid inputs."""
