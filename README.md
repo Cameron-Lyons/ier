@@ -443,6 +443,33 @@ conflicts are rejected. Text summarizes coverage and top counts; JSON and CSV
 preserve aligned respondent detail; NPZ uses the reusable consensus schema. No
 source matrix is loaded and no additional dependency is required.
 
+Independently persisted signal batches can also be joined without rebuilding
+either batch:
+
+```python
+from ier import merge_flag_consensus_archives
+
+merged = merge_flag_consensus_archives(
+    ["pattern-consensus.npz", "timing-consensus.npz"],
+    min_flags=3,
+    min_valid_signals=4,
+)
+```
+
+```bash
+ier consensus-merge pattern-consensus.npz timing-consensus.npz \
+  --min-flags 3 --min-valid-signals 4 \
+  --format npz --output merged-consensus.npz
+```
+
+The merge preserves archive and signal order, including the optional score
+subset that defines availability. Stored aggregate decisions are recomputed with
+the new rules. Fully identified inputs align every vector to the first archive's
+ID order; unidentified inputs require equal counts and retain row order. Mixed
+identity state, mismatched ID sets, and duplicate signals are rejected. All four
+output formats are available, and NPZ output may atomically replace an input
+after every source has loaded successfully.
+
 Revisit only the final agreement or availability rule without rebuilding the
 cross-domain archive:
 

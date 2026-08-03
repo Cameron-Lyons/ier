@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.77] - 2026-08-03
+
+### Added
+
+- `merge_flag_consensus_archives()` and `ier consensus-merge` combine two or
+  more independently persisted consensus-signal batches without rescoring.
+  Signal and optional-score order follows the input archives, stored decision
+  aggregates are replaced by caller-selected agreement and availability rules,
+  and duplicate signals are rejected. Fully identified inputs align every
+  vector to the first archive's respondent order; mixed identity state,
+  different counts, and mismatched ID sets are rejected. Text, strict JSON,
+  streaming CSV, and atomic reusable NPZ outputs are supported, including safe
+  replacement of an input archive. On the maintained 500,000-respondent,
+  10-signal benchmark, two 46.7 MiB input archives validate and merge in 25.1 ms
+  with 59.8 MiB traced peak. No dependency is added.
+
 ## [2.19.76] - 2026-08-03
 
 ### Added

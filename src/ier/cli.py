@@ -29,6 +29,7 @@ from ier import (
     load_response_time_archive,
     load_response_time_mixture_model,
     load_score_archive,
+    merge_flag_consensus_archives,
     merge_score_archives,
     psychsyn_model_scores,
     response_time,
@@ -653,6 +654,30 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     _add_output_options(archive_consensus_parser)
 
+    consensus_merge_parser = sub.add_parser(
+        "consensus-merge",
+        help="Merge independently persisted consensus signals without rescoring.",
+    )
+    consensus_merge_parser.add_argument(
+        "archives",
+        type=Path,
+        nargs="+",
+        help="Two or more validated flag-consensus archives, in signal order",
+    )
+    consensus_merge_parser.add_argument(
+        "--min-flags",
+        type=int,
+        default=2,
+        help="Minimum total signal flags for consensus (default: 2)",
+    )
+    consensus_merge_parser.add_argument(
+        "--min-valid-signals",
+        type=int,
+        default=None,
+        help="Minimum available signals required for consensus eligibility",
+    )
+    _add_output_options(consensus_merge_parser)
+
     consensus_reflag_parser = sub.add_parser(
         "consensus-reflag",
         help="Reapply agreement or coverage rules to stored consensus signals.",
@@ -1093,6 +1118,14 @@ def _run_command(args: argparse.Namespace) -> int:
             thresholds=_parse_thresholds(args.threshold),
             percentiles=_parse_percentiles(args.index_percentile),
             timing_name=args.timing_name,
+            min_flags=args.min_flags,
+            min_valid_signals=args.min_valid_signals,
+        )
+        return write_flag_consensus_result(args, consensus_result)
+
+    if args.command == "consensus-merge":
+        consensus_result = merge_flag_consensus_archives(
+            args.archives,
             min_flags=args.min_flags,
             min_valid_signals=args.min_valid_signals,
         )

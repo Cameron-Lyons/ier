@@ -19,6 +19,7 @@ from ier import (
     load_response_time_archive,
     load_response_time_mixture_model,
     load_score_archive,
+    merge_flag_consensus_archives,
     merge_score_archives,
     psychsyn_model_scores,
     response_time_mixture_scores,
@@ -284,6 +285,119 @@ def test_archive_consensus_rejects_unsafe_alignment_and_selection(tmp_path: Path
         flag_consensus_archives(scores_path, fewer)
     with pytest.raises(ValueError, match="respondent ID sets must match"):
         flag_consensus_archives(scores_path, different_ids)
+
+
+def test_flag_consensus_archive_merge_aligns_ids_and_recomputes_decisions(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "first.npz"
+    second = tmp_path / "second.npz"
+    save_flag_consensus_archive(
+        first,
+        {
+            "pattern": [True, False, True],
+            "consistency": [False, True, False],
+        },
+        scores={"pattern": [1.0, np.nan, 1.0]},
+        min_flags=1,
+        respondent_ids=["case-a", "case-b", "case-c"],
+    )
+    save_flag_consensus_archive(
+        second,
+        {
+            "speed": [True, True, False],
+            "timing": [False, True, True],
+        },
+        scores={"speed": [0.4, 0.5, 2.0]},
+        min_flags=2,
+        respondent_ids=["case-c", "case-a", "case-b"],
+    )
+
+    merged = merge_flag_consensus_archives(
+        [first, second],
+        min_flags=3,
+        min_valid_signals=4,
+    )
+
+    assert merged["schema_version"] == 1
+    assert merged["result_type"] == "flag_consensus"
+    assert merged["n_respondents"] == 3
+    assert merged["n_signals"] == 4
+    assert merged["signal_names"] == ["pattern", "consistency", "speed", "timing"]
+    assert list(merged["scores"]) == ["pattern", "speed"]
+    assert merged["respondent_ids"] == ["case-a", "case-b", "case-c"]
+    assert merged["min_flags"] == 3
+    assert merged["min_valid_signals"] == 4
+    np.testing.assert_array_equal(merged["flags"]["speed"], [True, False, True])
+    np.testing.assert_array_equal(merged["flags"]["timing"], [True, True, False])
+    np.testing.assert_array_equal(merged["scores"]["speed"], [0.5, 2.0, 0.4])
+    np.testing.assert_array_equal(merged["flag_counts"], [3, 2, 2])
+    np.testing.assert_array_equal(merged["valid_signal_counts"], [4, 3, 4])
+    np.testing.assert_array_equal(merged["consensus_eligible"], [True, False, True])
+    np.testing.assert_array_equal(merged["consensus_flags"], [True, False, False])
+
+
+def test_flag_consensus_archive_merge_supports_shared_unidentified_order(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "first.npz"
+    second = tmp_path / "second.npz"
+    save_flag_consensus_archive(first, {"pattern": [True, False]})
+    save_flag_consensus_archive(second, {"speed": [False, True]})
+
+    merged = merge_flag_consensus_archives([first, second], min_flags=1)
+
+    assert merged["respondent_ids"] is None
+    assert merged["signal_names"] == ["pattern", "speed"]
+    np.testing.assert_array_equal(merged["consensus_flags"], [True, True])
+
+
+def test_flag_consensus_archive_merge_rejects_unsafe_inputs(tmp_path: Path) -> None:
+    base = tmp_path / "base.npz"
+    aligned = tmp_path / "aligned.npz"
+    unidentified = tmp_path / "unidentified.npz"
+    fewer = tmp_path / "fewer.npz"
+    different_ids = tmp_path / "different-ids.npz"
+    duplicate = tmp_path / "duplicate.npz"
+    save_flag_consensus_archive(
+        base,
+        {"pattern": [True, False, True]},
+        respondent_ids=["case-a", "case-b", "case-c"],
+    )
+    save_flag_consensus_archive(
+        aligned,
+        {"speed": [False, True, False]},
+        respondent_ids=["case-a", "case-b", "case-c"],
+    )
+    save_flag_consensus_archive(unidentified, {"speed": [False, True, False]})
+    save_flag_consensus_archive(fewer, {"speed": [False, True]})
+    save_flag_consensus_archive(
+        different_ids,
+        {"speed": [False, True, False]},
+        respondent_ids=["case-a", "case-b", "other"],
+    )
+    save_flag_consensus_archive(
+        duplicate,
+        {"pattern": [False, True, False]},
+        respondent_ids=["case-a", "case-b", "case-c"],
+    )
+
+    with pytest.raises(TypeError, match="paths must be a sequence"):
+        merge_flag_consensus_archives(str(base))
+    with pytest.raises(ValueError, match="at least two flag-consensus archives"):
+        merge_flag_consensus_archives([base])
+    with pytest.raises(ValueError, match="same number of respondents"):
+        merge_flag_consensus_archives([base, fewer])
+    with pytest.raises(ValueError, match="all include respondent IDs"):
+        merge_flag_consensus_archives([base, unidentified])
+    with pytest.raises(ValueError, match="respondent ID sets must match"):
+        merge_flag_consensus_archives([base, different_ids])
+    with pytest.raises(ValueError, match="duplicate consensus signal"):
+        merge_flag_consensus_archives([base, duplicate])
+    with pytest.raises(ValueError, match="min_flags must be a positive integer"):
+        merge_flag_consensus_archives([base, aligned], min_flags=0)
+    with pytest.raises(ValueError, match="cannot exceed the number of flag signals"):
+        merge_flag_consensus_archives([base, aligned], min_valid_signals=3)
 
 
 def test_score_archive_merge_rejects_unsafe_alignment_and_conflicts(tmp_path: Path) -> None:

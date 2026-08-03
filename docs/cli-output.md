@@ -157,6 +157,23 @@ rejected. Text reports signal coverage and ranked flag counts. Strict JSON and
 streaming CSV include aligned per-respondent scores, flags, availability, and
 decisions. NPZ writes the table below through atomic replacement.
 
+Merge independently persisted consensus-signal batches with fresh decision
+rules:
+
+```bash
+ier consensus-merge patterns.npz timing-signals.npz \
+  --min-flags 3 --min-valid-signals 4 \
+  --format npz --output merged-consensus.npz
+```
+
+`consensus-merge` validates every source, preserves archive and signal order,
+aligns fully identified inputs to the first archive's ID order, and recomputes
+all aggregates. Unidentified inputs must have equal respondent counts. Mixed
+identity state, differing ID sets, and duplicate signals are rejected. Optional
+score subsets remain optional, so omitted scores continue to mean fully
+available. Text, JSON, CSV, and NPZ use the same serializers below; atomic NPZ
+output may safely replace an input because all sources load before writing.
+
 Recompute only the final archived decision without changing its signal inputs:
 
 ```bash

@@ -1193,6 +1193,138 @@ def load_flag_consensus_archive(path: str | Path) -> FlagConsensusArchive:
         return _read_flag_consensus_archive(archive)
 
 
+def _build_flag_consensus_archive(
+    flags: dict[str, np.ndarray],
+    scores: dict[str, np.ndarray],
+    respondent_ids: list[str] | None,
+    *,
+    min_flags: int,
+    min_valid_signals: int | None,
+) -> FlagConsensusArchive:
+    """Assemble one reusable archive result from aligned validated inputs."""
+    consensus = flag_consensus(
+        flags,
+        scores=scores,
+        min_flags=min_flags,
+        min_valid_signals=min_valid_signals,
+    )
+    return {
+        "schema_version": _FLAG_CONSENSUS_ARCHIVE_SCHEMA_VERSION,
+        "result_type": "flag_consensus",
+        "n_respondents": consensus["n_respondents"],
+        "n_signals": consensus["n_signals"],
+        "signal_names": list(flags),
+        "scores": scores,
+        "flags": flags,
+        "flag_counts": consensus["flag_counts"],
+        "valid_signal_counts": consensus["valid_signal_counts"],
+        "consensus_eligible": consensus["consensus_eligible"],
+        "consensus_flags": consensus["consensus_flags"],
+        "min_flags": consensus["min_flags"],
+        "min_valid_signals": consensus["min_valid_signals"],
+        "respondent_ids": None if respondent_ids is None else respondent_ids.copy(),
+    }
+
+
+def merge_flag_consensus_archives(
+    paths: Sequence[str | Path],
+    *,
+    min_flags: int = 2,
+    min_valid_signals: int | None = None,
+) -> FlagConsensusArchive:
+    """
+    Load and merge independently persisted consensus signals.
+
+    At least two validated flag-consensus archives are required. Signal order
+    follows the input archive order and duplicate signal names are rejected. All
+    archives must describe the same respondents: when every archive contains
+    identifiers, every flag and optional score vector is aligned to the first
+    archive's identifier order; when none contains identifiers, equal respondent
+    counts are treated as matching row order. Mixing identified and unidentified
+    archives is rejected.
+
+    Stored aggregate decisions and their thresholds are not combined. The merged
+    result is recomputed from the reusable signal inputs with the supplied rules.
+    Aligned arrays are reused without copying; only vectors whose respondent order
+    differs are reordered.
+
+    Parameters:
+    - paths: Ordered sequence of flag-consensus archive paths to merge.
+    - min_flags: Minimum total flag count required for merged consensus.
+    - min_valid_signals: Optional minimum available-signal count for eligibility.
+
+    Returns:
+    - A reusable in-memory ``FlagConsensusArchive`` in first-archive respondent
+      order, ready for output or ``save_flag_consensus_archive()``.
+
+    Example:
+        >>> from ier import merge_flag_consensus_archives
+        >>> merged = merge_flag_consensus_archives(
+        ...     ["patterns.npz", "timing.npz"],
+        ...     min_valid_signals=3,
+        ... )
+    """
+    if isinstance(paths, (str, bytes, Path)):
+        raise TypeError("paths must be a sequence of flag-consensus archive paths")
+    archive_paths = list(paths)
+    if len(archive_paths) < 2:
+        raise ValueError("at least two flag-consensus archives are required to merge")
+
+    first_archive = load_flag_consensus_archive(archive_paths[0])
+    n_respondents = first_archive["n_respondents"]
+    canonical_ids = first_archive["respondent_ids"]
+    canonical_set = None if canonical_ids is None else set(canonical_ids)
+    merged_flags: dict[str, np.ndarray] = dict(first_archive["flags"])
+    merged_scores: dict[str, np.ndarray] = dict(first_archive["scores"])
+    del first_archive
+
+    for path in archive_paths[1:]:
+        archive = load_flag_consensus_archive(path)
+        if archive["n_respondents"] != n_respondents:
+            raise ValueError("flag-consensus archives must contain the same number of respondents")
+        respondent_ids = archive["respondent_ids"]
+        if (respondent_ids is None) != (canonical_ids is None):
+            raise ValueError(
+                "flag-consensus archives must all include respondent IDs or all omit them"
+            )
+
+        row_order: np.ndarray | None = None
+        if canonical_ids is not None:
+            assert canonical_set is not None
+            assert respondent_ids is not None
+            if set(respondent_ids) != canonical_set:
+                raise ValueError("flag-consensus archive respondent ID sets must match")
+            if respondent_ids != canonical_ids:
+                positions = {
+                    respondent_id: index for index, respondent_id in enumerate(respondent_ids)
+                }
+                row_order = np.fromiter(
+                    (positions[respondent_id] for respondent_id in canonical_ids),
+                    dtype=np.intp,
+                    count=n_respondents,
+                )
+
+        duplicate = next(
+            (name for name in archive["flags"] if name in merged_flags),
+            None,
+        )
+        if duplicate is not None:
+            raise ValueError(f"duplicate consensus signal across archives: {duplicate}")
+        for name, flag_values in archive["flags"].items():
+            merged_flags[name] = flag_values if row_order is None else flag_values[row_order]
+        for name, score_values in archive["scores"].items():
+            merged_scores[name] = score_values if row_order is None else score_values[row_order]
+        del archive
+
+    return _build_flag_consensus_archive(
+        merged_flags,
+        merged_scores,
+        canonical_ids,
+        min_flags=min_flags,
+        min_valid_signals=min_valid_signals,
+    )
+
+
 def merge_score_archives(
     paths: Sequence[str | Path],
     *,
@@ -1423,28 +1555,13 @@ def flag_consensus_archives(
     )
     scores = {**screened["scores"], timing_name: timing_scores}
     flags = {**screened["flags"], timing_name: timing_flags}
-    consensus = flag_consensus(
+    return _build_flag_consensus_archive(
         flags,
-        scores=scores,
+        scores,
+        score_ids,
         min_flags=min_flags,
         min_valid_signals=min_valid_signals,
     )
-    return {
-        "schema_version": _FLAG_CONSENSUS_ARCHIVE_SCHEMA_VERSION,
-        "result_type": "flag_consensus",
-        "n_respondents": consensus["n_respondents"],
-        "n_signals": consensus["n_signals"],
-        "signal_names": list(flags),
-        "scores": scores,
-        "flags": flags,
-        "flag_counts": consensus["flag_counts"],
-        "valid_signal_counts": consensus["valid_signal_counts"],
-        "consensus_eligible": consensus["consensus_eligible"],
-        "consensus_flags": consensus["consensus_flags"],
-        "min_flags": consensus["min_flags"],
-        "min_valid_signals": consensus["min_valid_signals"],
-        "respondent_ids": None if score_ids is None else score_ids.copy(),
-    }
 
 
 def load_archive(path: str | Path) -> InspectableArchive:
