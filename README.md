@@ -100,6 +100,11 @@ resource use. Higher values preserve index and failure ordering and can improve
 large multi-index workloads, but they may increase peak memory. The standard
 library provides the worker pool, so this adds no dependency.
 
+After index scoring, screening flag counts and composite scores are reduced one
+index at a time. Large multi-index workflows therefore avoid a second
+respondent-by-index matrix while retaining every per-index score and flag in the
+result.
+
 Uncompressed `.npy` files are memory-mapped read-only for fast, low-overhead
 loading of large headerless real numeric matrices. Because binary arrays have no
 column headers, `--id-column`, `--item-columns`, and `--delimiter` do not apply.
@@ -154,6 +159,7 @@ Benchmarks:
 
 ```bash
 uv run python benchmarks/bench_screen.py
+uv run python benchmarks/bench_orchestration.py
 uv run python benchmarks/bench_cli_output.py
 uv run python benchmarks/bench_detection.py
 ```

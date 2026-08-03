@@ -94,8 +94,7 @@ def main() -> None:
     labels = np.array([0] * args.attentive + [1] * args.careless)
 
     result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
-    flag_matrix = np.column_stack([result["flags"][name] for name in result["indices_used"]])
-    n_flags = flag_matrix.sum(axis=1)
+    n_flags = result["flag_counts"]
     detected = n_flags >= args.flag_threshold
 
     tp = int(np.sum(detected & (labels == 1)))

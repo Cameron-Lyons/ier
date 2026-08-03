@@ -2,6 +2,7 @@
 
 import unittest
 from typing import Any, cast
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -9,7 +10,7 @@ import pytest
 from ier import IndexOptions
 from ier.acquiescence import acquiescence, acquiescence_flag
 from ier.mahad import mahad
-from ier.screen import screen
+from ier.screen import _count_flags, screen
 from ier.visualize import plot_distributions, plot_flag_counts, plot_flagged_heatmap
 
 
@@ -143,6 +144,22 @@ class TestScreen(unittest.TestCase):
     def test_flag_counts_length(self) -> None:
         result = screen(self.data)
         self.assertEqual(len(result["flag_counts"]), 30)
+
+    def test_flag_counts_accumulate_without_stacking(self) -> None:
+        flags = {
+            "first": np.array([True, False, True, False]),
+            "second": np.array([False, True, True, False]),
+            "third": np.array([True, True, False, False]),
+        }
+
+        with patch(
+            "ier.screen.np.column_stack",
+            side_effect=AssertionError("flag matrix was constructed"),
+        ):
+            counts = _count_flags(flags, 4)
+
+        np.testing.assert_array_equal(counts, np.array([2, 2, 2, 0]))
+        self.assertEqual(counts.dtype, np.dtype(np.int_))
 
     def test_default_consensus_requires_two_index_flags(self) -> None:
         result = screen(self.data)

@@ -33,6 +33,10 @@ _validation / _flagging    ← shared input checks and threshold helpers
   by default. `workers>1` uses a lazily imported standard-library thread pool,
   then records scores and failures in selection order. This keeps default import
   cost and resource use stable while allowing NumPy-heavy scorers to overlap.
+- **Bounded reductions.** Screening flag counts and composite mean, sum, and
+  maximum values accumulate one index at a time. Orchestration retains its
+  documented per-index result vectors but does not construct another complete
+  respondent-by-index matrix for final reductions.
 
 ## Command-line boundaries
 
@@ -104,4 +108,5 @@ Plotting remains optional and reports a centralized install hint from
   JSON under `tests/fixtures/parity/`.
 - Detection-rate simulation: `benchmarks/bench_detection.py`.
 - Throughput microbench: `benchmarks/bench_screen.py`.
+- Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.

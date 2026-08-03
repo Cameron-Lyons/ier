@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.2] - 2026-08-02
+
+### Changed
+
+- Screening flag counts and composite mean, sum, and maximum reductions now
+  accumulate one index at a time instead of constructing additional
+  respondent-by-index matrices. On 500,000 respondents and 20 indices, a
+  standardized composite mean reduces peak temporary allocation from 252.3 MiB
+  to 16.8 MiB and median reduction time from 79.9 to 42.2 ms; screening flag
+  counts drop from 13.4 MiB to 3.9 MiB and from 5.5 to 3.7 ms, without adding a
+  dependency.
+
 ## [2.12.1] - 2026-08-02
 
 ### Changed

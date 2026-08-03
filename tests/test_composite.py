@@ -1,12 +1,20 @@
 """Unit tests for composite IER scorers."""
 
 import unittest
+import warnings
 from typing import Any, cast
+from unittest.mock import patch
 
 import numpy as np
 
 from ier import IndexOptions
-from ier.composite import composite, composite_flag, composite_probability, composite_summary
+from ier.composite import (
+    _combine_scores,
+    composite,
+    composite_flag,
+    composite_probability,
+    composite_summary,
+)
 
 
 class TestComposite(unittest.TestCase):
@@ -214,6 +222,58 @@ class TestComposite(unittest.TestCase):
         data = [[1.1, 1.9, 1.1, 1.9]]
         result = composite(data, indices=["longstring"], standardize=False)
         np.testing.assert_array_equal(result, np.array([1.0]))
+
+    def test_score_combination_matches_matrix_reductions_without_stacking(self) -> None:
+        scores = {
+            "first": np.array([1.0, np.nan, 3.0, np.nan, 5.0]),
+            "constant": np.array([2.0, 2.0, np.nan, np.nan, 2.0]),
+            "third": np.array([np.nan, 4.0, 6.0, np.nan, 8.0]),
+        }
+
+        for standardize in (False, True):
+            prepared: dict[str, np.ndarray] = {}
+            for name, values in scores.items():
+                if not standardize:
+                    prepared[name] = values
+                    continue
+                valid = ~np.isnan(values)
+                if np.sum(valid) <= 1:
+                    prepared[name] = values
+                    continue
+                mean = np.nanmean(values)
+                std = np.nanstd(values)
+                prepared[name] = (values - mean) / std if std > 0 else np.zeros_like(values)
+            matrix = np.column_stack(list(prepared.values()))
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                expected = {
+                    "mean": np.nanmean(matrix, axis=1),
+                    "sum": np.nansum(matrix, axis=1),
+                    "max": np.nanmax(matrix, axis=1),
+                }
+
+            for method in ("mean", "sum", "max"):
+                with (
+                    self.subTest(method=method, standardize=standardize),
+                    patch(
+                        "ier.composite.np.column_stack",
+                        side_effect=AssertionError("score matrix was constructed"),
+                    ),
+                ):
+                    actual = _combine_scores(
+                        scores,
+                        {},
+                        cast("Any", method),
+                        standardize,
+                    )
+                np.testing.assert_allclose(
+                    actual,
+                    expected[method],
+                    rtol=1e-14,
+                    atol=1e-14,
+                    equal_nan=True,
+                )
 
 
 class TestCompositeProbability(unittest.TestCase):

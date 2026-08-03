@@ -162,6 +162,10 @@ The default `workers=1` path remains sequential. Parallel scoring retains the
 requested index and failure order but may use more temporary memory, so benchmark
 representative data before choosing a worker count.
 
+Final screening flag counts and composite reductions use respondent-sized
+workspaces rather than another respondent-by-index matrix, keeping post-scoring
+memory bounded as the number of selected indices grows.
+
 For fast, lossless NumPy workflows, write a versioned, pickle-free archive:
 
 ```bash
