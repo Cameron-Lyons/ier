@@ -1365,16 +1365,73 @@ class TestOnset(unittest.TestCase):
                     )
                     np.testing.assert_array_equal(result, row_path_result)
 
-    def test_complete_fast_path_chunks_workspace(self) -> None:
-        """Bounded batches preserve results when the workspace forces chunks."""
-        rng = np.random.default_rng(23)
-        data = rng.integers(1, 6, size=(250, 60)).astype(float)
-        expected = onset(data, window_size=7, min_items=20)
+    def test_rolling_variability_matches_expanded_windows(self) -> None:
+        """Rolling deviations retain stable sliding-window statistics."""
+        from ier.onset import _running_inconsistency_complete
 
-        with patch("ier.onset._ONSET_BATCH_WORKSPACE_BYTES", 4096):
-            result = onset(data, window_size=7, min_items=20)
+        rng = np.random.default_rng(20260803)
+        data = 1e9 + rng.normal(size=(53, 41))
+        windows = np.lib.stride_tricks.sliding_window_view(data, 7, axis=1)
+        expected = np.std(windows, axis=2)
+
+        result = _running_inconsistency_complete(data, 7)
+
+        np.testing.assert_allclose(result, expected, rtol=2e-7, atol=1e-10)
+
+    def test_batched_changepoints_match_expanded_formula(self) -> None:
+        """Candidate-only workspaces preserve the changepoint definition."""
+        from ier.onset import _SHAO_ZHANG_CRITICAL_VALUE, _shao_zhang_changepoints
+
+        rng = np.random.default_rng(20260803)
+        series = rng.normal(size=(37, 41))
+        n_observations = series.shape[1]
+        prefix_sum = np.cumsum(series, axis=1)
+        prefix_square_sum = np.cumsum(series * series, axis=1)
+        centered_prefix = np.cumsum(
+            series - np.mean(series, axis=1, keepdims=True),
+            axis=1,
+        )
+        trim = max(1, n_observations // 10)
+        candidates = np.arange(trim, n_observations - trim)
+        prefix_positions = candidates - 1
+        variances = (
+            prefix_square_sum[:, prefix_positions]
+            - prefix_sum[:, prefix_positions] ** 2 / candidates
+        )
+        variances = np.maximum(variances, 1e-10)
+        statistics = centered_prefix[:, candidates] ** 2 / variances
+        offsets = np.argmax(statistics, axis=1)
+        max_statistics = np.take_along_axis(statistics, offsets[:, None], axis=1)[:, 0]
+        expected = np.full(len(series), np.nan)
+        detected = max_statistics > _SHAO_ZHANG_CRITICAL_VALUE
+        expected[detected] = trim + offsets[detected]
+
+        result = _shao_zhang_changepoints(series.copy())
 
         np.testing.assert_array_equal(result, expected)
+
+    def test_complete_fast_path_chunks_workspace(self) -> None:
+        """Bounded batches preserve results when the workspace forces chunks."""
+        from ier.onset import _running_inconsistency_complete
+
+        rng = np.random.default_rng(23)
+        data = rng.integers(1, 6, size=(250, 60)).astype(float)
+        original = data.copy()
+        expected = onset(data, window_size=7, min_items=20)
+
+        with (
+            patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 120),
+            patch(
+                "ier.onset._running_inconsistency_complete",
+                wraps=_running_inconsistency_complete,
+            ) as reductions,
+        ):
+            result = onset(data, window_size=7, min_items=20)
+
+        self.assertGreater(reductions.call_count, 2)
+        self.assertTrue(all(call.args[0].size <= 120 for call in reductions.call_args_list))
+        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(data, original)
 
 
 if __name__ == "__main__":

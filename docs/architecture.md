@@ -162,6 +162,10 @@ Split-half individual reliability generates the established seeded item splits
 once, then reuses each bounded respondent block across them. Complete floating
 blocks are centered in their selection buffers, while missing-aware blocks keep
 pairwise-complete correlation semantics and per-respondent valid-split counts.
+Complete-response onset detection derives stable sliding-window variability
+from rolling means and bounded deviation buffers. Its changepoint test retains
+only prefix and candidate-position workspaces instead of complete centered and
+test-statistic matrices; missing-response rows keep the established scalar path.
 Person–total correlation calculates item-profile means and respondent
 correlations in bounded batches as well. The shared kernel accepts the index's
 undefined-correlation policy, so constant person or item profiles remain
@@ -191,6 +195,7 @@ Plotting remains optional and reports a centralized install hint from
 - Predefined semantic/MAD pair throughput and memory: `benchmarks/bench_pair_differences.py`.
 - Guttman error-scoring throughput and memory: `benchmarks/bench_guttman.py`.
 - Split-half reliability throughput and memory: `benchmarks/bench_reliability.py`.
+- Carelessness-onset throughput and memory: `benchmarks/bench_onset.py`.
 - Person–total correlation throughput and memory: `benchmarks/bench_person_total.py`.
 - Row-wise response reduction throughput and memory: `benchmarks/bench_row_reductions.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
