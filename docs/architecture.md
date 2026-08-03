@@ -315,7 +315,8 @@ Plotting remains optional and reports a centralized install hint from
 - Screening throughput plus in-memory and archive-backed sensitivity reuse:
   `benchmarks/bench_screen.py`.
 - Multi-factor even–odd throughput and memory: `benchmarks/bench_evenodd.py`.
-- Psychometric synonym missing-data throughput and memory: `benchmarks/bench_psychsyn.py`.
+- Psychometric synonym complete- and missing-data throughput and memory:
+  `benchmarks/bench_psychsyn.py`.
 - Predefined semantic/MAD pair throughput and memory: `benchmarks/bench_pair_differences.py`.
 - Mahalanobis covariance, distance, and Q-Q throughput and memory:
   `benchmarks/bench_mahad.py`.

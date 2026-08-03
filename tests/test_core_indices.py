@@ -21,12 +21,13 @@ from ier.longstring import (
 )
 from ier.mahad import _compute_mahalanobis_distance, mahad
 from ier.psychsyn import (
+    _complete_item_normalization,
     _compute_complete_person_scores,
     _compute_person_scores,
     _discover_item_pairs,
     _iter_item_correlation_tiles,
     _iter_pairwise_item_correlation_tiles,
-    _normalized_item_columns,
+    _normalized_complete_item_block,
     compute_person_correlations,
     get_highly_correlated_pairs,
     psychant,
@@ -900,16 +901,79 @@ class TestPsychometricFunctions(unittest.TestCase):
         data = rng.normal(size=(5, 17))
 
         with patch("ier.psychsyn._PSYCHSYN_CORRELATION_BLOCK_ELEMENTS", 25):
-            normalized, valid_columns = _normalized_item_columns(data)
-            tiles = list(_iter_item_correlation_tiles(normalized, valid_columns))
+            item_offsets, item_norms, valid_columns = _complete_item_normalization(data)
+            tiles = list(
+                _iter_item_correlation_tiles(
+                    data,
+                    item_offsets,
+                    item_norms,
+                    valid_columns,
+                )
+            )
 
+        expected_correlations = np.corrcoef(data, rowvar=False)
         self.assertTrue(all(len(values) <= 25 for _, _, values in tiles))
+        for rows, columns, values in tiles:
+            np.testing.assert_allclose(
+                values,
+                expected_correlations[rows, columns],
+                rtol=0.0,
+                atol=5e-16,
+            )
         pairs = np.concatenate([np.column_stack((rows, columns)) for rows, columns, _ in tiles])
         expected = np.column_stack(np.tril_indices(data.shape[1], k=-1))
         np.testing.assert_array_equal(
             pairs[np.lexsort((pairs[:, 1], pairs[:, 0]))],
             expected,
         )
+
+    def test_complete_item_normalization_never_allocates_a_cohort_matrix(self) -> None:
+        rng = np.random.default_rng(42)
+        data = rng.normal(size=(37, 19))
+        allocated_shapes: list[tuple[int, ...]] = []
+        real_array = np.array
+
+        def tracked_array(*args: object, **kwargs: object) -> np.ndarray:
+            result = real_array(*args, **kwargs)
+            if result.ndim > 1:
+                allocated_shapes.append(result.shape)
+            return result
+
+        with (
+            patch("ier.psychsyn._PSYCHSYN_CORRELATION_BLOCK_ELEMENTS", 36),
+            patch("ier.psychsyn.np.array", side_effect=tracked_array),
+        ):
+            item_offsets, item_norms, valid_columns = _complete_item_normalization(data)
+
+        self.assertTrue(allocated_shapes)
+        self.assertNotIn(data.shape, allocated_shapes)
+        self.assertTrue(
+            all(np.prod(shape) <= max(36, len(data)) for shape in allocated_shapes),
+            allocated_shapes,
+        )
+
+        with (
+            patch("ier.psychsyn._PSYCHSYN_CORRELATION_BLOCK_ELEMENTS", 36),
+            patch(
+                "ier.psychsyn._normalized_complete_item_block",
+                wraps=_normalized_complete_item_block,
+            ) as normalize_block,
+        ):
+            list(
+                _iter_item_correlation_tiles(
+                    data,
+                    item_offsets,
+                    item_norms,
+                    valid_columns,
+                )
+            )
+
+        for call in normalize_block.call_args_list:
+            row_start, row_stop, column_start, column_stop = call.args[-4:]
+            self.assertLessEqual(
+                (row_stop - row_start) * (column_stop - column_start),
+                36,
+            )
 
     def test_pairwise_item_correlation_tiles_match_scalar_reference(self) -> None:
         """Missing-data tiles match scalar pairwise correlations under tiny bounds."""

@@ -28,8 +28,8 @@ defaults, and options that must be configured before an index can run.
 | `longstring` | Max consecutive identical responses | high | yes | yes | — |
 | `longstring_pattern` | Repeating response patterns | high | yes | yes | `longstring_max_pattern_length`; bounded complete/missing batches |
 | `mahad` | Mahalanobis distance (multivariate outlier) | high | yes | yes | — |
-| `psychsyn` | Psychometric synonym consistency | low | yes | yes | `psychsyn_critval`, retry seed; bounded pairwise-complete missing-data correlations |
-| `psychant` | Psychometric antonym consistency | low | no | yes | `psychant_critval`, retry seed; bounded pairwise-complete missing-data correlations |
+| `psychsyn` | Psychometric synonym consistency | low | yes | yes | `psychsyn_critval`, retry seed; bounded complete and pairwise-complete correlations |
+| `psychant` | Psychometric antonym consistency | low | no | yes | `psychant_critval`, retry seed; bounded complete and pairwise-complete correlations |
 | `person_total` | Agreement with the sample item profile | low* | yes | yes | — |
 | `markov` | Transition entropy | low | yes | yes | bounded dense/sparse and retained-length batches |
 | `missing_rate` | Missing-response proportion | high | no | yes | optional item subset / applicability mask |

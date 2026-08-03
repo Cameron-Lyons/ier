@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.67] - 2026-08-03
+
+### Changed
+
+- Complete-data psychometric synonym and antonym discovery now computes item
+  normalization parameters in capped column blocks and accumulates correlations
+  from bounded respondent blocks. It no longer retains a normalized cohort matrix;
+  pair thresholds, ordering, constant-column handling, and the pairwise-complete
+  missing-data path are preserved. On the maintained 100,000-by-80 independent
+  discovery benchmark, peak traced allocation falls from 64.1 MiB to 7.6 MiB and
+  median runtime from 126.1 ms to 88.4 ms, with no dependency added.
+
 ## [2.19.66] - 2026-08-03
 
 ### Changed
