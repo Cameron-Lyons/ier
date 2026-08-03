@@ -1,8 +1,10 @@
-"""Benchmark complete-data lz scoring and discrimination estimation.
+"""Benchmark complete or missing-response lz scoring and calibration.
 
 Usage:
     uv run python benchmarks/bench_lz.py
     uv run python benchmarks/bench_lz.py --respondents 20000 --items 100 --repeats 5
+    uv run python benchmarks/bench_lz.py --respondents 2000 --items 200 \
+        --missing-rate 0.05
     uv run python benchmarks/bench_lz.py --respondents 5000 --items 1000 \
         --discrimination-only
 """
@@ -28,6 +30,7 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--missing-rate", type=float, default=0.0)
     parser.add_argument("--discrimination-only", action="store_true")
     args = parser.parse_args()
 
@@ -36,11 +39,15 @@ def main() -> None:
             "respondents and items must be at least 2; repeats must be positive; "
             "warmup cannot be negative"
         )
+    if not 0.0 <= args.missing_rate < 1.0:
+        parser.error("missing-rate must be at least 0 and less than 1")
 
     rng = np.random.default_rng(args.seed)
     data = rng.integers(0, 2, size=(args.respondents, args.items)).astype(float)
     data[0] = 0.0
     data[1] = 1.0
+    if args.missing_rate:
+        data[rng.random(data.shape) < args.missing_rate] = np.nan
     scorer = _estimate_discrimination if args.discrimination_only else lz
     label = "discrimination" if args.discrimination_only else "lz"
 
@@ -60,9 +67,9 @@ def main() -> None:
         tracemalloc.stop()
 
     assert result is not None
-    if not np.isfinite(result).all():
+    if np.isinf(result).any() or not np.isfinite(result).any():
         raise RuntimeError("benchmark produced non-finite lz values")
-    print(f"shape={data.shape} repeats={args.repeats}")
+    print(f"shape={data.shape} missing_rate={args.missing_rate} repeats={args.repeats}")
     print(
         f"{label}: median={statistics.median(timings):.4f}s "
         f"peak={statistics.median(peaks) / 1024 / 1024:.1f} MiB"

@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.38] - 2026-08-03
+
+### Performance
+
+- Missing-response LZ fallback scoring now calibrates item correlations across
+  bounded column blocks and solves person abilities and standardized
+  likelihoods in bounded masked row batches. On a 2,000-by-200 binary
+  benchmark with 5% missing responses, median end-to-end time improved from
+  0.3918 to 0.0287 seconds, a 13.6x speedup, while peak traced allocation
+  remained 6.9 MiB. Missing-removal and strict policies, all-missing rows,
+  extreme custom abilities, and scalar fallback results retain their
+  established behavior without adding a dependency.
+
 ## [2.19.37] - 2026-08-03
 
 ### Performance
