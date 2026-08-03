@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] - 2026-08-02
+
+### Fixed
+
+- Percentile-based flagging APIs now consistently reject booleans, non-finite
+  thresholds, and percentiles outside 0–100 instead of silently returning
+  misleading flags.
+- Response-time flagging now shares the same validated threshold implementation
+  as response-matrix indices.
+
 ## [2.6.0] - 2026-08-02
 
 ### Added

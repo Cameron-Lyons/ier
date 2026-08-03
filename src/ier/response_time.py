@@ -9,6 +9,7 @@ import warnings
 
 import numpy as np
 
+from ier._flagging import threshold_flags
 from ier._statistics import normal_pdf
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -85,13 +86,12 @@ def response_time_flag(
     """
     person_times = response_time(times, metric=method)
 
-    if threshold is None:
-        valid_times = person_times[~np.isnan(person_times)]
-        if len(valid_times) == 0:
-            return np.full(len(person_times), False, dtype=bool)
-        threshold = np.percentile(valid_times, cutoff_percentile)
-
-    return person_times < threshold
+    return threshold_flags(
+        person_times,
+        threshold=threshold,
+        percentile=cutoff_percentile,
+        direction="low",
+    )
 
 
 def response_time_consistency(

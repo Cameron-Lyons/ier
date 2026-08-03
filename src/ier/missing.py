@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from ier._flagging import threshold_flags
+from ier._flagging import threshold_flags, validate_percentile, validate_threshold
 from ier._validation import MatrixLike, validate_matrix_input
 
 
@@ -80,24 +80,10 @@ def missing_rate_flag(
     Returns:
     - Tuple of ``(rates, flags)`` aligned to respondent rows.
     """
-    if isinstance(percentile, bool):
-        raise ValueError("percentile must be a finite number between 0 and 100")
-    try:
-        percentile = float(percentile)
-    except (TypeError, ValueError) as error:
-        raise ValueError("percentile must be a finite number between 0 and 100") from error
-    if not np.isfinite(percentile) or not 0.0 <= percentile <= 100.0:
-        raise ValueError("percentile must be a finite number between 0 and 100")
-
-    if threshold is not None:
-        if isinstance(threshold, bool):
-            raise ValueError("threshold must be a finite rate between 0 and 1")
-        try:
-            threshold = float(threshold)
-        except (TypeError, ValueError) as error:
-            raise ValueError("threshold must be a finite rate between 0 and 1") from error
-        if not np.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
-            raise ValueError("threshold must be a finite rate between 0 and 1")
+    percentile = validate_percentile(percentile)
+    threshold = validate_threshold(threshold)
+    if threshold is not None and not 0.0 <= threshold <= 1.0:
+        raise ValueError("threshold must be a finite rate between 0 and 1")
 
     scores = missing_rate(x, item_indices=item_indices)
     flags = threshold_flags(

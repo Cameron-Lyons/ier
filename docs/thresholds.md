@@ -23,6 +23,9 @@ structure, and base rate of IER.
 6. **Report sensitivity.** Show how results change under alternate cutoffs
    (e.g., 90th vs 95th vs 99th percentile).
 
+Percentile-based public flagging helpers reject non-finite thresholds and
+percentiles outside `[0, 100]` instead of silently returning misleading flags.
+
 ## Literature-informed starting points
 
 These are illustrative defaults from common practice, not package guarantees:
