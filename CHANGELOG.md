@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.5] - 2026-08-02
+
+### Changed
+
+- Psychometric synonym and antonym scoring now shares the allocation-light
+  row-correlation kernel with even–odd consistency and evaluates every
+  missing-response and seeded-resampling path in bounded respondent batches.
+  On the 8,000-respondent, 40-item, 741-pair benchmark, median time falls from
+  32.2 to 15.6 ms and peak temporary allocation from 192.4 to 8.2 MiB, without
+  adding a dependency.
+
+### Fixed
+
+- Zero correlation thresholds now select only real item pairs from the strict
+  lower triangle instead of also admitting diagonal and mirrored entries whose
+  triangular-fill value happened to be zero.
+
 ## [2.19.4] - 2026-08-02
 
 ### Changed
