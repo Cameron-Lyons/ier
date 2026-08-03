@@ -259,9 +259,11 @@ IRV, acquiescence, and response-style summaries share bounded row mean and
 population-standard-deviation reductions. Missing-aware blocks track valid
 counts directly, so an entirely unavailable row returns an unavailable score
 without constructing a complete boolean or centered workspace for the input.
-Response-time summaries use the same reductions and partition row medians in
-bounded blocks. Median-based mixture preprocessing therefore does not duplicate
-the complete timing matrix before fitting its respondent-level model.
+Response-time summaries use the same reductions. Missing-aware medians group
+respondents by retained timing count and partition bounded NaN-free matrices,
+avoiding the general missing-value reducer while preserving row order and
+all-missing results. Median-based mixture preprocessing therefore does not
+duplicate the complete timing matrix before fitting its respondent-level model.
 
 ## Optional dependencies
 

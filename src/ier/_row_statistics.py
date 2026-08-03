@@ -51,8 +51,14 @@ def row_mean(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
 def row_median(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
     """Calculate row medians without a complete partition workspace."""
     medians = np.empty(len(x))
+    if ignore_nan:
+        medians.fill(np.nan)
+        for rows, compressed in compressed_row_groups(x, min_columns=1):
+            medians[rows] = _row_median_block(compressed)
+        return medians
+
     for start, stop in row_slices(len(x), x.shape[1]):
-        medians[start:stop] = _row_median_block(x[start:stop], ignore_nan=ignore_nan)
+        medians[start:stop] = _row_median_block(x[start:stop])
     return medians
 
 
@@ -93,17 +99,10 @@ def _row_mean_block(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
     return means
 
 
-def _row_median_block(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
+def _row_median_block(x: np.ndarray) -> np.ndarray:
     """Reduce one bounded block to its row medians."""
-    if not ignore_nan:
-        result: np.ndarray = np.median(x, axis=1)
-        return result
-
-    available = np.any(~np.isnan(x), axis=1)
-    medians = np.full(len(x), np.nan)
-    if np.any(available):
-        medians[available] = np.nanmedian(x[available], axis=1)
-    return medians
+    result: np.ndarray = np.median(x, axis=1)
+    return result
 
 
 def _row_mean_std_block(
