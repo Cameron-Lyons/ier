@@ -2083,6 +2083,117 @@ class TestCli(unittest.TestCase):
         self.assertIn("respondent ID sets must match", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
+    def test_consensus_reflag_preserves_inputs_across_formats_and_in_place(self) -> None:
+        archive = self.root / "consensus.npz"
+        json_out = self.root / "reflagged.json"
+        csv_out = self.root / "reflagged.csv"
+        respondent_ids = ["case-a", "case-b", "case-c", "case-d"]
+        scores = {
+            "pattern": np.asarray([1.0, 1.0, 1.0, np.nan]),
+            "consistency": np.asarray([1.0, 1.0, 1.0, 1.0]),
+            "speed": np.asarray([1.0, 1.0, np.nan, 1.0]),
+        }
+        flags = {
+            "pattern": np.asarray([True, False, True, False]),
+            "consistency": np.asarray([False, True, True, False]),
+            "speed": np.asarray([True, False, False, False]),
+        }
+        save_flag_consensus_archive(
+            archive,
+            flags,
+            scores=scores,
+            min_flags=2,
+            min_valid_signals=3,
+            respondent_ids=respondent_ids,
+        )
+        stdout = StringIO()
+
+        with patch("sys.stdout", stdout):
+            text_code = main(["consensus-reflag", str(archive), "--top", "2"])
+        json_code = main(
+            [
+                "consensus-reflag",
+                str(archive),
+                "--min-flags",
+                "1",
+                "--format",
+                "json",
+                "--output",
+                str(json_out),
+            ]
+        )
+        csv_code = main(
+            [
+                "consensus-reflag",
+                str(archive),
+                "--min-valid-signals",
+                "2",
+                "--format",
+                "csv",
+                "--output",
+                str(csv_out),
+            ]
+        )
+        replace_code = main(
+            [
+                "consensus-reflag",
+                str(archive),
+                "--min-flags",
+                "3",
+                "--no-min-valid-signals",
+                "--format",
+                "npz",
+                "--output",
+                str(archive),
+            ]
+        )
+
+        self.assertEqual([text_code, json_code, csv_code, replace_code], [0, 0, 0, 0])
+        self.assertIn("consensus flagged: 1/4", stdout.getvalue())
+        self.assertIn("consensus eligible: 2/4", stdout.getvalue())
+        self.assertIn("case-c\t2\t2\t0", stdout.getvalue())
+        self.assertIn("case-a\t2\t3\t1", stdout.getvalue())
+
+        payload = json.loads(json_out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["min_flags"], 1)
+        self.assertEqual(payload["min_valid_signals"], 3)
+        self.assertEqual(payload["consensus_eligible"], [True, True, False, False])
+        self.assertEqual(payload["consensus_flags"], [True, True, False, False])
+        self.assertEqual(payload["respondent_ids"], respondent_ids)
+
+        rows = list(csv.DictReader(StringIO(csv_out.read_text(encoding="utf-8"))))
+        self.assertEqual([row["consensus_eligible"] for row in rows], ["1", "1", "1", "1"])
+        self.assertEqual([row["consensus_flag"] for row in rows], ["1", "0", "1", "0"])
+        self.assertEqual([row["speed_score"] for row in rows], ["1.0", "1.0", "", "1.0"])
+
+        replaced = load_flag_consensus_archive(archive)
+        self.assertEqual(replaced["min_flags"], 3)
+        self.assertIsNone(replaced["min_valid_signals"])
+        self.assertEqual(replaced["respondent_ids"], respondent_ids)
+        np.testing.assert_array_equal(replaced["consensus_eligible"], [True, True, True, True])
+        np.testing.assert_array_equal(replaced["consensus_flags"], [False, False, False, False])
+        for name, values in flags.items():
+            np.testing.assert_array_equal(replaced["flags"][name], values)
+            np.testing.assert_array_equal(replaced["scores"][name], scores[name])
+
+    def test_consensus_reflag_reports_invalid_decisions_without_traceback(self) -> None:
+        archive = self.root / "consensus.npz"
+        save_flag_consensus_archive(
+            archive,
+            {"pattern": [True, False], "speed": [False, True]},
+        )
+
+        for option, value, expected in (
+            ("--min-flags", "0", "min_flags must be a positive integer"),
+            ("--min-valid-signals", "3", "cannot exceed the number of flag signals"),
+        ):
+            stderr = StringIO()
+            with self.subTest(option=option), patch("sys.stderr", stderr):
+                code = main(["consensus-reflag", str(archive), option, value])
+            self.assertEqual(code, 1)
+            self.assertIn(expected, stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_response_time_reflag_preserves_mixture_high_tail(self) -> None:
         archive = self.root / "mixture-timing.npz"
         scores = np.asarray([0.1, 0.7, 0.7, 0.9])

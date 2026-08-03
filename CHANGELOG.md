@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.74] - 2026-08-03
+
+### Added
+
+- `ier consensus-reflag` reapplies agreement and availability rules directly to
+  a validated flag-consensus archive. Omitted options preserve the stored
+  settings; `--min-flags` and `--min-valid-signals` override them, while
+  `--no-min-valid-signals` explicitly removes the coverage requirement. Text,
+  strict JSON, streaming CSV, and atomic reusable NPZ outputs retain every
+  signal, optional score, and respondent ID without rescoring. NPZ output may
+  safely replace its source. On the maintained 500,000-respondent, 10-signal
+  benchmark, complete archive validation plus a revised consensus takes 23.5 ms
+  with 60.1 MiB traced peak. No dependency is added.
+
 ## [2.19.73] - 2026-08-03
 
 ### Added

@@ -481,6 +481,8 @@ ier response-time-reflag timing.npz --percentile 1 --format npz --output strict.
 ier archive-consensus screening.npz timing.npz --threshold longstring=8 \
   --index-percentile irv=99 --min-valid-signals 3 \
   --format npz --output consensus.npz
+ier consensus-reflag consensus.npz --min-flags 3 \
+  --min-valid-signals 4 --format json
 ```
 
 Direct timing metrics and consistency scores use low-tail flagging. Mixture
@@ -506,6 +508,10 @@ scores, and aligns timing rows by respondent ID before bounded reduction. If IDs
 are absent from both inputs, equal counts are treated as shared row order; mixed
 or mismatched identity state is rejected. It supports text, JSON, CSV, and
 reusable NPZ output without loading either source matrix.
+Persisted consensus signals can then be reduced again with
+`consensus-reflag`. Omitted settings retain their archived values;
+`--no-min-valid-signals` explicitly removes a stored coverage minimum. The
+command preserves signals, scores, and IDs and may atomically replace its input.
 Mixture fitting excludes respondents whose median time is missing, infinite, or
 non-positive. Its posterior normalization remains stable when ordinary Gaussian
 density calculations underflow for an extreme valid observation. A fitted
