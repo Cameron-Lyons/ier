@@ -437,6 +437,29 @@ class TestLz(unittest.TestCase):
         result = lz(data, theta=theta)
         self.assertEqual(len(result), 2)
 
+    def test_extreme_item_parameters_do_not_overflow(self) -> None:
+        data = np.array([[1.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 1.0]])
+        difficulty = np.array([-1000.0, 1000.0, -1000.0, 1000.0])
+        discrimination = np.ones(4)
+        theta = np.zeros(2)
+
+        complete = lz(
+            data,
+            difficulty=difficulty,
+            discrimination=discrimination,
+            theta=theta,
+        )
+        data[0, 0] = np.nan
+        missing = lz(
+            data,
+            difficulty=difficulty,
+            discrimination=discrimination,
+            theta=theta,
+        )
+
+        self.assertTrue(np.isfinite(complete).all())
+        self.assertTrue(np.isfinite(missing).all())
+
     def test_local_theta_solver_matches_scipy_reference_values(self) -> None:
         cases = [
             ([1, 1, 0, 0], [1, 1, 1, 1], [-1, -0.5, 0.5, 1]),

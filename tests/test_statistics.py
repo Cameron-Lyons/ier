@@ -8,9 +8,44 @@ import numpy as np
 from ier._statistics import (
     chi_square_quantile,
     chi_square_quantiles,
+    logistic_transform,
     normal_pdf,
     normal_quantile,
 )
+
+
+class TestLogisticTransform(unittest.TestCase):
+    def test_extreme_values_are_stable_and_precise(self) -> None:
+        values = np.array([-np.inf, -1000.0, -1.0, 0.0, 1.0, 1000.0, np.inf, np.nan])
+
+        actual = logistic_transform(values)
+
+        expected = np.array(
+            [
+                0.0,
+                0.0,
+                1.0 / (1.0 + np.e),
+                0.5,
+                np.e / (1.0 + np.e),
+                1.0,
+                1.0,
+                np.nan,
+            ]
+        )
+        np.testing.assert_allclose(actual, expected, equal_nan=True)
+        np.testing.assert_array_equal(
+            values,
+            [-np.inf, -1000.0, -1.0, 0.0, 1.0, 1000.0, np.inf, np.nan],
+        )
+
+    def test_integer_inputs_return_float_values_with_the_same_shape(self) -> None:
+        values = np.array([[-1, 0], [1, 2]], dtype=np.int64)
+
+        actual = logistic_transform(values)
+
+        self.assertEqual(actual.shape, values.shape)
+        self.assertEqual(actual.dtype, np.float64)
+        np.testing.assert_allclose(actual, 1.0 / (1.0 + np.exp(-values)))
 
 
 class TestNormalDistribution(unittest.TestCase):

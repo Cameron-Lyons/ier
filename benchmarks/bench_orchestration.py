@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier.composite import _combine_scores, _logistic_transform
+from ier._statistics import logistic_transform
+from ier.composite import _combine_scores
 from ier.screen import _count_flags
 
 if TYPE_CHECKING:
@@ -98,7 +99,7 @@ def main() -> None:
     )
     probability_scores = np.linspace(-1000.0, 1000.0, args.respondents)
     probability_seconds, probability_peak = _measure(
-        lambda: _logistic_transform(probability_scores),
+        lambda: logistic_transform(probability_scores),
         args.repeats,
     )
 

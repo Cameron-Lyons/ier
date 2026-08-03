@@ -29,6 +29,7 @@ from ier._registry import (
     validate_index_names,
     validate_worker_count,
 )
+from ier._statistics import logistic_transform
 from ier._validation import MatrixLike, validate_matrix_input
 
 if TYPE_CHECKING:
@@ -430,23 +431,6 @@ def composite_summary(
     }
 
 
-def _logistic_transform(scores: np.ndarray) -> np.ndarray:
-    """Apply the logistic transform without overflowing at either extreme."""
-    values = np.asarray(scores, dtype=float)
-    result = np.empty_like(values)
-    nonnegative = values >= 0.0
-
-    np.negative(values, out=result)
-    np.exp(result, out=result, where=nonnegative)
-    np.logical_not(nonnegative, out=nonnegative)
-    np.exp(values, out=result, where=nonnegative)
-    denominator = 1.0 + result
-    np.divide(result, denominator, out=result, where=nonnegative)
-    np.logical_not(nonnegative, out=nonnegative)
-    np.reciprocal(denominator, out=result, where=nonnegative)
-    return result
-
-
 @overload
 def composite_probability(
     x: MatrixLike,
@@ -524,7 +508,7 @@ def composite_probability(
             raise TypeError("unexpected diagnostics tuple when return_diagnostics=False")
         z_scores = z_scores_result
 
-    result = _logistic_transform(z_scores)
+    result = logistic_transform(z_scores)
     if return_diagnostics:
         return result, diagnostics
     return result

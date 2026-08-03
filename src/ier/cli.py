@@ -46,7 +46,7 @@ from ier._cli_output import (
 )
 from ier._flagging import resolve_threshold, threshold_flags
 from ier._registry import validate_worker_count
-from ier.composite import _logistic_transform
+from ier._statistics import logistic_transform
 
 
 def _parse_int_list(raw: str | None) -> list[int] | None:
@@ -617,7 +617,7 @@ def _run_command(args: argparse.Namespace) -> int:
             direction="high",
             inclusive=args.threshold is not None,
         )
-    probabilities = _logistic_transform(scores) if args.include_probability else None
+    probabilities = logistic_transform(scores) if args.include_probability else None
 
     if args.format == "json":
         _write_json_output(

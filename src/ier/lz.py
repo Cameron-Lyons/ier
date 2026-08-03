@@ -17,6 +17,7 @@ References:
 
 import numpy as np
 
+from ier._statistics import logistic_transform
 from ier._validation import MatrixLike, validate_matrix_input
 
 _LZ_BATCH_ELEMENTS = 10_240
@@ -275,11 +276,7 @@ def _ml_theta_batch(responses: np.ndarray, a: np.ndarray, b: np.ndarray) -> np.n
 
     for _ in range(64):
         linear_predictor = a * (estimates[:, None] - b)
-        probabilities = np.empty_like(linear_predictor, dtype=float)
-        non_negative = linear_predictor >= 0.0
-        probabilities[non_negative] = 1.0 / (1.0 + np.exp(-linear_predictor[non_negative]))
-        exponential = np.exp(linear_predictor[~non_negative])
-        probabilities[~non_negative] = exponential / (1.0 + exponential)
+        probabilities = logistic_transform(linear_predictor)
 
         score = np.sum(a * (active_responses - probabilities), axis=1)
         score_converged = active & (np.abs(score) <= 1e-12)
@@ -321,11 +318,7 @@ def _ml_theta(responses: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
 
     for _ in range(64):
         linear_predictor = a * (theta - b)
-        probabilities = np.empty_like(linear_predictor, dtype=float)
-        non_negative = linear_predictor >= 0.0
-        probabilities[non_negative] = 1.0 / (1.0 + np.exp(-linear_predictor[non_negative]))
-        exponential = np.exp(linear_predictor[~non_negative])
-        probabilities[~non_negative] = exponential / (1.0 + exponential)
+        probabilities = logistic_transform(linear_predictor)
 
         score = float(np.sum(a * (responses - probabilities)))
         if abs(score) <= 1e-12:
@@ -414,7 +407,7 @@ def _compute_lz_batch(
     theta: np.ndarray,
 ) -> np.ndarray:
     """Compute lz scores for one complete response batch."""
-    prob = 1 / (1 + np.exp(-a * (theta[:, None] - b)))
+    prob = logistic_transform(a * (theta[:, None] - b))
     prob = np.clip(prob, 1e-10, 1 - 1e-10)
     log_prob = np.log(prob)
     log_one_minus_prob = np.log(1 - prob)
@@ -446,7 +439,7 @@ def _compute_lz_row(
     theta: float,
 ) -> float:
     """Compute one lz score for the missing-data fallback path."""
-    prob = 1 / (1 + np.exp(-a * (theta - b)))
+    prob = logistic_transform(a * (theta - b))
     prob = np.clip(prob, 1e-10, 1 - 1e-10)
     log_l = np.sum(responses * np.log(prob) + (1 - responses) * np.log(1 - prob))
     expected_l = np.sum(prob * np.log(prob) + (1 - prob) * np.log(1 - prob))

@@ -30,7 +30,7 @@ from ier._cli_output import (
     _write_screen_csv,
     _write_screen_json,
 )
-from ier.composite import _logistic_transform
+from ier._statistics import logistic_transform
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -101,7 +101,7 @@ def _make_composite_result(
     component_scores = {f"score_{index}": values + index / n_indices for index in range(n_indices)}
     valid_index_counts = np.full(n_respondents, n_indices, dtype=np.int_)
     flags = values >= 0.95 if flagged else None
-    probabilities = _logistic_transform(values) if probability else None
+    probabilities = logistic_transform(values) if probability else None
     return values, component_scores, valid_index_counts, flags, probabilities
 
 
