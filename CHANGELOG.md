@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.0] - 2026-08-02
+
+### Added
+
+- All composite APIs now accept optional positive finite per-index `weights`,
+  applied after direction correction and optional standardization. Weighted
+  means renormalize over the indices available for each respondent, partial
+  mappings leave unspecified selected indices at weight 1, and resolved
+  weights are included in composite summaries. The CLI accepts repeatable
+  `--weight INDEX=VALUE` options and records explicit overrides in text, JSON,
+  and NPZ metadata without adding a dependency. On a 500,000-respondent,
+  20-index standardized mean, weighting adds about 4.5 ms and 3.9 MiB of
+  temporary allocation over the equal-weight reducer.
+
+### Changed
+
+- Standardizing a constant index now retains its missing values instead of
+  converting them to zero contributions, so per-respondent composite means can
+  correctly exclude unavailable evidence.
+
 ## [2.12.2] - 2026-08-02
 
 ### Changed

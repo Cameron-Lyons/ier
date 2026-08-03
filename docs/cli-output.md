@@ -67,7 +67,9 @@ vector. Summary values use `summary_columns`, `summary_statistics`, and
 ### Composite schema
 
 `composite` archives include the `method` scalar and respondent-aligned `scores`
-float vector.
+float vector. When `--weight` is supplied, aligned `weight_names` and `weights`
+vectors record the explicit overrides; selected indices not listed there use
+weight 1. JSON composite output uses an equivalent optional `weights` object.
 
 ### Response-time schema
 

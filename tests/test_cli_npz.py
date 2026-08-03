@@ -59,6 +59,10 @@ class TestCliNpz(unittest.TestCase):
                     "--indices",
                     "irv",
                     "longstring",
+                    "--weight",
+                    "irv=2",
+                    "--weight",
+                    "longstring=0.5",
                     "--output",
                     str(composite_out),
                 ]
@@ -100,6 +104,8 @@ class TestCliNpz(unittest.TestCase):
         composite_result = read_all(composite_out)
         self.assertEqual(composite_result["result_type"].item(), "composite")
         self.assertEqual(composite_result["method"].item(), "mean")
+        self.assertEqual(composite_result["weight_names"].tolist(), ["irv", "longstring"])
+        self.assertEqual(composite_result["weights"].tolist(), [2.0, 0.5])
         self.assertEqual(composite_result["scores"].shape, (3,))
         self.assertEqual(
             composite_result["respondent_ids"].tolist(), ["case-01", "case-02", "case-03"]

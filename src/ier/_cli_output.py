@@ -308,6 +308,7 @@ def _emit_composite_text(
     method: str,
     top: int,
     respondent_ids: list[str] | None = None,
+    weights: Mapping[str, float] | None = None,
 ) -> str:
     order = np.argsort(scores)[::-1][: max(top, 0)]
     labels = _respondent_label_values(len(scores), respondent_ids)
@@ -315,8 +316,12 @@ def _emit_composite_text(
     lines = [
         f"respondents: {len(scores)}",
         f"method: {method}",
-        f"top composite scores ({label_name}, score):",
     ]
+    if weights:
+        lines.append(
+            "weights: " + ", ".join(f"{name}={weight:g}" for name, weight in weights.items())
+        )
+    lines.append(f"top composite scores ({label_name}, score):")
     for idx in order:
         lines.append(f"  {labels[int(idx)]}\t{float(scores[idx]):.6f}")
     return "\n".join(lines)
@@ -326,9 +331,10 @@ def _emit_composite_json(
     scores: np.ndarray,
     method: str,
     respondent_ids: list[str] | None = None,
+    weights: Mapping[str, float] | None = None,
 ) -> str:
     output = StringIO()
-    _write_composite_json(output, scores, method, respondent_ids)
+    _write_composite_json(output, scores, method, respondent_ids, weights)
     return output.getvalue()
 
 
@@ -337,6 +343,7 @@ def _write_composite_json(
     scores: np.ndarray,
     method: str,
     respondent_ids: list[str] | None = None,
+    weights: Mapping[str, float] | None = None,
 ) -> None:
     """Write composite JSON while bounding respondent-array allocation."""
     payload: dict[str, object] = {
@@ -344,6 +351,8 @@ def _write_composite_json(
         "scores": _JsonArray(scores, "number"),
         "n_respondents": len(scores),
     }
+    if weights:
+        payload["weights"] = dict(weights)
     if respondent_ids is not None:
         payload["respondent_ids"] = _JsonArray(
             _respondent_label_values(len(scores), respondent_ids),

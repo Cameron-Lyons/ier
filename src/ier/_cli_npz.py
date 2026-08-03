@@ -9,6 +9,8 @@ from zipfile import ZIP_STORED, ZipFile
 import numpy as np
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from ier.types import ScreenResult
 
 
@@ -110,6 +112,7 @@ def _write_composite_npz(
     scores: np.ndarray,
     method: str,
     respondent_ids: list[str] | None = None,
+    weights: Mapping[str, float] | None = None,
 ) -> None:
     """Write composite results as a versioned NumPy archive."""
     payload = _metadata("composite", len(scores))
@@ -119,6 +122,9 @@ def _write_composite_npz(
             "scores": np.asarray(scores, dtype=np.float64),
         }
     )
+    if weights:
+        payload["weight_names"] = np.asarray(list(weights), dtype=np.str_)
+        payload["weights"] = np.asarray(list(weights.values()), dtype=np.float64)
     _add_respondent_ids(payload, len(scores), respondent_ids)
     _write_npz_archive(path, payload)
 

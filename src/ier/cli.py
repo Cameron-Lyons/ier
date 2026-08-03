@@ -90,26 +90,40 @@ def _parse_pair_list(raw: str | None) -> list[tuple[int, int]] | None:
     return pairs or None
 
 
-def _parse_thresholds(raw: list[str] | None) -> dict[str, float] | None:
+def _parse_named_floats(
+    raw: list[str] | None,
+    noun: str,
+    *,
+    positive: bool = False,
+) -> dict[str, float] | None:
     if raw is None:
         return None
 
-    thresholds: dict[str, float] = {}
+    values: dict[str, float] = {}
     for entry in raw:
         name, separator, value = entry.partition("=")
         name = name.strip()
         if not separator or not name or not value.strip():
-            raise ValueError(f"invalid threshold '{entry}'; expected INDEX=VALUE")
-        if name in thresholds:
-            raise ValueError(f"duplicate threshold for index: {name}")
+            raise ValueError(f"invalid {noun} '{entry}'; expected INDEX=VALUE")
+        if name in values:
+            raise ValueError(f"duplicate {noun} for index: {name}")
         try:
-            cutoff = float(value)
+            number = float(value)
         except ValueError as err:
-            raise ValueError(f"invalid threshold value for {name}: {value.strip()}") from err
-        if not np.isfinite(cutoff):
-            raise ValueError(f"threshold for {name} must be a finite number")
-        thresholds[name] = cutoff
-    return thresholds
+            raise ValueError(f"invalid {noun} value for {name}: {value.strip()}") from err
+        if not np.isfinite(number) or (positive and number <= 0):
+            requirement = "a positive finite number" if positive else "a finite number"
+            raise ValueError(f"{noun} for {name} must be {requirement}")
+        values[name] = number
+    return values
+
+
+def _parse_thresholds(raw: list[str] | None) -> dict[str, float] | None:
+    return _parse_named_floats(raw, "threshold")
+
+
+def _parse_weights(raw: list[str] | None) -> dict[str, float] | None:
+    return _parse_named_floats(raw, "weight", positive=True)
 
 
 def _options_from_args(args: argparse.Namespace) -> IndexOptions:
@@ -293,6 +307,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--method",
         choices=["mean", "sum", "max", "best_subset"],
         default="mean",
+    )
+    composite_parser.add_argument(
+        "--weight",
+        action="append",
+        default=None,
+        metavar="INDEX=VALUE",
+        help="Positive index weight override; repeat for multiple indices",
     )
     _add_shared_options(composite_parser)
 
@@ -500,11 +521,13 @@ def _run_command(args: argparse.Namespace) -> int:
         _write_output(text, args.output)
         return 0
 
+    weights = _parse_weights(args.weight)
     scores_result = composite(
         matrix,
         indices=args.indices,
         method=args.method,
         options=options,
+        weights=weights,
         strict=args.strict,
         workers=args.workers,
     )
@@ -521,6 +544,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 scores,
                 args.method,
                 respondent_ids,
+                weights,
             ),
         )
         return 0
@@ -529,10 +553,22 @@ def _run_command(args: argparse.Namespace) -> int:
             _write_composite_csv(handle, scores, respondent_ids)
         return 0
     elif args.format == "npz":
-        _write_composite_npz(args.output, scores, args.method, respondent_ids)
+        _write_composite_npz(
+            args.output,
+            scores,
+            args.method,
+            respondent_ids,
+            weights,
+        )
         return 0
     else:
-        text = _emit_composite_text(scores, args.method, args.top, respondent_ids)
+        text = _emit_composite_text(
+            scores,
+            args.method,
+            args.top,
+            respondent_ids,
+            weights,
+        )
     _write_output(text, args.output)
     return 0
 
