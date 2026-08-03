@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.57] - 2026-08-03
+
+### Added
+
+- `save_response_time_mixture_model()` and
+  `load_response_time_mixture_model()` now persist fixed timing calibrations in
+  a dedicated versioned, pickle-free NPZ schema. Writes validate a copied model
+  before atomic replacement; loads reject missing, extra, unsafe, malformed, or
+  inconsistent members and reconstruct independent read-only parameters for
+  exact later-cohort scoring. No dependency is added.
+
 ## [2.19.56] - 2026-08-03
 
 ### Performance

@@ -15,6 +15,7 @@ import numpy as np
 from ier._flagging import resolve_threshold, validate_percentile
 from ier._registry import composite_index_names, validate_index_names
 from ier._validation import validate_score_array, validate_score_vectors
+from ier.response_time import ResponseTimeMixtureModel
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
 
 _ARCHIVE_SCHEMA_VERSION = 1
 _RESPONSE_TIME_ARCHIVE_SCHEMA_VERSION = 2
+_RESPONSE_TIME_MIXTURE_MODEL_SCHEMA_VERSION = 1
 
 
 def _validate_result_type(value: object) -> ScoreArchiveResultType:
@@ -175,6 +177,22 @@ def _numeric_scalar(archive: NpzFile, name: str) -> float:
         _require_member(archive, name),
         name=f"NPZ archive member {name}",
     )
+
+
+def _boolean_scalar(archive: NpzFile, name: str) -> bool:
+    """Load one strict Boolean scalar from an archive."""
+    value = _require_member(archive, name)
+    if value.shape != () or value.dtype.kind != "b":
+        raise ValueError(f"NPZ archive member {name} must be a Boolean scalar")
+    return bool(value.item())
+
+
+def _numeric_vector(archive: NpzFile, name: str) -> np.ndarray:
+    """Load one real numeric vector from an archive."""
+    value = _require_member(archive, name)
+    if value.ndim != 1 or value.dtype.kind not in "fiu":
+        raise ValueError(f"NPZ archive member {name} must be a real numeric vector")
+    return np.asarray(value, dtype=float)
 
 
 def _finite_numeric_scalar(value: object, *, name: str) -> float:
@@ -510,6 +528,107 @@ def _read_response_time_archive(archive: NpzFile) -> ResponseTimeArchive:
         "flags": flags,
         "respondent_ids": respondent_ids,
     }
+
+
+def _read_response_time_mixture_model(archive: NpzFile) -> ResponseTimeMixtureModel:
+    """Validate one open NPZ archive and reconstruct its mixture calibration."""
+    if len(archive.files) != len(set(archive.files)):
+        raise ValueError("response-time mixture model member names must be unique")
+
+    allowed_members = {
+        "schema_version",
+        "result_type",
+        "n_components",
+        "weights",
+        "means",
+        "variances",
+        "log_transform",
+    }
+    unexpected = set(archive.files) - allowed_members
+    if unexpected:
+        raise ValueError(
+            f"response-time mixture model contains unexpected member: {min(unexpected)}"
+        )
+
+    schema_version = _integer_scalar(archive, "schema_version")
+    if schema_version != _RESPONSE_TIME_MIXTURE_MODEL_SCHEMA_VERSION:
+        raise ValueError(
+            "unsupported response-time mixture model schema version: "
+            f"{schema_version}; expected {_RESPONSE_TIME_MIXTURE_MODEL_SCHEMA_VERSION}"
+        )
+    result_type = _string_scalar(archive, "result_type")
+    if result_type != "response_time_mixture_model":
+        raise ValueError(
+            "response-time mixture model result_type must be 'response_time_mixture_model'"
+        )
+    n_components = _integer_scalar(archive, "n_components")
+    if n_components < 2:
+        raise ValueError("response-time mixture model n_components must be at least 2")
+
+    model = ResponseTimeMixtureModel(
+        weights=_numeric_vector(archive, "weights"),
+        means=_numeric_vector(archive, "means"),
+        variances=_numeric_vector(archive, "variances"),
+        log_transform=_boolean_scalar(archive, "log_transform"),
+    )
+    if model.n_components != n_components:
+        raise ValueError("response-time mixture model parameter lengths must match n_components")
+    return model
+
+
+def save_response_time_mixture_model(
+    path: str | Path,
+    model: ResponseTimeMixtureModel,
+) -> None:
+    """Save a mixture calibration as a versioned, pickle-free NPZ archive.
+
+    Validation and parameter copying finish before the destination is opened.
+    The archive is streamed into a same-directory temporary path and atomically
+    replaces the destination only after all members are written.
+
+    Parameters:
+    - path: Explicit destination ending in ``.npz``.
+    - model: Calibration returned by ``fit_response_time_mixture()``.
+    """
+    destination = Path(path)
+    if destination.suffix.casefold() != ".npz":
+        raise ValueError("response-time mixture model output path must end in .npz")
+    if not isinstance(model, ResponseTimeMixtureModel):
+        raise TypeError("model must be a ResponseTimeMixtureModel")
+
+    snapshot = ResponseTimeMixtureModel(
+        weights=model.weights,
+        means=model.means,
+        variances=model.variances,
+        log_transform=model.log_transform,
+    )
+    payload = {
+        "schema_version": np.asarray(
+            _RESPONSE_TIME_MIXTURE_MODEL_SCHEMA_VERSION,
+            dtype=np.int64,
+        ),
+        "result_type": np.asarray("response_time_mixture_model", dtype=np.str_),
+        "n_components": np.asarray(snapshot.n_components, dtype=np.int64),
+        "weights": snapshot.weights,
+        "means": snapshot.means,
+        "variances": snapshot.variances,
+        "log_transform": np.asarray(snapshot.log_transform, dtype=np.bool_),
+    }
+    _write_npz_archive(destination, payload)
+
+
+def load_response_time_mixture_model(path: str | Path) -> ResponseTimeMixtureModel:
+    """Load and validate a versioned, pickle-free mixture calibration archive.
+
+    The returned model owns read-only parameter copies and can be passed directly
+    to ``response_time_mixture_scores()`` for fixed-calibration scoring.
+
+    Parameters:
+    - path: Path to a model archive written by
+      ``save_response_time_mixture_model()``.
+    """
+    with _open_npz_archive(path, label="response-time mixture model") as archive:
+        return _read_response_time_mixture_model(archive)
 
 
 def save_score_archive(

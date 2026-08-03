@@ -11,7 +11,7 @@ For a comprehensive methods review, see
 - Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
-- Validated, pickle-free score and response-time archive persistence
+- Validated, pickle-free score, timing-result, and timing-model archive persistence
 - Auto-detecting archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
@@ -377,15 +377,23 @@ Fit a response-time mixture once on a reference cohort and reuse its immutable
 calibration on later cohorts without repeating EM:
 
 ```python
-from ier import fit_response_time_mixture, response_time_mixture_scores
+from ier import (
+    fit_response_time_mixture,
+    load_response_time_mixture_model,
+    response_time_mixture_scores,
+    save_response_time_mixture_model,
+)
 
 model = fit_response_time_mixture(reference_times, n_components=3, random_seed=42)
-later_probabilities = response_time_mixture_scores(later_times, model)
+save_response_time_mixture_model("timing-model.npz", model)
+calibration = load_response_time_mixture_model("timing-model.npz")
+later_probabilities = response_time_mixture_scores(later_times, calibration)
 ```
 
 Scoring retains the model's log-transform choice and fastest-component meaning;
-missing, infinite, or non-positive respondent medians remain unavailable. CLI
-users can reapply a cutoff without rescoring the original matrix:
+missing, infinite, or non-positive respondent medians remain unavailable. Model
+archives are versioned, pickle-free, strictly validated, and atomically replaced.
+CLI users can reapply a cutoff without rescoring the original matrix:
 
 ```bash
 ier response-time-reflag timing.npz --percentile 1 --format npz --output strict.npz

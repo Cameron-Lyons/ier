@@ -16,7 +16,9 @@
         - load_archive
         - load_score_archive
         - load_response_time_archive
+        - load_response_time_mixture_model
         - save_response_time_archive
+        - save_response_time_mixture_model
         - save_score_archive
         - screen
         - screen_scores
