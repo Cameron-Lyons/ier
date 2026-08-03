@@ -15,6 +15,7 @@ For a comprehensive methods review, see
 - Auto-detecting archive loading and text/JSON metadata inspection
 - Archive-backed screening, composite, and timing sensitivity commands without rescoring
 - Bounded item-correlation discovery for high-dimensional psychometric synonym analyses
+- Contracted complete-data 2PL discrimination estimation for high-item LZ scoring
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format

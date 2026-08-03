@@ -11,6 +11,7 @@ from ier.longstring import longstring_pattern
 from ier.lz import (
     _compute_lz,
     _compute_lz_row,
+    _estimate_discrimination,
     _estimate_theta,
     _ml_theta,
     lz,
@@ -713,6 +714,33 @@ class TestMAD(unittest.TestCase):
             )
 
 
+def _reference_discrimination(x: np.ndarray, *, na_rm: bool) -> np.ndarray:
+    """Evaluate the former per-item point-biserial implementation."""
+    result = np.ones(x.shape[1])
+    total_score = np.nansum(x, axis=1) if na_rm else np.sum(x, axis=1)
+    if np.std(total_score) == 0:
+        return result
+
+    for item_index in range(x.shape[1]):
+        if na_rm:
+            valid = ~np.isnan(x[:, item_index])
+            item_response = x[valid, item_index]
+            scores = total_score[valid]
+        else:
+            item_response = x[:, item_index]
+            scores = total_score
+        if len(np.unique(item_response)) < 2 or np.std(scores) == 0:
+            continue
+        with np.errstate(divide="ignore", invalid="ignore"):
+            correlation = np.corrcoef(item_response, scores)[0, 1]
+        if np.isnan(correlation):
+            continue
+        correlation = np.clip(correlation, -0.99, 0.99)
+        result[item_index] = correlation * 1.7 / np.sqrt(1 - correlation**2)
+        result[item_index] = np.clip(result[item_index], 0.2, 3.0)
+    return result
+
+
 class TestLz(unittest.TestCase):
     """Tests for standardized log-likelihood (lz) functions."""
 
@@ -759,6 +787,51 @@ class TestLz(unittest.TestCase):
         data = [[1, 1, 0, 0], [1, 0, 1, 0]]
         result = lz(data, model="2pl")
         self.assertEqual(len(result), 2)
+
+    def test_complete_discrimination_contraction_matches_itemwise_reference(self) -> None:
+        """Complete binary items share one contraction without changing estimates."""
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(0, 2, size=(257, 37)).astype(float)
+        data[:, 0] = 0.0
+        data[:, 1] = 1.0
+        expected = _reference_discrimination(data, na_rm=True)
+
+        with patch(
+            "ier.lz.np.corrcoef",
+            side_effect=AssertionError("per-item correlations were constructed"),
+        ):
+            actual = _estimate_discrimination(data)
+
+        np.testing.assert_allclose(actual, expected, rtol=0.0, atol=2e-14)
+        self.assertEqual(actual[0], 1.0)
+        self.assertEqual(actual[1], 1.0)
+
+    def test_missing_discrimination_retains_itemwise_reference_path(self) -> None:
+        """Missing-response semantics remain on the established per-item fallback."""
+        rng = np.random.default_rng(43)
+        data = rng.integers(0, 2, size=(101, 13)).astype(float)
+        data[rng.random(data.shape) < 0.08] = np.nan
+
+        for na_rm in (True, False):
+            with self.subTest(na_rm=na_rm):
+                expected = _reference_discrimination(data, na_rm=na_rm)
+                with patch("ier.lz.np.corrcoef", wraps=np.corrcoef) as correlations:
+                    actual = _estimate_discrimination(data, na_rm=na_rm)
+                self.assertGreater(correlations.call_count, 0)
+                np.testing.assert_array_equal(actual, expected)
+
+    def test_constant_total_scores_keep_default_discrimination(self) -> None:
+        """Undefined correlations retain the established default of one."""
+        data = np.asarray(
+            [
+                [1, 1, 0, 0],
+                [1, 0, 1, 0],
+                [0, 1, 0, 1],
+                [0, 0, 1, 1],
+            ]
+        )
+
+        np.testing.assert_array_equal(_estimate_discrimination(data), np.ones(4))
 
     def test_custom_parameters(self) -> None:
         """Test lz with user-specified item parameters."""
