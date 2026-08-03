@@ -104,6 +104,40 @@ CLI archives written with `--include-components`. Aggregate-only composite and
 response-time archives do not contain reusable registered-index vectors and are
 rejected with a contextual error.
 
+### Merging score archives
+
+Separately computed registered-index batches can be merged before sensitivity
+analysis:
+
+```python
+from ier import merge_score_archives, save_score_archive
+
+merged = merge_score_archives(["patterns.npz", "consistency.npz"])
+save_score_archive(
+    "combined.npz",
+    merged["scores"],
+    result_type=merged["result_type"],
+    respondent_ids=merged["respondent_ids"],
+    errors=merged["errors"],
+)
+```
+
+```bash
+ier archive-merge combined.npz patterns.npz consistency.npz
+ier composite-recombine combined.npz --indices irv longstring --method mean
+```
+
+The merge preserves archive and index order. If every input contains respondent
+IDs, vectors are aligned to the first archive's order; different input orders
+are therefore safe. If no input has IDs, all respondent counts must match and
+row order is retained. Mixing identified and unidentified inputs or supplying
+different ID sets is rejected. Duplicate score names and conflicting failure
+messages are also rejected, while a successful score supersedes a stored failure
+for the same index. `--result-type composite` restricts output to components
+accepted by `composite_scores()`. Output is an ordinary versioned score archive,
+may atomically replace an input, and feeds directly into `screen-reflag` or
+`composite-recombine`.
+
 ### Psychometric pair model archives
 
 Reusable synonym and antonym calibrations have a dedicated model schema:

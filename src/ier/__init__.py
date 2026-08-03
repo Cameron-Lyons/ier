@@ -12,6 +12,7 @@ from .archive import load_psychsyn_model as load_psychsyn_model
 from .archive import load_response_time_archive as load_response_time_archive
 from .archive import load_response_time_mixture_model as load_response_time_mixture_model
 from .archive import load_score_archive as load_score_archive
+from .archive import merge_score_archives as merge_score_archives
 from .archive import save_psychsyn_model as save_psychsyn_model
 from .archive import save_response_time_archive as save_response_time_archive
 from .archive import save_response_time_mixture_model as save_response_time_mixture_model
@@ -157,6 +158,7 @@ __all__ = [
     "markov_flag",
     "markov_summary",
     "MarkovSummary",
+    "merge_score_archives",
     "midpoint_responding",
     "missing_rate",
     "missing_rate_flag",

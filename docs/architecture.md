@@ -54,6 +54,12 @@ _validation / _flagging    ← shared input checks and threshold helpers
   replace a reusable source without retaining the raw input matrix or adding a
   runtime dependency; composite replacement explicitly requires component
   retention.
+- **Archive merging.** Independently computed score archives can be joined in
+  input order before those decision layers run. Fully identified archives align
+  vectors to the first archive's respondent order; mixed identity state,
+  mismatched ID sets, duplicate scores, and conflicting failure metadata are
+  rejected. Already aligned vectors are retained without copying, while only
+  differently ordered vectors allocate reordered results.
 
 ## Command-line boundaries
 
@@ -76,6 +82,8 @@ The command-line path is split by responsibility:
   public validated save/load boundaries for reusable registered score vectors
   and response-time results, plus dedicated response-time mixture and
   psychometric-pair model schemas.
+  It also validates multi-archive identity and index contracts before returning
+  one merged score mapping for screen or composite reuse.
   Its generic result loader reads the declared result type once and dispatches
   to the same complete specialized validators. Generic model inspection returns
   a typed parameter mapping, while the dedicated model loader returns the

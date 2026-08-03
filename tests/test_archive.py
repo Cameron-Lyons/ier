@@ -16,6 +16,7 @@ from ier import (
     load_response_time_archive,
     load_response_time_mixture_model,
     load_score_archive,
+    merge_score_archives,
     psychsyn_model_scores,
     response_time_mixture_scores,
     response_time_score_flags,
@@ -96,6 +97,117 @@ def test_detailed_composite_archive_round_trip_supports_reuse(tmp_path: Path) ->
     assert loaded["errors"] == {}
     assert list(loaded["scores"]) == details["indices_used"]
     np.testing.assert_allclose(reused, details["composite"], rtol=1e-14, atol=1e-14)
+
+
+def test_score_archive_merge_aligns_ids_and_preserves_order(tmp_path: Path) -> None:
+    patterns = tmp_path / "patterns.npz"
+    consistency = tmp_path / "consistency.npz"
+    save_score_archive(
+        patterns,
+        {"longstring": np.asarray([10.0, 20.0, 30.0])},
+        respondent_ids=["case-a", "case-b", "case-c"],
+        errors={"mad": "missing item configuration"},
+    )
+    save_score_archive(
+        consistency,
+        {"irv": np.asarray([0.3, 0.1, 0.2])},
+        respondent_ids=["case-c", "case-a", "case-b"],
+        errors={"psychsyn": "no qualifying pairs"},
+    )
+
+    merged = merge_score_archives([patterns, consistency])
+
+    assert merged["schema_version"] == 1
+    assert merged["result_type"] == "screen"
+    assert merged["n_respondents"] == 3
+    assert list(merged["scores"]) == ["longstring", "irv"]
+    assert merged["respondent_ids"] == ["case-a", "case-b", "case-c"]
+    assert merged["errors"] == {
+        "mad": "missing item configuration",
+        "psychsyn": "no qualifying pairs",
+    }
+    np.testing.assert_array_equal(merged["scores"]["longstring"], [10.0, 20.0, 30.0])
+    np.testing.assert_array_equal(merged["scores"]["irv"], [0.1, 0.2, 0.3])
+
+
+def test_score_archive_merge_supports_composite_reuse_and_successful_retry(
+    tmp_path: Path,
+) -> None:
+    first = tmp_path / "first.npz"
+    second = tmp_path / "second.npz"
+    save_score_archive(
+        first,
+        {"irv": np.asarray([0.1, 0.2])},
+        errors={"mad": "missing item configuration"},
+    )
+    save_score_archive(
+        second,
+        {"mad": np.asarray([0.4, 0.8])},
+    )
+
+    merged = merge_score_archives([first, second], result_type="composite")
+    combined = composite_scores(merged["scores"], standardize=False)
+
+    assert merged["result_type"] == "composite"
+    assert merged["respondent_ids"] is None
+    assert merged["errors"] == {}
+    np.testing.assert_allclose(combined, [0.15, 0.3], rtol=0.0, atol=1e-15)
+
+
+def test_score_archive_merge_rejects_unsafe_alignment_and_conflicts(tmp_path: Path) -> None:
+    base = tmp_path / "base.npz"
+    unidentified = tmp_path / "unidentified.npz"
+    fewer = tmp_path / "fewer.npz"
+    different_ids = tmp_path / "different-ids.npz"
+    duplicate = tmp_path / "duplicate.npz"
+    conflicting_error = tmp_path / "conflicting-error.npz"
+    screening_only = tmp_path / "screening-only.npz"
+    save_score_archive(
+        base,
+        {"irv": [0.1, 0.2, 0.3]},
+        respondent_ids=["case-a", "case-b", "case-c"],
+        errors={"mad": "first failure"},
+    )
+    save_score_archive(unidentified, {"longstring": [1.0, 2.0, 3.0]})
+    save_score_archive(fewer, {"longstring": [1.0, 2.0]})
+    save_score_archive(
+        different_ids,
+        {"longstring": [1.0, 2.0, 3.0]},
+        respondent_ids=["case-a", "case-b", "other"],
+    )
+    save_score_archive(
+        duplicate,
+        {"irv": [0.3, 0.2, 0.1]},
+        respondent_ids=["case-a", "case-b", "case-c"],
+    )
+    save_score_archive(
+        conflicting_error,
+        {"longstring": [1.0, 2.0, 3.0]},
+        respondent_ids=["case-a", "case-b", "case-c"],
+        errors={"mad": "different failure"},
+    )
+    save_score_archive(
+        screening_only,
+        {"midpoint": [0.0, 1.0, 0.0]},
+        respondent_ids=["case-a", "case-b", "case-c"],
+    )
+
+    with pytest.raises(TypeError, match="sequence"):
+        merge_score_archives(str(base))
+    with pytest.raises(ValueError, match="at least two"):
+        merge_score_archives([base])
+    with pytest.raises(ValueError, match="all include respondent IDs"):
+        merge_score_archives([base, unidentified])
+    with pytest.raises(ValueError, match="same number of respondents"):
+        merge_score_archives([unidentified, fewer])
+    with pytest.raises(ValueError, match="ID sets must match"):
+        merge_score_archives([base, different_ids])
+    with pytest.raises(ValueError, match="duplicate score index"):
+        merge_score_archives([base, duplicate])
+    with pytest.raises(ValueError, match="conflicting error messages"):
+        merge_score_archives([base, conflicting_error])
+    with pytest.raises(ValueError, match="invalid index"):
+        merge_score_archives([base, screening_only], result_type="composite")
 
 
 def test_aggregate_only_composite_archive_has_actionable_error(tmp_path: Path) -> None:

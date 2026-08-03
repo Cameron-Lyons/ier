@@ -23,6 +23,7 @@
         - load_archive
         - load_psychsyn_model
         - load_score_archive
+        - merge_score_archives
         - load_response_time_archive
         - load_response_time_mixture_model
         - save_response_time_archive
