@@ -16,6 +16,8 @@ import numpy as np
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
 
+_PSYCHSYN_BATCH_ELEMENTS = 262_144
+
 
 def get_highly_correlated_pairs(
     item_correlations: np.ndarray, critval: float, anto: bool
@@ -179,23 +181,25 @@ def psychsyn(
         else:
             return empty_scores
 
-    response_i = x_array[:, item_pairs[:, 0]]
-    response_j = x_array[:, item_pairs[:, 1]]
+    if np.isfinite(x_array).all():
+        scores, diag_values = _compute_complete_person_scores(x_array, item_pairs)
+    else:
+        response_i = x_array[:, item_pairs[:, 0]]
+        response_j = x_array[:, item_pairs[:, 1]]
 
-    person_corrs = compute_person_correlations(response_i, response_j)
+        person_corrs = compute_person_correlations(response_i, response_j)
 
-    invalid_pairs = np.isnan(response_i) | np.isnan(response_j)
-    person_corrs[invalid_pairs] = np.nan
+        invalid_pairs = np.isnan(response_i) | np.isnan(response_j)
+        person_corrs[invalid_pairs] = np.nan
 
-    if resample_na:
-        person_corrs = _resample_missing_correlations(person_corrs, rng)
+        if resample_na:
+            person_corrs = _resample_missing_correlations(person_corrs, rng)
 
-    scores = np.nanmean(person_corrs, axis=1)
+        scores = np.nanmean(person_corrs, axis=1)
+        diag_values = np.sum(~np.isnan(person_corrs), axis=1)
 
     if np.any(np.isnan(scores)) and len(item_pairs) > 0:
         scores = np.nan_to_num(scores, nan=0.0)
-
-    diag_values: np.ndarray = np.sum(~np.isnan(person_corrs), axis=1)
 
     if _return_item_info:
         return (scores, diag_values, item_pairs)
@@ -203,6 +207,26 @@ def psychsyn(
         return (scores, diag_values)
     result: np.ndarray = scores
     return result
+
+
+def _compute_complete_person_scores(
+    x: np.ndarray,
+    item_pairs: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Score finite responses in bounded respondent batches."""
+    scores = np.empty(len(x))
+    n_pairs = len(item_pairs)
+    batch_rows = max(1, _PSYCHSYN_BATCH_ELEMENTS // n_pairs)
+
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        response_i = x[start:stop, item_pairs[:, 0]]
+        response_j = x[start:stop, item_pairs[:, 1]]
+        person_corrs = compute_person_correlations(response_i, response_j)
+        scores[start:stop] = np.mean(person_corrs, axis=1)
+
+    diag_values = np.full(len(x), n_pairs, dtype=int)
+    return scores, diag_values
 
 
 def _resample_missing_correlations(
