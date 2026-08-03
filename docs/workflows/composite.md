@@ -82,6 +82,11 @@ either option enables section scoring before direction correction and
 combination. The command-line equivalents are `--irv-num-split` and
 `--irv-split-points`.
 
+Missing-response retry draws for `psychsyn` and `psychant` can be made
+reproducible with `psychsyn_random_seed` and `psychant_random_seed` through
+`IndexOptions`. Their command-line equivalents are
+`--psychsyn-random-seed` and `--psychant-random-seed`.
+
 Screening-only response-style indices (`u3_poly`, `midpoint`, `acquiescence`,
 `onset`) are excluded from composite combination because they measure different
 constructs and can dilute pattern/consistency signals.

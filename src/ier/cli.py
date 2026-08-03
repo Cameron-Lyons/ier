@@ -142,7 +142,9 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
         scale_min=args.scale_min,
         scale_max=args.scale_max,
         psychsyn_critval=args.psychsyn_critval,
+        psychsyn_random_seed=args.psychsyn_random_seed,
         psychant_critval=args.psychant_critval,
+        psychant_random_seed=args.psychant_random_seed,
         evenodd_factors=_parse_int_list(args.evenodd_factors),
         mad_positive_items=_parse_int_list(args.mad_positive_items),
         mad_negative_items=_parse_int_list(args.mad_negative_items),
@@ -373,7 +375,19 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         help="Score independent indices concurrently (default: 1)",
     )
     parser.add_argument("--psychsyn-critval", type=float, default=0.6)
+    parser.add_argument(
+        "--psychsyn-random-seed",
+        type=int,
+        default=None,
+        help="Seed missing-response psychometric synonym retries",
+    )
     parser.add_argument("--psychant-critval", type=float, default=-0.6)
+    parser.add_argument(
+        "--psychant-random-seed",
+        type=int,
+        default=None,
+        help="Seed missing-response psychometric antonym retries",
+    )
     parser.add_argument(
         "--evenodd-factors",
         default=None,

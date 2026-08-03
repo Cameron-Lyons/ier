@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.52] - 2026-08-03
+
+### Added
+
+- Shared screening and composite workflows now forward independent
+  `psychsyn_random_seed` and `psychant_random_seed` values to missing-response
+  retry scoring. The `screen` and `composite` commands expose the same control
+  through `--psychsyn-random-seed` and `--psychant-random-seed`. Seeded results
+  match direct scorer calls, each scorer retains its isolated random stream,
+  default behavior remains unchanged, and no dependency is added.
+
 ## [2.19.51] - 2026-08-03
 
 ### Added

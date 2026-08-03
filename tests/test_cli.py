@@ -21,6 +21,8 @@ from ier import (
     composite_summary,
     irv,
     lz,
+    psychant,
+    psychsyn,
     save_response_time_archive,
     save_score_archive,
 )
@@ -101,6 +103,46 @@ class TestCli(unittest.TestCase):
                 self.assertEqual(code, 0)
                 payload = json.loads(output.read_text(encoding="utf-8"))
                 np.testing.assert_allclose(payload["scores"]["irv"], expected, rtol=0.0, atol=1e-15)
+
+    def test_psychometric_random_seed_options_match_direct_scores(self) -> None:
+        data = np.array(
+            [
+                [1.0, 1.0, 2.0, 3.0],
+                [1.0, np.nan, 2.0, 3.0],
+                [4.0, 3.0, 2.0, 1.0],
+            ]
+        )
+        path = self.root / "psychometric.csv"
+        np.savetxt(path, data, delimiter=",")
+        item_pairs = np.array([[0, 1], [0, 2], [0, 3]])
+        cases = [
+            ("psychsyn", "--psychsyn-random-seed", psychsyn, 17),
+            ("psychant", "--psychant-random-seed", psychant, 29),
+        ]
+
+        for index, option, scorer, seed in cases:
+            with self.subTest(index=index):
+                output = self.root / f"{index}-seeded.json"
+                with patch("ier.psychsyn._discover_item_pairs", return_value=item_pairs):
+                    expected = scorer(data, resample_na=True, random_seed=seed)
+                    code = main(
+                        [
+                            "screen",
+                            str(path),
+                            "--indices",
+                            index,
+                            option,
+                            str(seed),
+                            "--format",
+                            "json",
+                            "--output",
+                            str(output),
+                        ]
+                    )
+
+                self.assertEqual(code, 0)
+                payload = json.loads(output.read_text(encoding="utf-8"))
+                np.testing.assert_array_equal(payload["scores"][index], expected)
 
     def test_archive_info_auto_detects_score_metadata_in_text_and_json(self) -> None:
         archive = self.root / "scores.npz"
