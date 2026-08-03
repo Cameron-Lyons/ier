@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.34] - 2026-08-03
+
+### Changed
+
+- Command-line result derivation and text, JSON, CSV, and NPZ routing now live
+  in a dedicated `_cli_results` module. The entry module is reduced from 999 to
+  757 lines and no longer imports format serializers, keeping parsing and
+  workflow coordination separate from presentation without changing output.
+- A focused architecture check enforces that result serializers stay behind
+  the dispatch boundary while retaining early NPZ destination validation.
+
 ## [2.19.33] - 2026-08-03
 
 ### Added
