@@ -11,6 +11,7 @@ from ier import (
     load_response_time_archive,
     load_score_archive,
     response_time_score_flags,
+    save_response_time_archive,
     save_score_archive,
     screen,
     screen_scores,
@@ -239,6 +240,168 @@ def test_response_time_archive_requires_complete_pickle_free_npz(tmp_path: Path)
         load_response_time_archive(unsafe)
     with pytest.raises(ValueError, match="must be an NPZ archive"):
         load_response_time_archive(plain)
+
+
+def test_public_response_time_writer_round_trip_preserves_result(tmp_path: Path) -> None:
+    destination = tmp_path / "timing.npz"
+    scores = np.asarray([0.5, 1.0, 2.0, np.nan])
+    flags = np.asarray([True, True, False, False])
+    respondent_ids = ["case-1", "case-2", "case-3", "case-4"]
+
+    save_response_time_archive(
+        str(destination),
+        scores,
+        flags,
+        threshold=1.0,
+        metric="median",
+        respondent_ids=respondent_ids,
+    )
+
+    with np.load(destination, allow_pickle=False) as raw:
+        assert raw.files == [
+            "schema_version",
+            "result_type",
+            "n_respondents",
+            "metric",
+            "flag_direction",
+            "threshold",
+            "scores",
+            "flags",
+            "respondent_ids",
+        ]
+        assert raw["scores"].dtype == np.float64
+        assert raw["flags"].dtype == np.bool_
+        assert all(not raw[name].dtype.hasobject for name in raw.files)
+
+    loaded = load_response_time_archive(destination)
+    assert loaded["metric"] == "median"
+    assert loaded["flag_direction"] == "low"
+    assert loaded["threshold"] == 1.0
+    assert loaded["respondent_ids"] == respondent_ids
+    np.testing.assert_array_equal(loaded["scores"], scores)
+    np.testing.assert_array_equal(loaded["flags"], flags)
+
+
+def test_public_response_time_writer_accepts_exclusive_mixture_flags(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "mixture.npz"
+    scores = np.asarray([0.2, 0.8, 0.95])
+    flags = np.asarray([False, False, True])
+
+    save_response_time_archive(
+        destination,
+        scores,
+        flags,
+        threshold=0.8,
+        metric="mixture",
+        flag_direction="high",
+    )
+
+    loaded = load_response_time_archive(destination)
+    assert loaded["metric"] == "mixture"
+    assert loaded["flag_direction"] == "high"
+    np.testing.assert_array_equal(loaded["flags"], flags)
+
+
+@pytest.mark.parametrize(
+    ("scores", "flags", "metadata", "message"),
+    [
+        ([1.0, 2.0], [True, False], {"threshold": 1.5, "metric": "unknown"}, "metric"),
+        (
+            [1.0, 2.0],
+            [True, False],
+            {"threshold": 1.5, "flag_direction": "sideways"},
+            "flag_direction",
+        ),
+        (
+            [1.0, 2.0],
+            [False, True],
+            {"threshold": 1.5, "flag_direction": "high"},
+            "requires 'low'",
+        ),
+        (
+            [0.1, 0.9],
+            [False, True],
+            {"threshold": 0.5, "metric": "mixture"},
+            "requires 'high'",
+        ),
+        ([1.0, 2.0], [True, False], {"threshold": np.inf}, "threshold must be finite"),
+        ([1.0, 2.0], [True, False], {"threshold": True}, "numeric scalar"),
+        ([1.0, 2.0], [True, False], {"threshold": [1.5]}, "numeric scalar"),
+        ([], [], {"threshold": 1.5}, "scores cannot be empty"),
+        ([[1.0, 2.0]], [True, False], {"threshold": 1.5}, "scores must be one-dimensional"),
+        ([1.0, np.inf], [True, False], {"threshold": 1.5}, "finite values or NaN"),
+        ([1.0, 2.0], [1, 0], {"threshold": 1.5}, "boolean vector"),
+        ([1.0, 2.0], [[True, False]], {"threshold": 1.5}, "boolean vector"),
+        ([1.0, 2.0], [True], {"threshold": 1.5}, "match n_respondents"),
+        ([1.0, 2.0], [False, True], {"threshold": 1.5}, "flags are inconsistent"),
+    ],
+)
+def test_public_response_time_writer_rejects_invalid_core_inputs(
+    tmp_path: Path,
+    scores: object,
+    flags: object,
+    metadata: dict[str, object],
+    message: str,
+) -> None:
+    destination = tmp_path / "timing.npz"
+
+    with pytest.raises(ValueError, match=message):
+        save_response_time_archive(  # type: ignore[arg-type]
+            destination,
+            scores,
+            flags,
+            **metadata,  # type: ignore[arg-type]
+        )
+    assert not destination.exists()
+
+
+def test_public_response_time_writer_rejects_path_and_identifiers(tmp_path: Path) -> None:
+    scores = [1.0, 2.0]
+    flags = [True, False]
+
+    with pytest.raises(ValueError, match="must end in .npz"):
+        save_response_time_archive(tmp_path / "timing.bin", scores, flags, threshold=1.5)
+    with pytest.raises(TypeError, match="sequence of strings"):
+        save_response_time_archive(
+            tmp_path / "timing.npz",
+            scores,
+            flags,
+            threshold=1.5,
+            respondent_ids="ab",
+        )
+    for respondent_ids, message in [
+        (["only-one"], "ID count"),
+        (["case-1", " "], "IDs must be nonblank"),
+        (["same", "same"], "IDs must be unique"),
+        (["case-1", 2], "IDs must be strings"),
+    ]:
+        with pytest.raises(ValueError, match=message):
+            save_response_time_archive(
+                tmp_path / "timing.npz",
+                scores,
+                flags,
+                threshold=1.5,
+                respondent_ids=respondent_ids,  # type: ignore[arg-type]
+            )
+
+
+def test_public_response_time_writer_validates_before_touching_destination(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "timing.npz"
+    destination.write_bytes(b"existing-content")
+
+    with pytest.raises(ValueError, match="flags are inconsistent"):
+        save_response_time_archive(
+            destination,
+            [1.0, 2.0],
+            [False, True],
+            threshold=1.5,
+        )
+
+    assert destination.read_bytes() == b"existing-content"
 
 
 def _base_payload() -> dict[str, np.ndarray]:

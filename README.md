@@ -200,6 +200,11 @@ IDs, and soft failures. Full CLI screen output and detailed composite archives
 written with `--include-components` are compatible as well; schema, registry,
 alignment, and pickle-free safety checks run before reuse.
 
+Response-time results have matching `save_response_time_archive()` and
+`load_response_time_archive()` boundaries. The writer preserves prepared scores,
+Boolean flags, cutoff metadata, and optional identifiers after verifying the
+same fixed or percentile decision contract enforced by the loader.
+
 Composite scores are standardized per index by default. Pass
 `ier composite --no-standardize` to combine directed scores in their original
 units. Text, JSON, and NPZ record the effective setting; CSV remains a compact
@@ -257,7 +262,9 @@ scores. Fixed thresholds are inclusive; sample-relative defaults flag the low
 any returned score vector and pass it to `response_time_score_flags()` to compare
 cutoffs without recalculating row summaries or refitting a mixture. NPZ output
 loads through `load_response_time_archive()`, which validates its schema and
-returns the stored scores ready for the same sensitivity workflow.
+returns the stored scores ready for the same sensitivity workflow. Use
+`save_response_time_archive()` to create the identical interoperable schema from
+Python.
 
 ## Documentation
 

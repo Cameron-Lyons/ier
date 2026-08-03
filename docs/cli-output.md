@@ -149,13 +149,26 @@ respondent-aligned `scores`, and boolean `flags`.
 Load and reflag the retained scores through the public validated boundary:
 
 ```python
-from ier import load_response_time_archive, response_time_score_flags
+from ier import (
+    load_response_time_archive,
+    response_time_score_flags,
+    save_response_time_archive,
+)
 
 saved = load_response_time_archive("timing.npz")
 revised = response_time_score_flags(
     saved["scores"],
-    cutoff_percentile=1,
+    threshold=1.0,
     direction=saved["flag_direction"],
+)
+save_response_time_archive(
+    "revised-timing.npz",
+    saved["scores"],
+    revised,
+    threshold=1.0,
+    metric=saved["metric"],
+    flag_direction=saved["flag_direction"],
+    respondent_ids=saved["respondent_ids"],
 )
 ```
 
@@ -164,6 +177,11 @@ metric and direction compatibility, finite cutoff metadata, aligned score and
 flag vectors, optional respondent identifiers, and agreement between stored
 flags and their cutoff rule. It accepts both inclusive fixed-threshold flags and
 tie-exclusive percentile flags.
+
+`save_response_time_archive()` writes the same CLI-compatible schema and checks
+all scores, Boolean flags, cutoff metadata, direction rules, and optional
+identifiers before opening the destination. It streams the validated vectors
+without stacking or adding a runtime dependency.
 
 Consumers should reject unsupported future `schema_version` values rather than
 assuming their layout is unchanged.

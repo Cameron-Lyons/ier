@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -13,11 +13,12 @@ from ier._cli_composite import (
     validate_composite_probabilities,
 )
 from ier.archive import _write_npz_archive as _stream_npz_archive
+from ier.archive import save_response_time_archive
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ier.types import ScreenResult
+    from ier.types import ResponseTimeFlagDirection, ResponseTimeMetric, ScreenResult
 
 
 def _metadata(result_type: str, n_respondents: int) -> dict[str, np.ndarray]:
@@ -214,21 +215,19 @@ def _write_response_time_npz(
     path: Path | None,
     scores: np.ndarray,
     flags: np.ndarray,
-    metric: str,
-    direction: Literal["high", "low"],
+    metric: ResponseTimeMetric,
+    direction: ResponseTimeFlagDirection,
     cutoff: float,
     respondent_ids: list[str] | None = None,
 ) -> None:
     """Write response-time results as a versioned NumPy archive."""
-    payload = _metadata("response_time", len(scores))
-    payload.update(
-        {
-            "metric": np.asarray(metric, dtype=np.str_),
-            "flag_direction": np.asarray(direction, dtype=np.str_),
-            "threshold": np.asarray(cutoff, dtype=np.float64),
-            "scores": np.asarray(scores, dtype=np.float64),
-            "flags": np.asarray(flags, dtype=np.bool_),
-        }
+    destination = _require_npz_output_path(path)
+    save_response_time_archive(
+        destination,
+        scores,
+        flags,
+        threshold=cutoff,
+        metric=metric,
+        flag_direction=direction,
+        respondent_ids=respondent_ids,
     )
-    _add_respondent_ids(payload, len(scores), respondent_ids)
-    _write_npz_archive(path, payload)

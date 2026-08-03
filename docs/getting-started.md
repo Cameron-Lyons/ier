@@ -231,8 +231,9 @@ revised = screen_scores(saved["scores"], percentile=99)
 `save_score_archive()` validates every vector and metadata field before opening
 the destination. Detailed composite NPZ output produced with
 `--include-components` works with the same loader and `composite_scores()`.
-Response-time NPZ output has its own validated `load_response_time_archive()`
-boundary; its retained `scores` feed directly into `response_time_score_flags()`.
+Response-time results have matching `save_response_time_archive()` and
+`load_response_time_archive()` boundaries; retained `scores` feed directly into
+`response_time_score_flags()` and can be written back with revised flags.
 
 ## Next steps
 

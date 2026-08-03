@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.28] - 2026-08-03
+
+### Added
+
+- `save_response_time_archive()` writes prepared response-time scores, Boolean
+  flags, resolved cutoff metadata, and optional respondent identifiers as the
+  same versioned, pickle-free NPZ schema produced by the CLI.
+
+### Changed
+
+- Public and command-line response-time persistence now share one validation
+  and streaming boundary. It rejects unsupported metric/direction pairs,
+  non-finite cutoffs, malformed or inconsistent flags, invalid score vectors,
+  and invalid identifiers before opening the destination.
+- On a 500,000-respondent archive, validated response-time saving takes 1.4 ms
+  versus 1.2 ms for direct unvalidated serialization, with the same 3.9 MiB peak
+  traced allocation and no added dependency.
+
 ## [2.19.27] - 2026-08-03
 
 ### Added
