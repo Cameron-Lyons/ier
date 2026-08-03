@@ -7,6 +7,7 @@ responses using split-half or bootstrap approaches.
 
 import numpy as np
 
+from ier._row_statistics import row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
 
@@ -48,10 +49,11 @@ def individual_reliability(
         raise ValueError("n_splits must be a positive integer")
 
     random_state = np.random.RandomState(random_seed) if random_seed is not None else None
-    correlation_sum = np.zeros(n_persons)
-    valid_split_counts = np.zeros(n_persons, dtype=np.intp)
     half = n_items // 2
-    has_missing = bool(np.isnan(x_array).any())
+    has_missing = any(
+        np.isnan(x_array[start:stop]).any() for start, stop in row_slices(n_persons, n_items)
+    )
+    splits: list[tuple[np.ndarray, np.ndarray]] = []
 
     for _ in range(n_splits):
         indices = (
@@ -59,14 +61,18 @@ def individual_reliability(
             if random_state is None
             else random_state.permutation(n_items)
         )
-        first_half = indices[:half]
-        second_half = indices[half : 2 * half]
+        splits.append((indices[:half], indices[half : 2 * half]))
 
-        half1 = x_array[:, first_half]
-        half2 = x_array[:, second_half]
-        split_corr, usable = _paired_split_correlations(half1, half2, has_missing)
-        correlation_sum += split_corr
-        valid_split_counts += usable
+    correlation_sum = np.zeros(n_persons)
+    valid_split_counts = np.zeros(n_persons, dtype=np.intp)
+    for start, stop in row_slices(n_persons, half):
+        block = x_array[start:stop]
+        for first_half, second_half in splits:
+            half1 = block[:, first_half]
+            half2 = block[:, second_half]
+            split_corr, usable = _paired_split_correlations(half1, half2, has_missing)
+            correlation_sum[start:stop] += split_corr
+            valid_split_counts[start:stop] += usable
 
     reliability = np.divide(
         correlation_sum,
@@ -107,6 +113,11 @@ def _paired_split_correlations(
         centered1 = np.where(valid, half1 - mean1, 0.0)
         centered2 = np.where(valid, half2 - mean2, 0.0)
         enough_values = valid_counts >= 2
+    elif np.issubdtype(half1.dtype, np.floating):
+        half1 -= np.mean(half1, axis=1, keepdims=True)
+        half2 -= np.mean(half2, axis=1, keepdims=True)
+        centered1 = half1
+        centered2 = half2
     else:
         centered1 = half1 - np.mean(half1, axis=1, keepdims=True)
         centered2 = half2 - np.mean(half2, axis=1, keepdims=True)

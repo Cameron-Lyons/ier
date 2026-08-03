@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.11] - 2026-08-03
+
+### Added
+
+- A reproducible split-half individual-reliability benchmark with configurable
+  matrix size, response scale, missing rate, split count, and random seeds.
+
+### Changed
+
+- Individual reliability now generates its established random item splits once
+  and scores them across bounded respondent blocks, reusing complete floating
+  selections as centering buffers. On a 100,000-respondent, 80-item benchmark
+  with 20 splits and 10% missing responses, median time falls from 941.9 to
+  579.0 ms and peak temporary allocation from 161.2 to 12.0 MiB, without adding
+  a dependency.
+
 ## [2.19.10] - 2026-08-02
 
 ### Added

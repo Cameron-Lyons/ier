@@ -238,6 +238,7 @@ uv run python benchmarks/bench_evenodd.py
 uv run python benchmarks/bench_psychsyn.py
 uv run python benchmarks/bench_pair_differences.py
 uv run python benchmarks/bench_guttman.py
+uv run python benchmarks/bench_reliability.py
 uv run python benchmarks/bench_person_total.py
 uv run python benchmarks/bench_row_reductions.py
 uv run python benchmarks/bench_lz.py
