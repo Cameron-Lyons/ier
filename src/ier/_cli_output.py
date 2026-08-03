@@ -197,6 +197,22 @@ def _write_index_catalog_csv(handle: TextIO, catalog: IndexCatalog) -> None:
         )
 
 
+def _screen_threshold_text(result: ScreenResult, name: str) -> str:
+    """Format one screening cutoff with its decision provenance."""
+    source = result["threshold_sources"][name]
+    if source == "presence":
+        return "presence"
+
+    cutoff = result["thresholds"][name]
+    assert cutoff is not None
+    if source == "fixed":
+        return f"{cutoff:g} (fixed)"
+
+    percentile = result["percentiles"][name]
+    assert percentile is not None
+    return f"{cutoff:g} (tail percentile={percentile:g})"
+
+
 def _emit_screen_text(
     result: ScreenResult,
     top: int,
@@ -211,8 +227,7 @@ def _emit_screen_text(
         ),
         "flag thresholds: "
         + ", ".join(
-            f"{name}={'presence' if cutoff is None else f'{cutoff:g}'}"
-            for name, cutoff in result["thresholds"].items()
+            f"{name}={_screen_threshold_text(result, name)}" for name in result["thresholds"]
         ),
     ]
     if result["min_valid_indices"] is not None:
@@ -277,6 +292,8 @@ def _write_screen_json(
         "indices_used": result["indices_used"],
         "errors": result["errors"],
         "thresholds": result["thresholds"],
+        "threshold_sources": result["threshold_sources"],
+        "percentiles": result["percentiles"],
         "flag_counts": _JsonArray(np.asarray(result["flag_counts"]), "integer"),
         "valid_index_counts": _JsonArray(
             np.asarray(result["valid_index_counts"]),

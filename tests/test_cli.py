@@ -21,6 +21,7 @@ from ier.cli import (
     _parse_int_list,
     _parse_name_list,
     _parse_pair_list,
+    _parse_percentiles,
     _parse_thresholds,
     _parse_weights,
     main,
@@ -1496,8 +1497,88 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 0)
         payload = json.loads(out.read_text(encoding="utf-8"))
         self.assertEqual(payload["thresholds"], {"longstring": 1.0})
+        self.assertEqual(payload["threshold_sources"], {"longstring": "fixed"})
+        self.assertEqual(payload["percentiles"], {"longstring": None})
         self.assertEqual(payload["flags"]["longstring"], [True, True, True])
         self.assertEqual(payload["consensus_flags"], [True, True, True])
+
+    def test_screen_per_index_percentiles_and_provenance(self) -> None:
+        out = self.root / "screen-percentiles.json"
+        code = main(
+            [
+                "screen",
+                str(self.csv_path),
+                "--indices",
+                "irv",
+                "longstring",
+                "--index-percentile",
+                "irv=80",
+                "--index-percentile",
+                "longstring=99",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(
+            payload["threshold_sources"], {"irv": "percentile", "longstring": "percentile"}
+        )
+        self.assertEqual(payload["percentiles"], {"irv": 80.0, "longstring": 99.0})
+        self.assertAlmostEqual(
+            payload["thresholds"]["irv"],
+            float(np.percentile(payload["scores"]["irv"], 20)),
+        )
+        self.assertAlmostEqual(
+            payload["thresholds"]["longstring"],
+            float(np.percentile(payload["scores"]["longstring"], 99)),
+        )
+
+    def test_screen_rejects_conflicting_cutoff_overrides(self) -> None:
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(
+                [
+                    "screen",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "--threshold",
+                    "irv=0.5",
+                    "--index-percentile",
+                    "irv=90",
+                ]
+            )
+
+        self.assertEqual(code, 1)
+        self.assertIn("both a threshold and percentile", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_screen_text_reports_cutoff_provenance(self) -> None:
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            code = main(
+                [
+                    "screen",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--index-percentile",
+                    "irv=80",
+                    "--threshold",
+                    "longstring=2",
+                    "--top",
+                    "0",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertIn("(tail percentile=80)", stdout.getvalue())
+        self.assertIn("longstring=2 (fixed)", stdout.getvalue())
 
     def test_screen_custom_consensus_threshold(self) -> None:
         out = self.root / "screen-consensus.json"
@@ -1878,8 +1959,13 @@ class TestCli(unittest.TestCase):
         self.assertEqual(_parse_pair_list("0,1;2,3"), [(0, 1), (2, 3)])
         self.assertIsNone(_parse_pair_list(";;"))
         self.assertIsNone(_parse_thresholds(None))
+        self.assertIsNone(_parse_percentiles(None))
         self.assertEqual(
             _parse_thresholds(["irv=0.5", "longstring = 4"]), {"irv": 0.5, "longstring": 4.0}
+        )
+        self.assertEqual(
+            _parse_percentiles(["irv=90", "longstring = 99"]),
+            {"irv": 90.0, "longstring": 99.0},
         )
         with self.assertRaises(ValueError):
             _parse_pair_list("0-1")
@@ -1887,6 +1973,8 @@ class TestCli(unittest.TestCase):
             _parse_thresholds(["irv"])
         with self.assertRaises(ValueError):
             _parse_thresholds(["irv=1", "irv=2"])
+        with self.assertRaises(ValueError):
+            _parse_percentiles(["irv=90", "irv=95"])
         with self.assertRaises(ValueError):
             _parse_name_list([" , "])
         self.assertIsNone(_parse_weights(None))

@@ -21,7 +21,7 @@ from ier._registry import (
     validate_worker_count,
 )
 from ier._validation import MatrixLike, validate_matrix_input
-from ier.types import ScreenIndexSummary, ScreenResult
+from ier.types import IndexThresholdSourceMap, ScreenIndexSummary, ScreenResult
 
 
 def _resolve_screen_thresholds(
@@ -51,6 +51,34 @@ def _resolve_screen_thresholds(
     return resolved
 
 
+def _resolve_screen_percentiles(
+    percentiles: Mapping[str, float] | None,
+    indices: list[str],
+    fixed_thresholds: Mapping[str, float],
+) -> dict[str, float]:
+    """Validate per-index tail-percentile overrides."""
+    if percentiles is None:
+        return {}
+
+    resolved: dict[str, float] = {}
+    for name, value in percentiles.items():
+        if name not in INDEX_REGISTRY:
+            raise ValueError(f"unknown percentile index: {name}")
+        if name not in indices:
+            raise ValueError(f"percentile index is not selected: {name}")
+        if INDEX_REGISTRY[name].flag_mode != "percentile":
+            raise ValueError(f"{name} uses presence flagging and does not accept a percentile")
+        if name in fixed_thresholds:
+            raise ValueError(f"cannot set both a threshold and percentile for index: {name}")
+        try:
+            resolved[name] = validate_percentile(value)
+        except ValueError as error:
+            raise ValueError(
+                f"percentile for {name} must be a finite number between 0 and 100"
+            ) from error
+    return resolved
+
+
 def _count_flags(flags: Mapping[str, np.ndarray], n_respondents: int) -> np.ndarray:
     """Count per-respondent flags without constructing an index matrix."""
     counts = np.zeros(n_respondents, dtype=np.int_)
@@ -76,6 +104,7 @@ def screen(
     min_flags: int = 2,
     min_valid_indices: int | None = None,
     thresholds: Mapping[str, float] | None = None,
+    percentiles: Mapping[str, float] | None = None,
     strict: bool = False,
     workers: int = 1,
 ) -> ScreenResult:
@@ -107,6 +136,9 @@ def screen(
                          before a respondent can receive a consensus flag.
     - thresholds: Optional fixed per-index cutoffs. Scores at or beyond a fixed
                   cutoff are flagged; indices without an override use percentiles.
+    - percentiles: Optional per-index tail-percentile overrides. High-direction
+                   indices use the configured value and low-direction indices use
+                   ``100 - value``. An index cannot have both override types.
     - strict: If True, raise when any selected index fails instead of recording
               the failure in ``errors`` (default False).
     - workers: Number of indices to score concurrently. The default of 1 preserves
@@ -118,6 +150,8 @@ def screen(
         - "scores": dict mapping index name to score array
         - "flags": dict mapping index name to boolean flag array
         - "thresholds": actual per-index cutoffs (None for presence flagging)
+        - "threshold_sources": fixed, percentile, or presence origin per cutoff
+        - "percentiles": requested tail percentiles (None for fixed/presence rules)
         - "flag_counts": array of total flags per respondent
         - "valid_index_counts": array of available index scores per respondent
         - "consensus_eligible": respondents meeting ``min_valid_indices``
@@ -156,6 +190,7 @@ def screen(
     min_valid_indices = validate_min_valid_indices(min_valid_indices, len(indices))
 
     fixed_thresholds = _resolve_screen_thresholds(thresholds, indices)
+    percentile_overrides = _resolve_screen_percentiles(percentiles, indices, fixed_thresholds)
     resolved = resolve_index_options(options)
     scores, errors = score_registered_indices(
         x_array,
@@ -167,14 +202,21 @@ def screen(
 
     flags: dict[str, np.ndarray] = {}
     applied_thresholds: dict[str, float | None] = {}
+    threshold_sources: IndexThresholdSourceMap = {}
+    applied_percentiles: dict[str, float | None] = {}
     for name, score_arr in scores.items():
         spec = INDEX_REGISTRY[name]
         if spec.flag_mode == "present":
             flags[name] = ~np.isnan(score_arr)
             applied_thresholds[name] = None
+            threshold_sources[name] = "presence"
+            applied_percentiles[name] = None
             continue
 
-        flag_percentile = percentile if spec.flag_direction == "high" else 100.0 - percentile
+        tail_percentile = percentile_overrides.get(name, percentile)
+        flag_percentile = (
+            tail_percentile if spec.flag_direction == "high" else 100.0 - tail_percentile
+        )
         explicit = name in fixed_thresholds
         cutoff = resolve_threshold(
             score_arr,
@@ -189,6 +231,8 @@ def screen(
             inclusive=explicit,
         )
         applied_thresholds[name] = cutoff
+        threshold_sources[name] = "fixed" if explicit else "percentile"
+        applied_percentiles[name] = None if explicit else tail_percentile
 
     flag_counts = _count_flags(flags, n_respondents)
     valid_index_counts = _count_valid_scores(scores, n_respondents)
@@ -223,6 +267,8 @@ def screen(
         "scores": scores,
         "flags": flags,
         "thresholds": applied_thresholds,
+        "threshold_sources": threshold_sources,
+        "percentiles": applied_percentiles,
         "flag_counts": flag_counts,
         "valid_index_counts": valid_index_counts,
         "consensus_eligible": consensus_eligible,

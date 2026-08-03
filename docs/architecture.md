@@ -96,7 +96,10 @@ index module directly (e.g. `mahad(x, method="iqr")`).
 
 Percentile defaults are **sample-relative heuristics**, not calibrated
 diagnostic cutoffs. `screen(thresholds=...)` accepts fixed cutoffs when a survey
-or validation study provides them. See [Threshold Guidance](thresholds.md).
+or validation study provides them, while `screen(percentiles=...)` tunes
+sample-relative tail sensitivity by index. Results retain the actual cutoff,
+its fixed/percentile/presence source, and the requested tail percentile. See
+[Threshold Guidance](thresholds.md).
 
 ## Missing data
 

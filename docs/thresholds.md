@@ -16,7 +16,9 @@ structure, and base rate of IER.
    `consensus_eligible` in the result.
 3. **Use sample-relative percentiles carefully.** Default `screen(..., percentile=95)`
    and `composite_flag(..., percentile=95)` are convenient starting points, not
-   gold standards. With small *N*, percentiles are unstable.
+   gold standards. With small *N*, percentiles are unstable. When signal families
+   need different sensitivities, pass per-index `percentiles` rather than forcing
+   one tail setting across the entire screen.
 4. **Reuse validated cutoffs.** When prior validation supports fixed cutoffs, pass
    them by index (for example, `screen(data, thresholds={"irv": 0.25,
    "longstring": 8})`). The result reports the actual cutoff used for every index.
@@ -32,6 +34,12 @@ percentiles outside `[0, 100]` instead of silently returning misleading flags.
 Their boundary rule matches `screen()`: fixed cutoffs are inclusive (at or
 beyond the cutoff), while sample-percentile cutoffs use strict tail comparisons
 so ties at the estimated percentile are not flagged.
+
+Screen percentile overrides use the same directional convention as the global
+setting: a value `p` resolves high-direction indices at `p` and low-direction
+indices at `100-p`. Fixed and percentile overrides are mutually exclusive for an
+index. The returned `threshold_sources` and `percentiles` mappings make the
+resolved rule auditable alongside the numeric `thresholds`.
 
 For designed attention checks, `infrequency_flag()` accepts either count cutoffs
 or proportional cutoffs with `proportion=True`. State the chosen missing-response

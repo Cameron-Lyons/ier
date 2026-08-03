@@ -144,6 +144,8 @@ class TestScreen(unittest.TestCase):
         self.assertIn("scores", result)
         self.assertIn("flags", result)
         self.assertIn("thresholds", result)
+        self.assertIn("threshold_sources", result)
+        self.assertIn("percentiles", result)
         self.assertIn("flag_counts", result)
         self.assertIn("valid_index_counts", result)
         self.assertIn("consensus_eligible", result)
@@ -260,6 +262,8 @@ class TestScreen(unittest.TestCase):
         )
 
         self.assertEqual(result["thresholds"], thresholds)
+        self.assertEqual(result["threshold_sources"], {"irv": "fixed", "longstring": "fixed"})
+        self.assertEqual(result["percentiles"], {"irv": None, "longstring": None})
         np.testing.assert_array_equal(
             result["flags"]["irv"],
             result["scores"]["irv"] <= thresholds["irv"],
@@ -281,6 +285,33 @@ class TestScreen(unittest.TestCase):
         self.assertAlmostEqual(
             result["thresholds"]["longstring"],
             float(np.percentile(result["scores"]["longstring"], 95)),
+        )
+        self.assertEqual(
+            result["threshold_sources"],
+            {"irv": "percentile", "longstring": "percentile"},
+        )
+        self.assertEqual(result["percentiles"], {"irv": 95.0, "longstring": 95.0})
+
+    def test_per_index_tail_percentiles_override_global_setting(self) -> None:
+        result = screen(
+            self.data,
+            indices=["irv", "longstring"],
+            percentile=95,
+            percentiles={"irv": 80, "longstring": 99},
+        )
+
+        irv_cutoff = float(np.percentile(result["scores"]["irv"], 20))
+        longstring_cutoff = float(np.percentile(result["scores"]["longstring"], 99))
+        self.assertAlmostEqual(result["thresholds"]["irv"], irv_cutoff)
+        self.assertAlmostEqual(result["thresholds"]["longstring"], longstring_cutoff)
+        self.assertEqual(result["percentiles"], {"irv": 80.0, "longstring": 99.0})
+        np.testing.assert_array_equal(
+            result["flags"]["irv"],
+            result["scores"]["irv"] < irv_cutoff,
+        )
+        np.testing.assert_array_equal(
+            result["flags"]["longstring"],
+            result["scores"]["longstring"] > longstring_cutoff,
         )
 
     def test_invalid_percentile_raises_with_fixed_thresholds(self) -> None:
@@ -307,6 +338,29 @@ class TestScreen(unittest.TestCase):
         for thresholds, indices, message in cases:
             with self.subTest(thresholds=thresholds), self.assertRaisesRegex(ValueError, message):
                 screen(self.data, indices=indices, thresholds=thresholds)
+
+    def test_invalid_percentile_overrides_raise(self) -> None:
+        cases = [
+            ({"nonexistent": 95.0}, ["irv"], None, "unknown percentile index"),
+            ({"longstring": 95.0}, ["irv"], None, "not selected"),
+            ({"onset": 95.0}, ["onset"], None, "presence flagging"),
+            ({"irv": float("nan")}, ["irv"], None, "finite number"),
+            ({"irv": True}, ["irv"], None, "finite number"),
+            ({"irv": -1.0}, ["irv"], None, "between 0 and 100"),
+            ({"irv": 101.0}, ["irv"], None, "between 0 and 100"),
+            ({"irv": 90.0}, ["irv"], {"irv": 0.5}, "both a threshold and percentile"),
+        ]
+        for percentiles, indices, thresholds, message in cases:
+            with (
+                self.subTest(percentiles=percentiles),
+                self.assertRaisesRegex(ValueError, message),
+            ):
+                screen(
+                    self.data,
+                    indices=indices,
+                    thresholds=thresholds,
+                    percentiles=percentiles,
+                )
 
     def test_invalid_consensus_threshold_raises(self) -> None:
         for value in [0, -1, 1.5, True]:
