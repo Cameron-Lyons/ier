@@ -143,8 +143,9 @@ cat responses.csv | ier screen - --indices irv longstring --format json
 ier screen responses.csv.gz --format json --output screening.json.gz
 ```
 
-CSV output is forward-only for plain files, gzip files, and standard output, so
-large respondent-level exports do not retain the complete document in memory.
+CSV rows and JSON respondent arrays are forward-only for plain files, gzip
+files, and standard output, so large respondent-level exports do not retain the
+complete document in memory.
 
 Independent indices can be scored concurrently for larger matrices:
 

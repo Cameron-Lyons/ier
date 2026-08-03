@@ -27,20 +27,21 @@ from ier._cli_npz import (
     _write_screen_npz,
 )
 from ier._cli_output import (
-    _emit_composite_json,
     _emit_composite_text,
     _emit_index_catalog_json,
     _emit_index_catalog_text,
-    _emit_response_time_json,
     _emit_response_time_text,
-    _emit_screen_json,
     _emit_screen_text,
     _output_stream,
     _write_composite_csv,
+    _write_composite_json,
     _write_index_catalog_csv,
+    _write_json_output,
     _write_output,
     _write_response_time_csv,
+    _write_response_time_json,
     _write_screen_csv,
+    _write_screen_json,
 )
 from ier._flagging import resolve_threshold, threshold_flags
 from ier._registry import validate_worker_count
@@ -428,14 +429,19 @@ def _run_command(args: argparse.Namespace) -> int:
         )
 
         if args.format == "json":
-            text = _emit_response_time_json(
-                scores,
-                flags,
-                args.metric,
-                direction,
-                cutoff,
-                respondent_ids,
+            _write_json_output(
+                args.output,
+                lambda handle: _write_response_time_json(
+                    handle,
+                    scores,
+                    flags,
+                    args.metric,
+                    direction,
+                    cutoff,
+                    respondent_ids,
+                ),
             )
+            return 0
         elif args.format == "csv":
             with _output_stream(args.output) as handle:
                 _write_response_time_csv(handle, scores, flags, respondent_ids)
@@ -477,7 +483,11 @@ def _run_command(args: argparse.Namespace) -> int:
             workers=args.workers,
         )
         if args.format == "json":
-            text = _emit_screen_json(result, respondent_ids)
+            _write_json_output(
+                args.output,
+                lambda handle: _write_screen_json(handle, result, respondent_ids),
+            )
+            return 0
         elif args.format == "csv":
             with _output_stream(args.output) as handle:
                 _write_screen_csv(handle, result, respondent_ids)
@@ -504,7 +514,16 @@ def _run_command(args: argparse.Namespace) -> int:
     scores = scores_result
 
     if args.format == "json":
-        text = _emit_composite_json(scores, args.method, respondent_ids)
+        _write_json_output(
+            args.output,
+            lambda handle: _write_composite_json(
+                handle,
+                scores,
+                args.method,
+                respondent_ids,
+            ),
+        )
+        return 0
     elif args.format == "csv":
         with _output_stream(args.output) as handle:
             _write_composite_csv(handle, scores, respondent_ids)

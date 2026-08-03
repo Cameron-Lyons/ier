@@ -172,7 +172,7 @@ non-empty, two-dimensional, real numeric array. It has no headers, so
 Use `-` as the data path to read a forward-only standard-input stream, and use
 `--output -` to select standard output explicitly. Input and output paths ending
 in `.gz` are compressed or decompressed transparently with no optional package.
-CSV results are emitted row by row for bounded output allocation across all
+CSV rows and JSON respondent arrays are emitted in bounded chunks across all
 three destinations.
 
 JSON output is standards-compliant: unavailable or non-finite scores and summary

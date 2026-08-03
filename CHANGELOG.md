@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.1] - 2026-08-02
+
+### Changed
+
+- CLI screening, composite, and response-time JSON output now writes respondent arrays
+  in bounded chunks to plain files, gzip files, or standard output while
+  preserving the existing schema and strict `null` handling. For 100,000
+  respondents and five indices, screening JSON reduces peak output allocation
+  from 44.5 MiB to 0.6 MiB, median serialization time from 0.83 to 0.57 seconds,
+  and output size from 20.4 to 12.8 MiB without adding a dependency.
+
 ## [2.12.0] - 2026-08-02
 
 ### Added

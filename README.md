@@ -107,9 +107,9 @@ Use an uncompressed `.npy` file rather than `.npy.gz` to preserve memory mapping
 
 Use `-` as the input path for a forward-only standard-input pipeline or as the
 output path for standard output. Files ending in `.gz` are read and written
-transparently using the Python standard library. CSV results are written one row
-at a time, so output allocation stays bounded for plain, compressed, and
-standard-output destinations.
+transparently using the Python standard library. CSV rows and JSON respondent
+arrays are written in bounded chunks, so output allocation stays bounded for
+plain, compressed, and standard-output destinations.
 
 All scoring commands accept `--format npz --output FILE.npz` for fast, typed,
 pickle-free result archives. NPZ preserves boolean flags, non-finite scores, and
