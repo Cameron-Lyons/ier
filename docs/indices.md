@@ -39,7 +39,7 @@ defaults, and options that must be configured before an index can run.
 | `guttman` | Guttman errors | high | yes | yes | adaptive bounded counters; `guttman_normalize` |
 | `individual_reliability` | Split-half individual reliability | low | no | yes | `reliability_n_splits`, seed; bounded stable raw moments |
 | `onset` | Carelessness onset item index | present | no | no | `onset_window_size`, `onset_min_items` |
-| `evenodd` | Even-odd consistency | low | no | yes | `evenodd_factors`; exact two-pair shortcut |
+| `evenodd` | Even-odd consistency | low | no | yes | `evenodd_factors`; bounded row correlations and exact two-pair shortcut |
 | `mad` | Mean absolute paired difference | high | no | yes | MAD item lists / optional scale bounds |
 | `lz` | lz person-fit | low | no | yes | optional IRT params via direct API or `IndexOptions`; bounded, active-row-compacted complete/missing calibration; overflow-safe logistic kernel |
 | `semantic_syn` | Predefined synonym consistency | low | no | yes | `semantic_item_pairs` |

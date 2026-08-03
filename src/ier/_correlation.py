@@ -2,6 +2,8 @@
 
 import numpy as np
 
+from ier._row_statistics import row_slices
+
 
 def row_correlations(
     left: np.ndarray,
@@ -20,15 +22,55 @@ def row_correlations(
 
     left_values = left[:, :n_columns]
     right_values = right[:, :n_columns]
-    if n_columns == 2 and not np.isinf(left_values).any() and not np.isinf(right_values).any():
-        return _two_point_row_correlations(
-            left_values,
-            right_values,
-            zero_variance=zero_variance,
-        )
+    use_two_point = n_columns == 2 and not _contains_inf(left_values, right_values)
+    has_missing = False if use_two_point else _contains_nan(left_values, right_values)
+    correlations = np.empty(n_rows)
 
-    has_missing = bool(np.isnan(left_values).any() or np.isnan(right_values).any())
+    for start, stop in row_slices(n_rows, n_columns):
+        left_block = left_values[start:stop]
+        right_block = right_values[start:stop]
+        if use_two_point:
+            correlations[start:stop] = _two_point_row_correlations(
+                left_block,
+                right_block,
+                zero_variance=zero_variance,
+            )
+        else:
+            correlations[start:stop] = _row_correlations_block(
+                left_block,
+                right_block,
+                has_missing=has_missing,
+                zero_variance=zero_variance,
+            )
 
+    return correlations
+
+
+def _contains_inf(left: np.ndarray, right: np.ndarray) -> bool:
+    """Check paired matrices for infinities without a full Boolean workspace."""
+    for start, stop in row_slices(len(left), left.shape[1]):
+        if np.isinf(left[start:stop]).any() or np.isinf(right[start:stop]).any():
+            return True
+    return False
+
+
+def _contains_nan(left: np.ndarray, right: np.ndarray) -> bool:
+    """Check paired matrices for missing values without a full Boolean workspace."""
+    for start, stop in row_slices(len(left), left.shape[1]):
+        if np.isnan(left[start:stop]).any() or np.isnan(right[start:stop]).any():
+            return True
+    return False
+
+
+def _row_correlations_block(
+    left_values: np.ndarray,
+    right_values: np.ndarray,
+    *,
+    has_missing: bool,
+    zero_variance: float,
+) -> np.ndarray:
+    """Correlate one bounded block using the globally selected numerical path."""
+    n_rows = len(left_values)
     enough_values: np.ndarray | None = None
     with np.errstate(invalid="ignore", divide="ignore"):
         if has_missing:

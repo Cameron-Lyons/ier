@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.63] - 2026-08-03
+
+### Changed
+
+- Shared row correlations now scan and reduce paired matrices in bounded row
+  blocks. Even–odd consistency and the public correlation helper no longer allocate
+  complete-cohort validity or centered matrices for wide factors; all callers retain
+  the established global missing/infinity path, pairwise-complete behavior,
+  zero-variance policy, and exact two-pair shortcut. The wide-factor benchmark is
+  documented, inputs remain unchanged, and no dependency is added.
+
 ## [2.19.62] - 2026-08-03
 
 ### Changed
