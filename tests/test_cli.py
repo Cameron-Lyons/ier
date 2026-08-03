@@ -15,6 +15,7 @@ import numpy as np
 from ier.cli import (
     _emit_composite_csv,
     _emit_composite_json,
+    _load_input,
     _load_matrix,
     _parse_float_list,
     _parse_int_list,
@@ -139,6 +140,83 @@ class TestCli(unittest.TestCase):
         self.assertIn("consensus_flags", payload)
         self.assertEqual(payload["min_flags"], 2)
         self.assertEqual(set(payload["thresholds"]), {"irv", "longstring"})
+
+    def test_named_respondent_ids_are_preserved_across_outputs(self) -> None:
+        identified = self.root / "identified.csv"
+        identified.write_text(
+            "participant,i1,i2,i3,i4,i5\ncase-01,1,1,1,1,1\ncase-02,1,2,3,4,5\ncase-03,5,5,5,1,2\n",
+            encoding="utf-8",
+        )
+        matrix, identifiers = _load_input(identified, None, "participant")
+        self.assertEqual(identifiers, ["case-01", "case-02", "case-03"])
+        self.assertEqual(matrix.shape, (3, 5))
+
+        screen_out = self.root / "identified-screen.csv"
+        self.assertEqual(
+            main(
+                [
+                    "screen",
+                    str(identified),
+                    "--id-column",
+                    "participant",
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--format",
+                    "csv",
+                    "--output",
+                    str(screen_out),
+                ]
+            ),
+            0,
+        )
+        rows = list(csv.DictReader(StringIO(screen_out.read_text(encoding="utf-8"))))
+        self.assertEqual([row["respondent"] for row in rows], identifiers)
+
+        composite_out = self.root / "identified-composite.json"
+        self.assertEqual(
+            main(
+                [
+                    "composite",
+                    str(identified),
+                    "--id-column",
+                    "participant",
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(composite_out),
+                ]
+            ),
+            0,
+        )
+        payload = json.loads(composite_out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["respondent_ids"], identifiers)
+
+    def test_invalid_respondent_id_columns_return_structured_errors(self) -> None:
+        cases = {
+            "missing": "participant,i1,i2\na,1,2\n",
+            "duplicate": "participant,i1,i2\na,1,2\na,2,3\n",
+            "blank": "participant,i1,i2\n,1,2\nb,2,3\n",
+        }
+        expected = {
+            "missing": "ID column 'unknown' was not found",
+            "duplicate": "contains duplicate values",
+            "blank": "contains blank values",
+        }
+        for name, contents in cases.items():
+            with self.subTest(name=name):
+                path = self.root / f"{name}-ids.csv"
+                path.write_text(contents, encoding="utf-8")
+                stderr = StringIO()
+                column = "unknown" if name == "missing" else "participant"
+                with patch("sys.stderr", stderr):
+                    code = main(["screen", str(path), "--id-column", column])
+                self.assertEqual(code, 1)
+                self.assertIn(expected[name], stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_screen_fixed_threshold(self) -> None:
         out = self.root / "screen-threshold.json"

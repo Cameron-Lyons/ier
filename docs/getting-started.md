@@ -92,6 +92,16 @@ Or from the CLI:
 ier screen responses.csv --scale-min 1 --scale-max 5 --min-flags 2
 ```
 
+For files with a respondent identifier column, preserve it in every output format
+by naming its header:
+
+```bash
+ier screen responses.csv --id-column participant_id --format csv --output screening.csv
+```
+
+Identifier values must be unique and nonblank. The selected column is excluded
+from the numeric item matrix before scoring.
+
 ## Next steps
 
 - Run multi-index screening with [`screen()`](workflows/screening.md)

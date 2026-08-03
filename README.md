@@ -13,6 +13,7 @@ For a comprehensive methods review, see
 - Configurable multi-index consensus decisions for respondent-level screening
 - Fixed or sample-relative per-index screening thresholds
 - Programmatic and CLI index catalog with defaults and configuration requirements
+- CLI preservation of named respondent identifier columns
 - CLI: `ier screen data.csv` / `ier composite data.csv` (text / JSON / CSV)
 - NumPy-first inputs (lists, arrays, array-compatible DataFrames)
 - Soft per-index errors during screening and composite scoring
@@ -65,6 +66,7 @@ print("Composite:", scores)
 ier screen data.csv --scale-min 1 --scale-max 5
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --threshold irv=0.25 --threshold longstring=8
+ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier composite data.csv --indices irv longstring
 ier composite data.csv --format csv --output scores.csv
 ier indices --format json
@@ -73,7 +75,9 @@ ier --version
 
 Input matrices may be comma-, tab-, semicolon-, or whitespace-delimited. Common
 delimiters are auto-detected unless `--delimiter` is supplied. Blank fields in
-delimited files are loaded as missing values (`NaN`).
+delimited files are loaded as missing values (`NaN`). Use `--id-column NAME` to
+remove a named header column from scoring and preserve its unique, nonblank values
+in text, JSON, and CSV output.
 
 ## Documentation
 
