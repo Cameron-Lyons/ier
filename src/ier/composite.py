@@ -12,7 +12,9 @@ References:
   Psychological Methods, 17(3), 437-455.
 """
 
-from typing import Literal
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -28,7 +30,11 @@ from ier._registry import (
     validate_worker_count,
 )
 from ier._validation import MatrixLike, validate_matrix_input
-from ier.types import CompositeMethod, CompositeSummary
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from ier.types import CompositeMethod, CompositeSummary
 
 
 def _resolve_composite_indices(
@@ -58,15 +64,44 @@ def _validate_composite_request(
     return combine_method
 
 
+def _resolve_composite_weights(
+    weights: Mapping[str, float] | None,
+    indices: list[str],
+) -> dict[str, float]:
+    """Validate partial weight overrides and return every effective index weight."""
+    resolved = dict.fromkeys(indices, 1.0)
+    if weights is None:
+        return resolved
+
+    for name, value in weights.items():
+        if name not in resolved:
+            raise ValueError(f"weight index is not selected: {name}")
+        if isinstance(value, bool):
+            raise ValueError(f"weight for {name} must be a positive finite number")
+        try:
+            weight = float(value)
+        except (TypeError, ValueError) as err:
+            raise ValueError(f"weight for {name} must be a positive finite number") from err
+        if not np.isfinite(weight) or weight <= 0:
+            raise ValueError(f"weight for {name} must be a positive finite number")
+        resolved[name] = weight
+    return resolved
+
+
 def _standardize_index_scores(scores: np.ndarray) -> np.ndarray:
     """Return z-scores while retaining established sparse and constant behavior."""
     valid_mask = ~np.isnan(scores)
     if np.sum(valid_mask) <= 1:
         return scores
 
-    mean_val = np.nanmean(scores)
-    std_val = np.nanstd(scores)
-    return (scores - mean_val) / std_val if std_val > 0 else np.zeros_like(scores)
+    mean_val = float(np.nanmean(scores))
+    std_val = float(np.nanstd(scores))
+    if std_val > 0:
+        return (scores - mean_val) / std_val
+
+    standardized = np.zeros_like(scores)
+    standardized[np.isnan(scores)] = np.nan
+    return standardized
 
 
 def _combine_scores(
@@ -74,6 +109,7 @@ def _combine_scores(
     diagnostics: dict[str, str],
     method: Literal["mean", "sum", "max"],
     standardize: bool,
+    weights: Mapping[str, float] | None = None,
 ) -> np.ndarray:
     if len(index_scores) == 0:
         failed = "; ".join(f"{name}: {msg}" for name, msg in sorted(diagnostics.items()))
@@ -84,27 +120,39 @@ def _combine_scores(
     n_respondents = len(next(iter(index_scores.values())))
     if method == "max":
         combined = np.full(n_respondents, np.nan)
-        valid_counts = None
+        denominators = None
     else:
         combined = np.zeros(n_respondents, dtype=float)
-        valid_counts = np.zeros(n_respondents, dtype=np.int_) if method == "mean" else None
+        denominators = (
+            np.zeros(
+                n_respondents,
+                dtype=float if weights is not None else np.int_,
+            )
+            if method == "mean"
+            else None
+        )
 
-    for scores in index_scores.values():
+    for name, scores in index_scores.items():
         values = _standardize_index_scores(scores) if standardize else scores
+        weight = weights.get(name, 1.0) if weights is not None else 1.0
+        weighted_values = values * weight if weight != 1.0 else values
 
         if method == "max":
-            np.fmax(combined, values, out=combined)
+            np.fmax(combined, weighted_values, out=combined)
             continue
 
-        valid_mask = ~np.isnan(values)
-        np.add(combined, values, out=combined, where=valid_mask)
-        if valid_counts is not None:
-            valid_counts += valid_mask
+        valid_mask = ~np.isnan(weighted_values)
+        np.add(combined, weighted_values, out=combined, where=valid_mask)
+        if denominators is not None:
+            if weights is None:
+                denominators += valid_mask
+            else:
+                np.add(denominators, weight, out=denominators, where=valid_mask)
 
     if method == "mean":
-        assert valid_counts is not None
-        np.divide(combined, valid_counts, out=combined, where=valid_counts > 0)
-        combined[valid_counts == 0] = np.nan
+        assert denominators is not None
+        np.divide(combined, denominators, out=combined, where=denominators > 0)
+        combined[denominators == 0] = np.nan
 
     return combined
 
@@ -116,6 +164,7 @@ def composite(
     standardize: bool = True,
     *,
     options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
     return_diagnostics: bool = False,
     strict: bool = False,
     workers: int = 1,
@@ -148,6 +197,9 @@ def composite(
               falling back to ["irv", "longstring", "lz"] if MAD item info not provided).
     - standardize: If True (default), standardize each index to z-scores before combining.
     - options: Shared index configuration (``IndexOptions``).
+    - weights: Optional positive finite per-index weight overrides. Unspecified
+               selected indices retain weight 1. Weighting is applied after
+               direction correction and optional standardization.
     - return_diagnostics: If True, also return per-index soft-failure messages.
     - strict: If True, raise when any selected index fails instead of collecting
               diagnostics (default False).
@@ -173,6 +225,7 @@ def composite(
     resolved = resolve_index_options(options)
     selected_indices = _resolve_composite_indices(indices, method, resolved)
     combine_method = _validate_composite_request(selected_indices, method)
+    resolved_weights = _resolve_composite_weights(weights, selected_indices)
 
     index_scores, diagnostics = score_registered_indices(
         x_array,
@@ -182,7 +235,13 @@ def composite(
         strict=strict,
         workers=workers,
     )
-    result = _combine_scores(index_scores, diagnostics, combine_method, standardize)
+    result = _combine_scores(
+        index_scores,
+        diagnostics,
+        combine_method,
+        standardize,
+        resolved_weights if weights is not None else None,
+    )
 
     if return_diagnostics:
         return result, diagnostics
@@ -198,6 +257,7 @@ def composite_flag(
     standardize: bool = True,
     *,
     options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
     return_diagnostics: bool = False,
     strict: bool = False,
     workers: int = 1,
@@ -207,6 +267,8 @@ def composite_flag(
 
     Configure with ``options=IndexOptions(...)``. Missing index config soft-fails
     by default; set ``strict=True`` to require every selected index to succeed.
+    Optional ``weights`` follow the same validation and combination semantics as
+    ``composite()``.
     Set ``workers`` above 1 to score independent indices concurrently.
     Explicit thresholds include scores equal to the cutoff; percentile cutoffs
     flag only scores strictly above the sample percentile.
@@ -221,6 +283,7 @@ def composite_flag(
         method=method,
         standardize=standardize,
         options=options,
+        weights=weights,
         return_diagnostics=return_diagnostics,
         strict=strict,
         workers=workers,
@@ -248,6 +311,7 @@ def composite_summary(
     standardize: bool = True,
     *,
     options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
     strict: bool = False,
     workers: int = 1,
 ) -> CompositeSummary:
@@ -256,13 +320,15 @@ def composite_summary(
 
     Configure with ``options=IndexOptions(...)``. Set ``strict=True`` to require
     every selected index to succeed. Set ``workers`` above 1 to score independent
-    indices concurrently.
+    indices concurrently. The returned ``weights`` mapping contains every
+    resolved selected-index weight.
     """
     workers = validate_worker_count(workers)
     x_array = validate_matrix_input(x, check_type=False)
     resolved = resolve_index_options(options)
     selected_indices = _resolve_composite_indices(indices, method, resolved)
     combine_method = _validate_composite_request(selected_indices, method)
+    resolved_weights = _resolve_composite_weights(weights, selected_indices)
 
     individual_scores, diagnostics = score_registered_indices(
         x_array,
@@ -275,7 +341,13 @@ def composite_summary(
         name: INDEX_REGISTRY[name].composite_multiplier * scores
         for name, scores in individual_scores.items()
     }
-    composite_scores = _combine_scores(composite_inputs, diagnostics, combine_method, standardize)
+    composite_scores = _combine_scores(
+        composite_inputs,
+        diagnostics,
+        combine_method,
+        standardize,
+        resolved_weights if weights is not None else None,
+    )
 
     valid_composite = composite_scores[~np.isnan(composite_scores)]
 
@@ -286,6 +358,7 @@ def composite_summary(
         "errors": diagnostics,
         "method": method,
         "standardized": standardize,
+        "weights": resolved_weights,
         "mean": float(np.nanmean(composite_scores)) if len(valid_composite) > 0 else float("nan"),
         "std": float(np.nanstd(composite_scores)) if len(valid_composite) > 0 else float("nan"),
         "min": float(np.nanmin(composite_scores)) if len(valid_composite) > 0 else float("nan"),
@@ -301,6 +374,7 @@ def composite_probability(
     method: CompositeMethod = "mean",
     *,
     options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
     strict: bool = False,
     workers: int = 1,
 ) -> np.ndarray:
@@ -313,7 +387,8 @@ def composite_probability(
 
     Configure with ``options=IndexOptions(...)``. Set ``strict=True`` to require
     every selected index to succeed. Set ``workers`` above 1 to score independent
-    indices concurrently.
+    indices concurrently. Optional ``weights`` are applied before the logistic
+    transform.
     """
     z_scores_result = composite(
         x,
@@ -321,6 +396,7 @@ def composite_probability(
         method=method,
         standardize=True,
         options=options,
+        weights=weights,
         strict=strict,
         workers=workers,
     )

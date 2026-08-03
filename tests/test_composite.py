@@ -242,7 +242,11 @@ class TestComposite(unittest.TestCase):
                     continue
                 mean = np.nanmean(values)
                 std = np.nanstd(values)
-                prepared[name] = (values - mean) / std if std > 0 else np.zeros_like(values)
+                if std > 0:
+                    prepared[name] = (values - mean) / std
+                else:
+                    prepared[name] = np.zeros_like(values)
+                    prepared[name][np.isnan(values)] = np.nan
             matrix = np.column_stack(list(prepared.values()))
 
             with warnings.catch_warnings():
@@ -273,6 +277,100 @@ class TestComposite(unittest.TestCase):
                     rtol=1e-14,
                     atol=1e-14,
                     equal_nan=True,
+                )
+
+    def test_weighted_reductions_renormalize_available_scores(self) -> None:
+        scores = {
+            "first": np.array([1.0, np.nan, 3.0, np.nan]),
+            "second": np.array([5.0, 7.0, np.nan, np.nan]),
+        }
+        weights = {"first": 2.0, "second": 1.0}
+
+        np.testing.assert_allclose(
+            _combine_scores(scores, {}, "mean", False, weights),
+            np.array([7.0 / 3.0, 7.0, 3.0, np.nan]),
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            _combine_scores(scores, {}, "mean", False, {"first": 2.0}),
+            _combine_scores(scores, {}, "mean", False, weights),
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            _combine_scores(scores, {}, "sum", False, weights),
+            np.array([7.0, 7.0, 6.0, 0.0]),
+        )
+        np.testing.assert_allclose(
+            _combine_scores(scores, {}, "max", False, weights),
+            np.array([5.0, 7.0, 6.0, np.nan]),
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            _combine_scores(scores, {}, "mean", False, weights),
+            _combine_scores(
+                scores,
+                {},
+                "mean",
+                False,
+                {name: weight * 10 for name, weight in weights.items()},
+            ),
+            equal_nan=True,
+        )
+
+    def test_constant_standardization_preserves_missing_values(self) -> None:
+        scores = {
+            "constant": np.array([2.0, 2.0, np.nan]),
+            "varying": np.array([1.0, 3.0, 5.0]),
+        }
+
+        actual = _combine_scores(scores, {}, "mean", True)
+        expected_varying = (scores["varying"] - 3.0) / np.std(scores["varying"])
+        np.testing.assert_allclose(
+            actual,
+            np.array([expected_varying[0] / 2.0, expected_varying[1] / 2.0, expected_varying[2]]),
+        )
+
+    def test_weights_propagate_across_composite_helpers(self) -> None:
+        data = np.array(
+            [
+                [1, 2, 3, 4, 5],
+                [3, 3, 3, 3, 3],
+                [5, 4, 3, 2, 1],
+                [2, 5, 1, 4, 3],
+            ],
+            dtype=float,
+        )
+        indices = ["irv", "longstring"]
+        weights = {"irv": 3.0}
+
+        scores = composite(data, indices=indices, weights=weights)
+        flag_scores, _ = composite_flag(data, indices=indices, weights=weights)
+        summary = composite_summary(data, indices=indices, weights=weights)
+        probabilities = composite_probability(data, indices=indices, weights=weights)
+
+        np.testing.assert_allclose(flag_scores, scores, equal_nan=True)
+        np.testing.assert_allclose(summary["composite"], scores, equal_nan=True)
+        np.testing.assert_allclose(probabilities, 1.0 / (1.0 + np.exp(-scores)))
+        self.assertEqual(summary["weights"], {"irv": 3.0, "longstring": 1.0})
+
+    def test_weight_validation_rejects_unsafe_or_unselected_values(self) -> None:
+        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
+        cases = [
+            ({"irv": 0.0}, "positive finite"),
+            ({"irv": -1.0}, "positive finite"),
+            ({"irv": np.nan}, "positive finite"),
+            ({"irv": np.inf}, "positive finite"),
+            ({"irv": True}, "positive finite"),
+            ({"irv": cast("Any", "invalid")}, "positive finite"),
+            ({"mahad": 2.0}, "not selected"),
+        ]
+
+        for weights, message in cases:
+            with self.subTest(weights=weights), self.assertRaisesRegex(ValueError, message):
+                composite(
+                    data,
+                    indices=["irv", "longstring"],
+                    weights=weights,
                 )
 
 

@@ -46,6 +46,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--method", choices=["mean", "sum", "max"], default="mean")
     parser.add_argument("--no-standardize", action="store_false", dest="standardize")
+    parser.add_argument(
+        "--weighted",
+        action="store_true",
+        help="Apply deterministic nonuniform composite weights",
+    )
     args = parser.parse_args()
 
     if args.respondents < 1 or args.indices < 1 or args.repeats < 1:
@@ -62,6 +67,11 @@ def main() -> None:
         values[rng.random(args.respondents) < args.missing_rate] = np.nan
         scores[name] = values
         flags[name] = rng.random(args.respondents) < 0.05
+    weights = (
+        {name: 0.5 + index / max(args.indices - 1, 1) for index, name in enumerate(scores)}
+        if args.weighted
+        else None
+    )
 
     composite_seconds, composite_peak = _measure(
         lambda: _combine_scores(
@@ -69,6 +79,7 @@ def main() -> None:
             {},
             args.method,
             args.standardize,
+            weights,
         ),
         args.repeats,
     )
@@ -79,7 +90,7 @@ def main() -> None:
 
     print(
         f"respondents={args.respondents} indices={args.indices} "
-        f"method={args.method} standardize={args.standardize}"
+        f"method={args.method} standardize={args.standardize} weighted={args.weighted}"
     )
     print(f"composite: median={composite_seconds:.4f}s peak={composite_peak:.1f} MiB")
     print(f"screen flags: median={screen_seconds:.4f}s peak={screen_peak:.1f} MiB")

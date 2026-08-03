@@ -66,6 +66,7 @@ class CompositeSummary(TypedDict):
     errors: IndexErrorMap
     method: CompositeMethod
     standardized: bool
+    weights: dict[str, float]
     mean: float
     std: float
     min: float

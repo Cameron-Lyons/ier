@@ -85,6 +85,10 @@ When comparing to R packages, align NA policy first.
 
 `composite()` z-combines selected indices with direction multipliers so that
 higher composite values mean more evidence of careless responding.
+Optional positive weights are applied after direction correction and
+standardization. Weighted means renormalize over available scores per
+respondent, so an unavailable index does not silently dilute the remaining
+evidence.
 `composite_probability()` applies a logistic transform for convenience — it is
 **not** a calibrated probability of carelessness. Do not treat it as a
 posterior or diagnostic probability without your own validation study.

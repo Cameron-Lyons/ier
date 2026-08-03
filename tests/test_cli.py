@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import numpy as np
 
+from ier import composite
 from ier._cli_input import _load_input, _load_matrix
 from ier._cli_output import _emit_composite_json, _write_composite_csv
 from ier.cli import (
@@ -21,6 +22,7 @@ from ier.cli import (
     _parse_name_list,
     _parse_pair_list,
     _parse_thresholds,
+    _parse_weights,
     main,
 )
 
@@ -701,6 +703,53 @@ class TestCli(unittest.TestCase):
         payload = json.loads(composite_out.read_text(encoding="utf-8"))
         self.assertEqual(payload["respondent_ids"], identifiers)
 
+    def test_composite_weights_are_applied_and_reported(self) -> None:
+        out = self.root / "weighted-composite.json"
+        code = main(
+            [
+                "composite",
+                str(self.csv_path),
+                "--indices",
+                "irv",
+                "longstring",
+                "--weight",
+                "irv=3",
+                "--weight",
+                "longstring=0.5",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["weights"], {"irv": 3.0, "longstring": 0.5})
+        matrix, _ = _load_input(self.csv_path, None, None)
+        expected = composite(
+            matrix,
+            indices=["irv", "longstring"],
+            weights={"irv": 3.0, "longstring": 0.5},
+        )
+        np.testing.assert_allclose(payload["scores"], expected)
+
+        stdout = StringIO()
+        with patch("sys.stdout", stdout):
+            text_code = main(
+                [
+                    "composite",
+                    str(self.csv_path),
+                    "--indices",
+                    "irv",
+                    "longstring",
+                    "--weight",
+                    "irv=3",
+                ]
+            )
+        self.assertEqual(text_code, 0)
+        self.assertIn("weights: irv=3", stdout.getvalue())
+
     def test_named_item_columns_exclude_metadata_and_preserve_order(self) -> None:
         mixed = self.root / "mixed-columns.csv"
         mixed.write_text(
@@ -1132,6 +1181,37 @@ class TestCli(unittest.TestCase):
             _parse_thresholds(["irv=1", "irv=2"])
         with self.assertRaises(ValueError):
             _parse_name_list([" , "])
+        self.assertIsNone(_parse_weights(None))
+        self.assertEqual(
+            _parse_weights(["irv=2", "longstring = 0.5"]),
+            {"irv": 2.0, "longstring": 0.5},
+        )
+        with self.assertRaises(ValueError):
+            _parse_weights(["irv=1", "irv=2"])
+
+    def test_invalid_composite_weights_return_structured_errors(self) -> None:
+        cases = [
+            (["--weight", "irv=0"], "positive finite"),
+            (["--weight", "irv=nan"], "positive finite"),
+            (["--weight", "irv=1", "--weight", "irv=2"], "duplicate weight"),
+            (["--weight", "mahad=2"], "not selected"),
+        ]
+        for extra, message in cases:
+            stderr = StringIO()
+            with self.subTest(extra=extra), patch("sys.stderr", stderr):
+                code = main(
+                    [
+                        "composite",
+                        str(self.csv_path),
+                        "--indices",
+                        "irv",
+                        "longstring",
+                        *extra,
+                    ]
+                )
+            self.assertEqual(code, 1)
+            self.assertIn(message, stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_invalid_fixed_threshold_returns_structured_error(self) -> None:
         stderr = StringIO()
