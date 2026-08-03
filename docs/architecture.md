@@ -139,6 +139,11 @@ accident. Gaussian-mixture fitting reuses responsibility and scratch buffers
 throughout EM. Its expectation step follows a fast probability-space path for
 ordinary observations and normalizes only underflowed rows in log space.
 
+Markov transition entropy counts categorical pairs in bounded row batches for
+up to 64 observed states. Higher-cardinality inputs use only each row's observed
+states and pairs, avoiding a dense global state-square allocation. Both paths
+evaluate the equivalent count form of conditional entropy.
+
 ## Optional dependencies
 
 All statistical functionality is available in the NumPy-only base install.
@@ -152,6 +157,7 @@ Plotting remains optional and reports a centralized install hint from
 - Detection-rate simulation: `benchmarks/bench_detection.py`.
 - Throughput microbench: `benchmarks/bench_screen.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
+- Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
 - Response-time mixture EM and end-to-end scoring: `benchmarks/bench_response_time.py`.
 - Screen/composite reduction memory: `benchmarks/bench_orchestration.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.

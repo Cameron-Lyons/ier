@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.3] - 2026-08-02
+
+### Changed
+
+- Markov transition entropy now counts categorical pairs in bounded row batches
+  and evaluates the equivalent conditional-entropy count formula, eliminating a
+  transition-sized respondent ID vector and several probability tensors. On the
+  100,000-respondent, 80-item, five-state benchmark, median time falls from 99.2
+  to 75.0 ms and peak temporary allocation from 268.6 to 85.5 MiB, without
+  adding a dependency.
+
+### Fixed
+
+- Markov inputs with more than 64 distinct states now count only states and
+  transition pairs observed within each row instead of attempting a dense global
+  state-square allocation. High-cardinality and infinite categorical values
+  therefore remain bounded and produce finite scores.
+
 ## [2.19.2] - 2026-08-02
 
 ### Changed

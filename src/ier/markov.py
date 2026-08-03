@@ -19,7 +19,9 @@ from ier._flagging import threshold_flags
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, iter_rows, validate_matrix_input
 
-_MAX_DIRECT_STATES = 64
+_MAX_DENSE_STATES = 64
+_TRANSITION_BATCH_WORKSPACE_BYTES = 64 * 1024 * 1024
+_CATEGORY_DISCOVERY_ROWS = 4096
 
 
 def markov(
@@ -58,22 +60,10 @@ def markov(
 
     n_rows = x_array.shape[0]
     if not has_missing:
-        encoded, k = _encode_complete_states(x_array)
-        from_ids = encoded[:, :-1]
-        to_ids = encoded[:, 1:]
-        n_transitions = from_ids.shape[1]
+        return _markov_complete(x_array)
 
-        transitions = np.zeros((n_rows, k, k), dtype=float)
-        row_ids = np.repeat(np.arange(n_rows), n_transitions)
-        np.add.at(transitions, (row_ids, from_ids.ravel(), to_ids.ravel()), 1.0)
-        return _transition_entropy_batch(transitions)
-
-    all_valid = x_array[~missing]
-    if len(all_valid) == 0:
+    if not np.any(~missing):
         return np.full(x_array.shape[0], np.nan)
-
-    categories = np.unique(all_valid)
-    k = len(categories)
 
     result = np.zeros(n_rows, dtype=float)
     for i, row in enumerate(iter_rows(x_array, na_rm=True)):
@@ -81,30 +71,138 @@ def markov(
             result[i] = np.nan
             continue
 
-        encoded_row = np.searchsorted(categories, row)
-        trans = _build_transition_matrix(encoded_row, k)
-        result[i] = _transition_entropy(trans)
+        result[i] = _transition_entropy_row(row)
 
     return result
 
 
-def _encode_complete_states(x: np.ndarray) -> tuple[np.ndarray, int]:
-    """Encode complete categorical matrices with a direct bounded-range path."""
+def _markov_complete(x: np.ndarray) -> np.ndarray:
+    """Score complete rows with bounded dense batches or a sparse fallback."""
+    encoder = _dense_state_encoder(x)
+    if encoder is None:
+        return _transition_entropies_sparse(x)
+
+    minimum, states = encoder
+    n_states = len(states) if minimum is None else int(np.max(states)) + 1
+    n_items = x.shape[1]
+    integer_bytes = np.dtype(np.intp).itemsize
+    float_bytes = np.dtype(float).itemsize
+    bytes_per_row = integer_bytes * (2 * n_items + n_states * n_states + n_states) + float_bytes * (
+        n_states * n_states + n_states
+    )
+    batch_rows = max(1, _TRANSITION_BATCH_WORKSPACE_BYTES // bytes_per_row)
+
+    result = np.empty(len(x), dtype=float)
+    for start in range(0, len(x), batch_rows):
+        stop = min(start + batch_rows, len(x))
+        encoded = _encode_state_batch(x[start:stop], minimum, states)
+        transition_counts = _dense_transition_counts(encoded, n_states)
+        result[start:stop] = _transition_entropy_batch(transition_counts)
+    return result
+
+
+def _dense_state_encoder(x: np.ndarray) -> tuple[float | None, np.ndarray] | None:
+    """Return a bounded dense encoder, or None for high-cardinality data."""
     minimum = float(np.min(x))
     maximum = float(np.max(x))
-    span = maximum - minimum
+    if np.isfinite(minimum) and np.isfinite(maximum):
+        span = maximum - minimum
+        if span < _MAX_DENSE_STATES:
+            n_states = int(span) + 1
+            mapping = _direct_state_mapping(x, n_states)
+            if mapping is not None:
+                return minimum, mapping
 
-    if span < _MAX_DIRECT_STATES and np.all(x == np.floor(x)):
-        encoded = (x - minimum).astype(np.intp)
-        n_states = int(span) + 1
-        present = np.bincount(encoded.ravel(), minlength=n_states) > 0
-        if not np.all(present):
-            mapping = np.cumsum(present, dtype=np.intp) - 1
-            encoded = mapping[encoded]
-        return encoded, int(np.sum(present))
+    categories = np.array([], dtype=x.dtype)
+    for start in range(0, len(x), _CATEGORY_DISCOVERY_ROWS):
+        found = np.unique(x[start : start + _CATEGORY_DISCOVERY_ROWS])
+        if len(found) > _MAX_DENSE_STATES:
+            return None
+        categories = np.union1d(categories, found)
+        if len(categories) > _MAX_DENSE_STATES:
+            return None
+    return None, categories
 
-    categories = np.unique(x)
-    return np.searchsorted(categories, x), len(categories)
+
+def _direct_state_mapping(x: np.ndarray, n_states: int) -> np.ndarray | None:
+    """Build a compact mapping for a bounded integral response range."""
+    bytes_per_row = x.shape[1] * (np.dtype(float).itemsize + np.dtype(np.intp).itemsize)
+    batch_rows = max(1, _TRANSITION_BATCH_WORKSPACE_BYTES // bytes_per_row)
+    present = np.zeros(n_states, dtype=bool)
+    minimum = float(np.min(x))
+
+    for start in range(0, len(x), batch_rows):
+        batch = x[start : start + batch_rows]
+        if not np.all(batch == np.floor(batch)):
+            return None
+        encoded = np.empty(batch.shape, dtype=np.intp)
+        np.subtract(batch, minimum, out=encoded, casting="unsafe")
+        present |= np.bincount(encoded.ravel(), minlength=n_states) > 0
+
+    return np.cumsum(present, dtype=np.intp) - 1
+
+
+def _encode_state_batch(
+    batch: np.ndarray,
+    minimum: float | None,
+    states: np.ndarray,
+) -> np.ndarray:
+    """Encode one response batch using a direct mapping or sorted categories."""
+    if minimum is None:
+        encoded: np.ndarray = np.searchsorted(states, batch)
+        return encoded
+
+    encoded = np.empty(batch.shape, dtype=np.intp)
+    np.subtract(batch, minimum, out=encoded, casting="unsafe")
+    np.take(states, encoded, out=encoded)
+    return encoded
+
+
+def _dense_transition_counts(encoded: np.ndarray, n_states: int) -> np.ndarray:
+    """Count transition pairs for one encoded batch without repeated row IDs."""
+    n_rows, n_items = encoded.shape
+    pair_ids = np.empty((n_rows, n_items - 1), dtype=np.intp)
+    np.multiply(encoded[:, :-1], n_states, out=pair_ids)
+    np.add(pair_ids, encoded[:, 1:], out=pair_ids)
+    row_offsets = np.arange(n_rows, dtype=np.intp) * (n_states * n_states)
+    pair_ids += row_offsets[:, None]
+
+    counts = np.bincount(pair_ids.ravel(), minlength=n_rows * n_states * n_states)
+    return counts.reshape(n_rows, n_states, n_states)
+
+
+def _transition_entropies_sparse(x: np.ndarray) -> np.ndarray:
+    """Score high-cardinality complete rows without dense state-square arrays."""
+    result = np.empty(len(x), dtype=float)
+    for row_index, row in enumerate(x):
+        result[row_index] = _transition_entropy_row(row)
+    return result
+
+
+def _transition_entropy_row(row: np.ndarray) -> float:
+    """Compute transition entropy from the observed counts in one row."""
+    _, encoded = np.unique(row, return_inverse=True)
+    n_states = int(np.max(encoded)) + 1
+    from_counts = np.bincount(encoded[:-1])
+    pair_ids = encoded[:-1] * n_states + encoded[1:]
+    _, pair_counts = np.unique(pair_ids, return_counts=True)
+    return _conditional_entropy_from_counts(from_counts, pair_counts, len(row) - 1)
+
+
+def _conditional_entropy_from_counts(
+    from_counts: np.ndarray,
+    pair_counts: np.ndarray,
+    total: int | float,
+) -> float:
+    """Compute conditional entropy using only positive transition counts."""
+    if total == 0:
+        return 0.0
+
+    positive_from = from_counts[from_counts > 0]
+    positive_pairs = pair_counts[pair_counts > 0]
+    from_terms = positive_from @ np.log2(positive_from)
+    pair_terms = positive_pairs @ np.log2(positive_pairs)
+    return float((from_terms - pair_terms) / total)
 
 
 def markov_flag(
@@ -167,32 +265,11 @@ def markov_summary(
     return summary
 
 
-def _build_transition_matrix(encoded_row: np.ndarray, k: int) -> np.ndarray:
-    """Build a first-order transition count matrix from integer-encoded responses."""
-    pair_ids = encoded_row[:-1] * k + encoded_row[1:]
-    counts = np.bincount(pair_ids, minlength=k * k).astype(float, copy=False)
-    return counts.reshape(k, k)
-
-
 def _transition_entropy(trans: np.ndarray) -> float:
     """Compute Shannon entropy of one transition matrix, weighted by row marginals."""
     row_sums = trans.sum(axis=1)
     total = float(row_sums.sum())
-
-    if total == 0:
-        return 0.0
-
-    probs = np.divide(
-        trans, row_sums[:, np.newaxis], out=np.zeros_like(trans), where=row_sums[:, np.newaxis] != 0
-    )
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        log_probs = np.log2(probs, where=probs > 0, out=np.zeros_like(probs))
-
-    entropy_terms = probs * log_probs
-    weights = row_sums / total
-    entropy = -np.sum(weights[:, np.newaxis] * entropy_terms)
-    return float(entropy)
+    return _conditional_entropy_from_counts(row_sums, trans.ravel(), total)
 
 
 def _transition_entropy_batch(transitions: np.ndarray) -> np.ndarray:
@@ -200,23 +277,19 @@ def _transition_entropy_batch(transitions: np.ndarray) -> np.ndarray:
     row_sums = transitions.sum(axis=2)
     totals = row_sums.sum(axis=1)
 
-    probs = np.divide(
-        transitions,
-        row_sums[:, :, np.newaxis],
-        out=np.zeros_like(transitions),
-        where=row_sums[:, :, np.newaxis] != 0,
+    transition_terms = np.zeros(transitions.shape, dtype=float)
+    np.log2(transitions, where=transitions > 0, out=transition_terms)
+    transition_terms *= transitions
+
+    row_terms = np.zeros(row_sums.shape, dtype=float)
+    np.log2(row_sums, where=row_sums > 0, out=row_terms)
+    row_terms *= row_sums
+
+    numerators = np.sum(row_terms, axis=1) - np.sum(transition_terms, axis=(1, 2))
+    result: np.ndarray = np.divide(
+        numerators,
+        totals,
+        out=np.zeros(len(transitions), dtype=float),
+        where=totals > 0,
     )
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        log_probs = np.log2(probs, where=probs > 0, out=np.zeros_like(probs))
-
-    entropy_terms = probs * log_probs
-    weights = np.divide(
-        row_sums,
-        totals[:, np.newaxis],
-        out=np.zeros_like(row_sums),
-        where=totals[:, np.newaxis] != 0,
-    )
-
-    result: np.ndarray = -np.sum(weights[:, :, np.newaxis] * entropy_terms, axis=(1, 2))
     return result
