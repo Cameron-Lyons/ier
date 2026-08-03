@@ -175,6 +175,32 @@ The default `workers=1` path remains sequential. Parallel scoring retains the
 requested index and failure order but may use more temporary memory, so benchmark
 representative data before choosing a worker count.
 
+IRV can also be averaged across questionnaire sections to expose localized
+changes in response variability:
+
+```python
+section_result = screen(
+    responses,
+    indices=["irv"],
+    options=IndexOptions(irv_num_split=4),
+)
+custom_result = screen(
+    responses,
+    indices=["irv"],
+    options=IndexOptions(irv_split_points=[0, 10, 25, 40]),
+)
+```
+
+```bash
+ier screen responses.csv --indices irv --irv-num-split 4
+ier screen responses.csv --indices irv --irv-split-points 0,10,25,40
+```
+
+Either option enables section scoring. Boundaries must start at zero and end at
+the item count; if both forms are supplied, custom boundaries take precedence.
+The section mean is accumulated with respondent-sized temporary vectors, so its
+memory use does not grow with the number of sections.
+
 Final screening flag counts and composite reductions use respondent-sized
 workspaces rather than another respondent-by-index matrix, keeping post-scoring
 memory bounded as the number of selected indices grows.

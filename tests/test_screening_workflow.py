@@ -9,6 +9,7 @@ import pytest
 
 from ier import IndexOptions
 from ier.acquiescence import acquiescence, acquiescence_flag
+from ier.irv import irv
 from ier.mahad import mahad
 from ier.screen import _reduce_screen_results, screen
 from ier.visualize import plot_distributions, plot_flag_counts, plot_flagged_heatmap
@@ -421,6 +422,29 @@ class TestScreen(unittest.TestCase):
     def test_specific_indices(self) -> None:
         result = screen(self.data, indices=["irv", "longstring"])
         self.assertEqual(set(result["indices_used"]), {"irv", "longstring"})
+
+    def test_irv_section_options_match_direct_scores(self) -> None:
+        expected = irv(self.data, split=True, num_split=3)
+
+        result = screen(
+            self.data,
+            indices=["irv"],
+            options=IndexOptions(irv_num_split=3),
+        )
+
+        np.testing.assert_allclose(result["scores"]["irv"], expected, rtol=0.0, atol=1e-15)
+
+    def test_irv_split_points_enable_custom_sections(self) -> None:
+        split_points = [0, 2, 7, self.data.shape[1]]
+        expected = irv(self.data, split=True, split_points=split_points)
+
+        result = screen(
+            self.data,
+            indices=["irv"],
+            options=IndexOptions(irv_split_points=split_points),
+        )
+
+        np.testing.assert_allclose(result["scores"]["irv"], expected, rtol=0.0, atol=1e-15)
 
     def test_invalid_index_raises(self) -> None:
         with self.assertRaises(ValueError):

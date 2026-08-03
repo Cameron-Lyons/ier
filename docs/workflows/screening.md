@@ -73,6 +73,37 @@ result = screen(
 Missing required config is recorded in `result["errors"]` instead of aborting
 the whole screening run. `composite()` uses the same soft-fail policy.
 
+## Section-aware IRV
+
+Use equal sections to detect response variability that deteriorates within one
+part of a questionnaire:
+
+```python
+result = screen(
+    data,
+    indices=["irv"],
+    options=IndexOptions(irv_num_split=4),
+)
+```
+
+For instrument-defined sections, provide every boundary, including zero and the
+item count:
+
+```python
+result = screen(
+    data,
+    indices=["irv"],
+    options=IndexOptions(irv_split_points=[0, 8, 20, 32]),
+)
+```
+
+Supplying either option enables section scoring. Each respondent receives the
+unweighted mean of their section IRVs, matching direct `irv(..., split=True)`
+scoring. Custom boundaries take precedence when both options are present. The
+same controls are available as `--irv-num-split` and `--irv-split-points` for
+both scoring commands. Section vectors are accumulated incrementally, keeping
+temporary memory bounded as the number of sections grows.
+
 ## Calibrated LZ parameters
 
 The direct `lz()` function supports externally calibrated IRT parameters, and

@@ -76,6 +76,12 @@ matrix and preserves the same low-score direction correction during
 combination. The command-line equivalents are `--lz-difficulty`,
 `--lz-discrimination`, `--lz-theta`, and `--lz-model`.
 
+The `irv` component accepts `irv_num_split` for equal questionnaire sections or
+`irv_split_points` for explicit boundaries through `IndexOptions`. Supplying
+either option enables section scoring before direction correction and
+combination. The command-line equivalents are `--irv-num-split` and
+`--irv-split-points`.
+
 Screening-only response-style indices (`u3_poly`, `midpoint`, `acquiescence`,
 `onset`) are excluded from composite combination because they measure different
 constructs and can dilute pattern/consistency signals.

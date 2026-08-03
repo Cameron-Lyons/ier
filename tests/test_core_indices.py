@@ -221,6 +221,28 @@ class TestIRV(unittest.TestCase):
         result: npt.NDArray[np.float64] = irv(x, split=True, split_points=[0, 2, 4])
         self.assertEqual(len(result), 3)
 
+    def test_irv_custom_sections_match_independent_row_standard_deviations(self) -> None:
+        """Test uneven section scores retain the established unweighted mean."""
+        x = np.array(
+            [
+                [1.0, 2.0, 4.0, 4.0, 5.0, 9.0],
+                [2.0, np.nan, 2.0, 3.0, 5.0, 8.0],
+                [5.0, 4.0, 3.0, 2.0, 1.0, 1.0],
+            ]
+        )
+        expected = np.mean(
+            [
+                np.nanstd(x[:, :2], axis=1),
+                np.nanstd(x[:, 2:5], axis=1),
+                np.nanstd(x[:, 5:], axis=1),
+            ],
+            axis=0,
+        )
+
+        result = irv(x, split=True, split_points=[0, 2, 5, 6])
+
+        np.testing.assert_allclose(result, expected, rtol=0.0, atol=1e-15)
+
     def test_irv_with_split_and_na(self) -> None:
         """Test split IRV correctly handles missing values."""
         x: npt.NDArray[np.float64] = np.array([[1, 2, np.nan, 4], [2, 4, 6, 8], [1, 3, np.nan, 7]])

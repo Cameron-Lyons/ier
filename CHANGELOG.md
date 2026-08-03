@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.51] - 2026-08-03
+
+### Added
+
+- `IndexOptions.irv_num_split` and `IndexOptions.irv_split_points` now expose
+  section-aware IRV scoring through `screen()`, every composite helper, and the
+  corresponding command-line workflows. Supplying either option enables
+  section scoring; custom boundaries retain their established precedence over
+  an equal section count. The split reducer now accumulates one respondent
+  vector at a time instead of retaining and restacking every section result.
+  On 200,000 respondents by 80 items with 20 sections, peak traced allocation
+  fell from 62.6 MiB to 11.5 MiB (81.6%) while median runtime improved from
+  0.2322 to 0.2258 seconds. Direct, screening, command-line, and raw composite
+  scores remain aligned, and no dependency is added.
+
 ## [2.19.50] - 2026-08-03
 
 ### Added

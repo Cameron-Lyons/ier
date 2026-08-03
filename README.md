@@ -17,6 +17,7 @@ For a comprehensive methods review, see
 - Bounded pairwise-complete item discovery and scoring for psychometric synonym analyses
 - Contracted, active-row-compacted LZ estimation for complete and missing responses
 - Externally calibrated LZ parameters across Python and CLI scoring workflows
+- Section-aware IRV scoring with bounded-memory section reduction
 - Allocation-bounded split-half reliability with stable raw-moment correlations
 - Exact low-allocation two-point correlations for common even-odd factor designs
 - Batched dense, sparse, and grouped missing-response Markov entropy scoring
@@ -130,6 +131,8 @@ ier screen data.csv --indices infrequency \
 ier screen data.csv --indices lz \
   --lz-difficulty difficulty.npy --lz-discrimination discrimination.csv \
   --lz-theta theta.npy --lz-model 2pl
+ier screen data.csv --indices irv --irv-num-split 4
+ier screen data.csv --indices irv --irv-split-points 0,10,25,40
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --format npz --output screening.npz
@@ -168,6 +171,16 @@ Calibrated LZ parameter paths accept one-row or one-column delimited text,
 gzip-compressed text, and one-dimensional `.npy` arrays. NumPy parameter arrays
 are loaded pickle-free and memory-mapped read-only. Each omitted parameter keeps
 its fallback estimate; `--lz-model 1pl` fixes discrimination at one.
+
+Section-aware IRV can reveal response-quality changes that a single
+questionnaire-wide standard deviation obscures. Set
+`IndexOptions(irv_num_split=N)` for equal sections or
+`IndexOptions(irv_split_points=[0, ... , n_items])` for custom boundaries.
+Supplying either option enables section scoring and returns the unweighted mean
+of the section IRVs. The corresponding CLI options are `--irv-num-split` and
+`--irv-split-points`; custom boundaries take precedence if both are supplied.
+Section results are reduced incrementally, so temporary storage remains bounded
+to respondent-sized vectors instead of growing with the number of sections.
 
 Missing-response scoring is opt-in because planned omissions are often valid.
 Use `IndexOptions(missing_item_indices=[...])` or CLI

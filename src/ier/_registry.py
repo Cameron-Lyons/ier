@@ -35,6 +35,8 @@ class IndexOptions:
     """Shared optional configuration for registered index scorers."""
 
     na_rm: bool = True
+    irv_num_split: int | None = None
+    irv_split_points: list[int] | None = None
     psychsyn_critval: float = 0.6
     psychant_critval: float = -0.6
     evenodd_factors: list[int] | None = None
@@ -119,6 +121,17 @@ def _mahad_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
     if not isinstance(result, np.ndarray):
         raise ValueError("mahad returned non-array output")
     return result
+
+
+def _irv_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
+    split = options.irv_num_split is not None or options.irv_split_points is not None
+    return irv(
+        x,
+        na_rm=options.na_rm,
+        split=split,
+        num_split=options.irv_num_split if options.irv_num_split is not None else 1,
+        split_points=options.irv_split_points,
+    )
 
 
 def _psychsyn_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
@@ -243,7 +256,7 @@ def _missing_rate_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
 INDEX_REGISTRY: dict[str, IndexSpec] = {
     "irv": IndexSpec(
         name="irv",
-        scorer=lambda x, options: irv(x, na_rm=options.na_rm),
+        scorer=_irv_scores,
         flag_direction="low",
         composite_multiplier=-1.0,
         default_screen=True,

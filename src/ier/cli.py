@@ -137,6 +137,8 @@ def _load_optional_numeric_vector(path: Path | None, label: str) -> np.ndarray |
 def _options_from_args(args: argparse.Namespace) -> IndexOptions:
     return IndexOptions(
         na_rm=args.na_rm,
+        irv_num_split=args.irv_num_split,
+        irv_split_points=_parse_int_list(args.irv_split_points),
         scale_min=args.scale_min,
         scale_max=args.scale_max,
         psychsyn_critval=args.psychsyn_critval,
@@ -345,6 +347,19 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Drop incomplete rows / pairwise NaNs where supported (default: true)",
+    )
+    parser.add_argument(
+        "--irv-num-split",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Average IRV across N equal item sections instead of the full matrix",
+    )
+    parser.add_argument(
+        "--irv-split-points",
+        default=None,
+        metavar="I,J,...",
+        help="Average IRV across custom 0-based item boundaries, e.g. '0,10,20'",
     )
     parser.add_argument(
         "--strict",
