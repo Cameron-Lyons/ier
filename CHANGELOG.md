@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.36] - 2026-08-03
+
+### Added
+
+- `load_archive()` now validates and auto-detects reusable screen, composite,
+  and response-time NPZ results so callers do not need to choose a specialized
+  loader before reading the archive type.
+- `ier archive-info` emits compact text or strict JSON metadata for any
+  supported result archive, including schema, respondent and identifier state,
+  stored index and failure metadata, or timing cutoff provenance and flag rate.
+  Inspection shares the complete pickle-disabled archive validators and never
+  enters the raw matrix-scoring path.
+
 ## [2.19.35] - 2026-08-03
 
 ### Performance

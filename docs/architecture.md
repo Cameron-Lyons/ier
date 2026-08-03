@@ -62,7 +62,8 @@ The command-line path is split by responsibility:
 - `cli.py` defines arguments, converts index options, coordinates commands, and
   performs destination checks that must precede potentially expensive input.
 - `_cli_results.py` derives optional cutoffs and probabilities, then routes
-  catalog, screen, composite, and response-time results to the selected format.
+  catalog, archive metadata, screen, composite, and response-time results to the
+  selected format.
 - `_cli_input.py` owns forward-only delimited input, gzip handling, named-column
   selection, and memory-mapped NumPy input.
 - `_cli_composite.py` validates shared respondent alignment and flag metadata
@@ -72,7 +73,8 @@ The command-line path is split by responsibility:
   low-level typed, pickle-free NumPy writer.
 - `archive.py` owns atomic same-directory staging, the shared stream writer, and
   public validated save/load boundaries for reusable registered score vectors
-  and response-time results.
+  and response-time results. Its generic loader reads the declared result type
+  once and dispatches to the same complete specialized validators.
 
 Screen and composite commands carry the registry's ordered soft-failure map
 through text, JSON, and NPZ serializers and mirror failures to standard error

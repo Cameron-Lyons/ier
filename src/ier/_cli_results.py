@@ -12,12 +12,14 @@ from ier._cli_npz import (
     _write_screen_npz,
 )
 from ier._cli_output import (
+    _emit_archive_info_text,
     _emit_composite_text,
     _emit_index_catalog_json,
     _emit_index_catalog_text,
     _emit_response_time_text,
     _emit_screen_text,
     _output_stream,
+    _write_archive_info_json,
     _write_composite_csv,
     _write_composite_json,
     _write_index_catalog_csv,
@@ -40,8 +42,21 @@ if TYPE_CHECKING:
         ResponseTimeFlagDirection,
         ResponseTimeMetric,
         ResponseTimeThresholdSource,
+        ResultArchive,
         ScreenResult,
     )
+
+
+def write_archive_info_result(args: argparse.Namespace, archive: ResultArchive) -> int:
+    """Write validated archive metadata through the selected CLI format."""
+    if args.format == "json":
+        _write_json_output(
+            args.output,
+            lambda handle: _write_archive_info_json(handle, archive),
+        )
+    else:
+        _write_output(_emit_archive_info_text(archive), args.output)
+    return 0
 
 
 def write_index_catalog_result(args: argparse.Namespace, catalog: IndexCatalog) -> int:

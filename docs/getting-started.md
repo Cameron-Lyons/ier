@@ -230,6 +230,24 @@ saved = load_score_archive("screening.npz")
 revised = screen_scores(saved["scores"], percentile=99)
 ```
 
+If the result type is not known beforehand, use the generic validated loader or
+inspect its metadata from the command line:
+
+```python
+from ier import load_archive
+
+saved = load_archive("results.npz")
+print(saved["result_type"], saved["n_respondents"])
+```
+
+```bash
+ier archive-info results.npz
+ier archive-info results.npz --format json --output archive-metadata.json
+```
+
+Both paths auto-detect screen, composite, and response-time results and run the
+same complete pickle-disabled validators as the specialized loaders.
+
 `save_score_archive()` validates every vector and metadata field before opening
 the staged archive and atomically replaces the destination only after every
 member is complete. Detailed composite NPZ output produced with
