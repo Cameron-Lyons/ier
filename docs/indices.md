@@ -44,7 +44,7 @@ defaults, and options that must be configured before an index can run.
 | `lz` | lz person-fit | low | no | yes | optional IRT params via direct API; overflow-safe logistic kernel |
 | `semantic_syn` | Predefined synonym consistency | low | no | yes | `semantic_item_pairs` |
 | `semantic_ant` | Predefined antonym consistency | low | no | yes | `semantic_item_pairs`, optional scale bounds |
-| `infrequency` | Failed attention / bogus items | high | no | yes | item indices + expected responses |
+| `infrequency` | Failed attention / bogus items | high | no | yes | item indices, expected responses, missing policy |
 
 \* `person_total` flags unusually low correlations with the sample-wide item
 profile under the default low-direction percentile rule.
@@ -75,6 +75,14 @@ provide a Boolean `missing_applicable_mask` through `IndexOptions` or
 `applicable_mask` directly. False cells are excluded from both the numerator and
 denominator; rows without applicable selected items return `NaN` and are not
 flagged. The CLI exposes fixed subsets through `--missing-item-indices`.
+
+`infrequency` preserves its historical missing-response behavior with
+`missing="pass"`: unanswered checks do not count as failures and remain in a
+proportion denominator. Choose `"fail"` for conservative scoring, `"omit"` for
+available-case proportions, or `"propagate"` to require complete attention-check
+data. Configure registry scoring with `IndexOptions.infrequency_missing` and the
+CLI with `--infrequency-missing`. The standalone `infrequency_flag()` can flag
+either counts or proportions.
 
 ## Response-time indices (standalone — not in the registry)
 

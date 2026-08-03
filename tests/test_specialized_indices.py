@@ -967,6 +967,21 @@ class TestInfrequency(unittest.TestCase):
         self.assertTrue(flags_t1[0])
         self.assertFalse(flags_t2[0])
 
+    def test_proportion_flagging_uses_missing_policy(self) -> None:
+        """Test proportional cutoffs and unavailable rows share scoring semantics."""
+        data = [[5, 5], [1, 5], [np.nan, np.nan]]
+        scores, flags = infrequency_flag(
+            data,
+            [0, 1],
+            [5, 1],
+            threshold=0.5,
+            proportion=True,
+            missing="omit",
+        )
+
+        np.testing.assert_allclose(scores, [0.5, 1.0, np.nan], equal_nan=True)
+        np.testing.assert_array_equal(flags, [True, True, False])
+
     def test_empty_indices_raises(self) -> None:
         """Test that empty item_indices raises ValueError."""
         data = [[1, 2, 3]]
@@ -985,11 +1000,65 @@ class TestInfrequency(unittest.TestCase):
         with self.assertRaises(ValueError):
             infrequency(data, item_indices=[10], expected_responses=[5])
 
-    def test_with_nan(self) -> None:
-        """Test NaN values are treated as non-matching but not counted as failures."""
-        data = [[np.nan, 1], [5, 1]]
-        result = infrequency(data, item_indices=[0, 1], expected_responses=[5, 1])
-        self.assertEqual(len(result), 2)
+    def test_missing_response_policies(self) -> None:
+        """Test legacy, conservative, available-case, and strict missing policies."""
+        data = [
+            [np.nan, 1],
+            [5, np.nan],
+            [np.nan, np.nan],
+            [1, 5],
+        ]
+        kwargs = {"item_indices": [0, 1], "expected_responses": [5, 1]}
+
+        np.testing.assert_array_equal(infrequency(data, **kwargs), [0.0, 0.0, 0.0, 2.0])
+        np.testing.assert_array_equal(
+            infrequency(data, **kwargs, missing="fail"),
+            [1.0, 1.0, 2.0, 2.0],
+        )
+        np.testing.assert_allclose(
+            infrequency(data, **kwargs, missing="omit"),
+            [0.0, 0.0, np.nan, 2.0],
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            infrequency(data, **kwargs, missing="omit", proportion=True),
+            [0.0, 0.0, np.nan, 1.0],
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(
+            infrequency(data, **kwargs, missing="propagate"),
+            [np.nan, np.nan, np.nan, 2.0],
+            equal_nan=True,
+        )
+
+    def test_configuration_validation(self) -> None:
+        """Test invalid policies, selections, expectations, and thresholds."""
+        data = [[5, 1]]
+        cases = [
+            ({"item_indices": [True], "expected_responses": [5]}, "integer column"),
+            ({"item_indices": [0.5], "expected_responses": [5]}, "integer column"),
+            ({"item_indices": [0, 0], "expected_responses": [5, 5]}, "duplicates"),
+            ({"item_indices": [0], "expected_responses": [np.nan]}, "finite numeric"),
+            ({"item_indices": [0], "expected_responses": [[5]]}, "finite numeric"),
+            (
+                {"item_indices": [0], "expected_responses": [5], "missing": "unknown"},
+                "missing must be one of",
+            ),
+            (
+                {"item_indices": [0], "expected_responses": [5], "proportion": 1},
+                "proportion must be a boolean",
+            ),
+        ]
+        for kwargs, message in cases:
+            with self.subTest(kwargs=kwargs), self.assertRaisesRegex(ValueError, message):
+                infrequency(data, **kwargs)  # type: ignore[arg-type]
+
+        with self.assertRaisesRegex(ValueError, "nonnegative"):
+            infrequency_flag(data, [0], [5], threshold=-0.1)
+        with self.assertRaisesRegex(ValueError, "between 0 and 1"):
+            infrequency_flag(data, [0], [5], threshold=1.1, proportion=True)
+        with self.assertRaisesRegex(ValueError, "proportion must be a boolean"):
+            infrequency_flag(data, [0], [5], proportion=1)  # type: ignore[arg-type]
 
 
 class TestLongstringPattern(unittest.TestCase):

@@ -18,6 +18,7 @@ For a comprehensive methods review, see
 - Configurable multi-index consensus decisions for respondent-level screening
 - Fixed or sample-relative per-index screening thresholds
 - Skip-logic-aware missing-response rates with required-item subsets and applicability masks
+- Configurable attention-check missing policies with count or proportion scoring
 - Programmatic and CLI index catalog with defaults and configuration requirements
 - CLI preservation of named respondent identifier columns
 - CLI selection of named item columns from files containing metadata
@@ -104,6 +105,9 @@ ier screen data.csv --threshold irv=0.25 --threshold longstring=8
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --workers 4
 ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
+ier screen data.csv --indices infrequency \
+  --infrequency-item-indices 3,7 \
+  --infrequency-expected-responses 5,1 --infrequency-missing fail
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --format npz --output screening.npz

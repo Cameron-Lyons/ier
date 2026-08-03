@@ -56,6 +56,7 @@ from .types import IndexErrorMap as IndexErrorMap
 from .types import IndexFlagMap as IndexFlagMap
 from .types import IndexMetadata as IndexMetadata
 from .types import IndexScoreMap as IndexScoreMap
+from .types import InfrequencyMissingPolicy as InfrequencyMissingPolicy
 from .types import IntArray as IntArray
 from .types import ScreenIndexSummary as ScreenIndexSummary
 from .types import ScreenResult as ScreenResult
@@ -92,6 +93,7 @@ __all__ = [
     "individual_reliability_flag",
     "infrequency",
     "infrequency_flag",
+    "InfrequencyMissingPolicy",
     "index_catalog",
     "IndexCatalog",
     "IndexErrorMap",

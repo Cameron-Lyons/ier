@@ -1034,6 +1034,43 @@ class TestCli(unittest.TestCase):
         np.testing.assert_allclose(payload["scores"]["missing_rate"], [0.0, 0.0, 0.5])
         self.assertEqual(payload["consensus_flags"], [False, False, True])
 
+    def test_screen_infrequency_available_case_policy(self) -> None:
+        attention = self.root / "attention-checks.csv"
+        attention.write_text(
+            "i1,i2,metadata\n5,1,9\n,1,9\n1,,9\n,,9\n",
+            encoding="utf-8",
+        )
+        out = self.root / "attention-checks.json"
+
+        code = main(
+            [
+                "screen",
+                str(attention),
+                "--indices",
+                "infrequency",
+                "--infrequency-item-indices",
+                "0,1",
+                "--infrequency-expected-responses",
+                "5,1",
+                "--infrequency-proportion",
+                "--infrequency-missing",
+                "omit",
+                "--threshold",
+                "infrequency=0.5",
+                "--min-flags",
+                "1",
+                "--format",
+                "json",
+                "--output",
+                str(out),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(payload["scores"]["infrequency"], [0.0, 0.0, 1.0, None])
+        self.assertEqual(payload["consensus_flags"], [False, False, True, False])
+
     def test_screen_json_output(self) -> None:
         out = self.root / "screen.json"
         code = main(

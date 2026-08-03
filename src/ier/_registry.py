@@ -23,7 +23,7 @@ from ier.person_total import person_total
 from ier.psychsyn import psychant, psychsyn
 from ier.reliability import individual_reliability
 from ier.semantic import semantic_ant, semantic_syn
-from ier.types import IndexCatalog
+from ier.types import IndexCatalog, InfrequencyMissingPolicy
 from ier.u3_poly import midpoint_responding, u3_poly
 
 FlagDirection = Literal["high", "low"]
@@ -56,6 +56,7 @@ class IndexOptions:
     infrequency_item_indices: list[int] | None = None
     infrequency_expected_responses: list[float] | None = None
     infrequency_proportion: bool = False
+    infrequency_missing: InfrequencyMissingPolicy = "pass"
     mad_scale_min: float | None = None
     missing_item_indices: list[int] | None = None
     missing_applicable_mask: ArrayLike | None = None
@@ -212,6 +213,7 @@ def _infrequency_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
         item_indices=options.infrequency_item_indices,
         expected_responses=options.infrequency_expected_responses,
         proportion=options.infrequency_proportion,
+        missing=options.infrequency_missing,
     )
 
 

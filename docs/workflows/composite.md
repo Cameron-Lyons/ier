@@ -65,6 +65,10 @@ fixed required-item subset or `missing_applicable_mask=...` for respondent-speci
 skip logic. Respondents without applicable items contribute an unavailable
 component score, so `min_valid_indices` can enforce the desired composite coverage.
 
+The `infrequency` component also accepts `infrequency_missing`. Policies `omit`
+and `propagate` can produce unavailable scores; combine them with
+`min_valid_indices` when attention-check availability is required for a composite.
+
 Screening-only response-style indices (`u3_poly`, `midpoint`, `acquiescence`,
 `onset`) are excluded from composite combination because they measure different
 constructs and can dilute pattern/consistency signals.

@@ -157,6 +157,7 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
         infrequency_item_indices=_parse_int_list(args.infrequency_item_indices),
         infrequency_expected_responses=_parse_float_list(args.infrequency_expected_responses),
         infrequency_proportion=args.infrequency_proportion,
+        infrequency_missing=args.infrequency_missing,
         missing_item_indices=_parse_int_list(args.missing_item_indices),
     )
 
@@ -259,6 +260,12 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         "--infrequency-proportion",
         action=argparse.BooleanOptionalAction,
         default=False,
+    )
+    parser.add_argument(
+        "--infrequency-missing",
+        choices=["pass", "fail", "omit", "propagate"],
+        default="pass",
+        help="Missing attention-check policy (default: pass)",
     )
     parser.add_argument(
         "--missing-item-indices",

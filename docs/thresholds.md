@@ -29,6 +29,11 @@ Their boundary rule matches `screen()`: fixed cutoffs are inclusive (at or
 beyond the cutoff), while sample-percentile cutoffs use strict tail comparisons
 so ties at the estimated percentile are not flagged.
 
+For designed attention checks, `infrequency_flag()` accepts either count cutoffs
+or proportional cutoffs with `proportion=True`. State the chosen missing-response
+policy alongside the cutoff because `pass`, `fail`, `omit`, and `propagate` encode
+different assumptions about unanswered checks.
+
 The composite command exposes the same rule through mutually exclusive
 `--threshold` and `--percentile` options. Flagging is opt-in: without either
 option, composite output contains scores only. The resolved cutoff and its

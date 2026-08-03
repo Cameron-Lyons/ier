@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.19.16] - 2026-08-03
+
+### Added
+
+- Attention-check scoring now supports explicit `pass`, `fail`, `omit`, and
+  `propagate` missing-response policies through direct APIs, `IndexOptions`, and
+  `--infrequency-missing`. The legacy `pass` policy remains the default.
+- `infrequency_flag()` can now score and flag failure proportions, including
+  missing-aware denominators and unavailable-row handling.
+
+### Changed
+
+- Attention-check configuration now rejects non-Boolean proportion controls,
+  duplicate or non-integer item indices, non-finite expected responses, and
+  invalid count or proportion thresholds.
+
 ## [2.19.15] - 2026-08-03
 
 ### Added
