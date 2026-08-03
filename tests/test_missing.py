@@ -60,6 +60,39 @@ class TestMissingRate(unittest.TestCase):
             equal_nan=True,
         )
 
+    def test_large_subset_and_mask_match_direct_definition(self) -> None:
+        rng = np.random.default_rng(20260803)
+        data = rng.integers(1, 6, size=(8_000, 80)).astype(float)
+        data[rng.random(data.shape) < 0.1] = np.nan
+        applicable = rng.random(data.shape) < 0.75
+        applicable[-1] = False
+        selected = list(range(0, data.shape[1], 2))
+
+        selected_data = data[:, selected]
+        np.testing.assert_array_equal(
+            missing_rate(data, item_indices=selected),
+            np.mean(np.isnan(selected_data), axis=1),
+        )
+
+        selected_applicable = applicable[:, selected]
+        missing_counts = np.count_nonzero(np.isnan(selected_data) & selected_applicable, axis=1)
+        applicable_counts = np.count_nonzero(selected_applicable, axis=1)
+        expected = np.full(len(data), np.nan)
+        np.divide(
+            missing_counts,
+            applicable_counts,
+            out=expected,
+            where=applicable_counts > 0,
+        )
+
+        actual = missing_rate(
+            data,
+            item_indices=selected,
+            applicable_mask=applicable,
+        )
+
+        np.testing.assert_array_equal(actual, expected)
+
     def test_item_selection_validation(self) -> None:
         cases: list[tuple[Any, str]] = [
             ([], "cannot be empty"),
@@ -88,6 +121,28 @@ class TestMissingRate(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, message),
             ):
                 missing_rate(self.data, applicable_mask=cast("Any", applicable_mask))
+
+    def test_read_only_inputs_are_not_modified(self) -> None:
+        data = self.data.copy()
+        applicable = np.array(
+            [
+                [True, False, True, False],
+                [True, True, True, True],
+                [True, True, False, False],
+                [False, False, False, False],
+            ]
+        )
+        expected_data = data.copy()
+        expected_applicable = applicable.copy()
+        data.flags.writeable = False
+        applicable.flags.writeable = False
+
+        missing_rate(data, item_indices=[0, 2], applicable_mask=applicable)
+
+        np.testing.assert_array_equal(data, expected_data)
+        np.testing.assert_array_equal(applicable, expected_applicable)
+        self.assertFalse(data.flags.writeable)
+        self.assertFalse(applicable.flags.writeable)
 
     def test_fixed_threshold_is_inclusive(self) -> None:
         scores, flags = missing_rate_flag(self.data, threshold=0.5)
