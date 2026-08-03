@@ -1,8 +1,8 @@
-"""Benchmark CLI CSV and NPZ serialization on synthetic screening results.
+"""Benchmark CLI JSON, CSV, and NPZ serialization on synthetic screening results.
 
 Usage:
     uv run python benchmarks/bench_cli_output.py
-    uv run python benchmarks/bench_cli_output.py --format npz --respondents 250000
+    uv run python benchmarks/bench_cli_output.py --format json --respondents 250000
 """
 
 from __future__ import annotations
@@ -19,12 +19,12 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from ier._cli_npz import _write_screen_npz
-from ier._cli_output import _output_stream, _write_screen_csv
+from ier._cli_output import _output_stream, _write_screen_csv, _write_screen_json
 
 if TYPE_CHECKING:
     from ier.types import ScreenResult
 
-OutputFormat = Literal["csv", "npz"]
+OutputFormat = Literal["csv", "json", "npz"]
 
 
 def _make_result(n_respondents: int, n_indices: int) -> ScreenResult:
@@ -64,6 +64,10 @@ def _write_result(
         with _output_stream(destination) as handle:
             _write_screen_csv(handle, result)
         return
+    if output_format == "json":
+        with _output_stream(destination) as handle:
+            _write_screen_json(handle, result)
+        return
     _write_screen_npz(destination, result)
 
 
@@ -95,14 +99,23 @@ def main() -> None:
     parser.add_argument("--respondents", type=int, default=100_000)
     parser.add_argument("--indices", type=int, default=5)
     parser.add_argument("--repeats", type=int, default=3)
-    parser.add_argument("--format", choices=["csv", "npz", "both"], default="both")
+    parser.add_argument(
+        "--format",
+        choices=["csv", "json", "npz", "all", "both"],
+        default="all",
+    )
     args = parser.parse_args()
 
     if args.respondents < 1 or args.indices < 1 or args.repeats < 1:
         parser.error("respondents, indices, and repeats must be positive")
 
     result = _make_result(args.respondents, args.indices)
-    formats: list[OutputFormat] = ["csv", "npz"] if args.format == "both" else [args.format]
+    if args.format == "all":
+        formats: list[OutputFormat] = ["csv", "json", "npz"]
+    elif args.format == "both":
+        formats = ["csv", "npz"]
+    else:
+        formats = [args.format]
 
     print(f"respondents={args.respondents} indices={args.indices}")
     with tempfile.TemporaryDirectory() as directory:

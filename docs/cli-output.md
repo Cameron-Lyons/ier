@@ -10,9 +10,10 @@ formats, and lossless NumPy archives:
 | `csv` | file, `.gz`, or standard output | Row-oriented statistics workflows |
 | `npz` | explicit `.npz` file | Fast, typed Python and NumPy workflows |
 
-CSV rows are written forward-only with bounded output allocation. JSON converts
-non-finite numbers to `null`, and CSV emits empty cells. NPZ preserves NumPy
-dtypes and non-finite values exactly without object arrays or pickling.
+CSV rows and JSON respondent arrays are written forward-only with bounded output
+allocation. JSON converts non-finite numbers to `null`, and CSV emits empty
+cells. NPZ preserves NumPy dtypes and non-finite values exactly without object
+arrays or pickling.
 
 ## NumPy archives
 

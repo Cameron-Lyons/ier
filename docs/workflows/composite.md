@@ -87,8 +87,8 @@ Uncompressed `.npy` matrices are memory-mapped read-only. They must be non-empty
 two-dimensional, and real numeric; header selection and delimiter options do not
 apply to this binary format.
 
-CSV results are written row by row to plain files, gzip files, or standard output
-without retaining the complete export in memory.
+CSV rows and JSON respondent arrays are written forward-only to plain files,
+gzip files, or standard output without retaining the complete export in memory.
 
 JSON output is standards-compliant: unavailable or non-finite scores are encoded
 as `null`. CSV output represents those scores as empty cells so numeric columns

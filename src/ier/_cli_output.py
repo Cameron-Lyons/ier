@@ -6,16 +6,28 @@ import csv
 import gzip
 import json
 import sys
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TextIO
 
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
-
     from ier.types import IndexCatalog, ScreenResult
+
+
+_JSON_ARRAY_CHUNK_SIZE = 4096
+
+
+@dataclass(frozen=True)
+class _JsonArray:
+    """A large one-dimensional value sequence serialized in bounded chunks."""
+
+    values: Sequence[object] | np.ndarray
+    kind: Literal["number", "integer", "boolean", "string"]
 
 
 def _write_output(text: str, path: Path | None) -> None:
@@ -39,9 +51,70 @@ def _output_stream(path: Path | None) -> Iterator[TextIO]:
         yield handle
 
 
-def _json_numbers(values: np.ndarray) -> list[float | None]:
-    """Convert numeric arrays to strict-JSON values, representing non-finite values as null."""
-    return [float(value) if np.isfinite(value) else None for value in values]
+def _json_chunk_values(array: _JsonArray, start: int, stop: int) -> list[object]:
+    """Materialize one bounded JSON-ready chunk from a large value sequence."""
+    values = array.values[start:stop]
+    if array.kind == "number":
+        numeric = np.asarray(values, dtype=float)
+        chunk: list[object] = numeric.tolist()
+        for index in np.flatnonzero(~np.isfinite(numeric)):
+            chunk[int(index)] = None
+        return chunk
+    if array.kind == "integer":
+        return [int(value) for value in np.asarray(values, dtype=np.int_)]
+    if array.kind == "boolean":
+        return [bool(value) for value in np.asarray(values, dtype=np.bool_)]
+    return [str(value) for value in values]
+
+
+def _write_json_array(handle: TextIO, array: _JsonArray) -> None:
+    """Write a large JSON array without retaining its complete Python representation."""
+    handle.write("[")
+    for start in range(0, len(array.values), _JSON_ARRAY_CHUNK_SIZE):
+        if start:
+            handle.write(",")
+        chunk = _json_chunk_values(
+            array,
+            start,
+            min(start + _JSON_ARRAY_CHUNK_SIZE, len(array.values)),
+        )
+        encoded = json.dumps(chunk, allow_nan=False, separators=(",", ":"))
+        handle.write(encoded[1:-1])
+    handle.write("]")
+
+
+def _write_json_value(handle: TextIO, value: object, indent: int = 0) -> None:
+    """Write strict JSON recursively, streaming marked large arrays."""
+    if isinstance(value, _JsonArray):
+        _write_json_array(handle, value)
+        return
+    if isinstance(value, Mapping):
+        handle.write("{")
+        if value:
+            handle.write("\n")
+            last_index = len(value) - 1
+            for index, (key, item) in enumerate(value.items()):
+                handle.write(" " * (indent + 2))
+                json.dump(key, handle, allow_nan=False)
+                handle.write(": ")
+                _write_json_value(handle, item, indent + 2)
+                handle.write("," if index < last_index else "")
+                handle.write("\n")
+            handle.write(" " * indent)
+        handle.write("}")
+        return
+    json.dump(value, handle, allow_nan=False)
+
+
+def _write_json_output(
+    path: Path | None,
+    writer: Callable[[TextIO], None],
+) -> None:
+    """Write JSON to a plain, gzip, or standard-output destination."""
+    with _output_stream(path) as handle:
+        writer(handle)
+        if path is None or path == Path("-"):
+            handle.write("\n")
 
 
 def _csv_number(value: float) -> float | None:
@@ -154,6 +227,17 @@ def _emit_screen_json(
     result: ScreenResult,
     respondent_ids: list[str] | None = None,
 ) -> str:
+    output = StringIO()
+    _write_screen_json(output, result, respondent_ids)
+    return output.getvalue()
+
+
+def _write_screen_json(
+    handle: TextIO,
+    result: ScreenResult,
+    respondent_ids: list[str] | None = None,
+) -> None:
+    """Write screening JSON while bounding respondent-array allocation."""
     summary = {
         name: {
             "mean": stats["mean"] if np.isfinite(stats["mean"]) else None,
@@ -170,20 +254,23 @@ def _emit_screen_json(
         "indices_used": result["indices_used"],
         "errors": result["errors"],
         "thresholds": result["thresholds"],
-        "flag_counts": np.asarray(result["flag_counts"]).tolist(),
-        "consensus_flags": np.asarray(result["consensus_flags"]).astype(bool).tolist(),
+        "flag_counts": _JsonArray(np.asarray(result["flag_counts"]), "integer"),
+        "consensus_flags": _JsonArray(np.asarray(result["consensus_flags"]), "boolean"),
         "min_flags": result["min_flags"],
-        "scores": {name: _json_numbers(np.asarray(arr)) for name, arr in result["scores"].items()},
+        "scores": {
+            name: _JsonArray(np.asarray(arr), "number") for name, arr in result["scores"].items()
+        },
         "flags": {
-            name: np.asarray(arr).astype(bool).tolist() for name, arr in result["flags"].items()
+            name: _JsonArray(np.asarray(arr), "boolean") for name, arr in result["flags"].items()
         },
         "summary": summary,
     }
     if respondent_ids is not None:
-        payload["respondent_ids"] = _respondent_label_values(
-            result["n_respondents"], respondent_ids
+        payload["respondent_ids"] = _JsonArray(
+            _respondent_label_values(result["n_respondents"], respondent_ids),
+            "string",
         )
-    return json.dumps(payload, indent=2, allow_nan=False)
+    _write_json_value(handle, payload)
 
 
 def _write_screen_csv(
@@ -240,14 +327,29 @@ def _emit_composite_json(
     method: str,
     respondent_ids: list[str] | None = None,
 ) -> str:
+    output = StringIO()
+    _write_composite_json(output, scores, method, respondent_ids)
+    return output.getvalue()
+
+
+def _write_composite_json(
+    handle: TextIO,
+    scores: np.ndarray,
+    method: str,
+    respondent_ids: list[str] | None = None,
+) -> None:
+    """Write composite JSON while bounding respondent-array allocation."""
     payload: dict[str, object] = {
         "method": method,
-        "scores": _json_numbers(scores),
+        "scores": _JsonArray(scores, "number"),
         "n_respondents": len(scores),
     }
     if respondent_ids is not None:
-        payload["respondent_ids"] = _respondent_label_values(len(scores), respondent_ids)
-    return json.dumps(payload, indent=2, allow_nan=False)
+        payload["respondent_ids"] = _JsonArray(
+            _respondent_label_values(len(scores), respondent_ids),
+            "string",
+        )
+    _write_json_value(handle, payload)
 
 
 def _write_composite_csv(
@@ -302,17 +404,43 @@ def _emit_response_time_json(
     respondent_ids: list[str] | None = None,
 ) -> str:
     """Render timing results as strict JSON."""
+    output = StringIO()
+    _write_response_time_json(
+        output,
+        scores,
+        flags,
+        metric,
+        direction,
+        cutoff,
+        respondent_ids,
+    )
+    return output.getvalue()
+
+
+def _write_response_time_json(
+    handle: TextIO,
+    scores: np.ndarray,
+    flags: np.ndarray,
+    metric: str,
+    direction: Literal["high", "low"],
+    cutoff: float,
+    respondent_ids: list[str] | None = None,
+) -> None:
+    """Write timing JSON while bounding respondent-array allocation."""
     payload: dict[str, object] = {
         "n_respondents": len(scores),
         "metric": metric,
         "flag_direction": direction,
         "threshold": cutoff,
-        "scores": _json_numbers(scores),
-        "flags": flags.astype(bool).tolist(),
+        "scores": _JsonArray(scores, "number"),
+        "flags": _JsonArray(flags, "boolean"),
     }
     if respondent_ids is not None:
-        payload["respondent_ids"] = _respondent_label_values(len(scores), respondent_ids)
-    return json.dumps(payload, indent=2, allow_nan=False)
+        payload["respondent_ids"] = _JsonArray(
+            _respondent_label_values(len(scores), respondent_ids),
+            "string",
+        )
+    _write_json_value(handle, payload)
 
 
 def _write_response_time_csv(

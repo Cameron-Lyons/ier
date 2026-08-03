@@ -41,7 +41,7 @@ The command-line path is split by responsibility:
 - `cli.py` defines arguments, converts index options, and coordinates commands.
 - `_cli_input.py` owns forward-only delimited input, gzip handling, named-column
   selection, and memory-mapped NumPy input.
-- `_cli_output.py` renders text, strict JSON, and streamed CSV results.
+- `_cli_output.py` renders text plus bounded strict JSON and CSV results.
 - `_cli_npz.py` writes versioned, typed, pickle-free NumPy result archives.
 
 Keeping parsing, matrix construction, serialization, and orchestration separate
@@ -104,4 +104,4 @@ Plotting remains optional and reports a centralized install hint from
   JSON under `tests/fixtures/parity/`.
 - Detection-rate simulation: `benchmarks/bench_detection.py`.
 - Throughput microbench: `benchmarks/bench_screen.py`.
-- CLI result serialization: `benchmarks/bench_cli_output.py`.
+- CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.
