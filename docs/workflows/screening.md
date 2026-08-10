@@ -337,6 +337,11 @@ lets screen and composite commands ignore unselected metadata columns while
 preserving the requested item order. Any item-index options refer to that
 selected order.
 
+Header detection defaults to `--header auto`. Use `--header present` when the
+first row contains ambiguous names such as numeric item codes, or `--header absent`
+to ensure a malformed first data row is reported instead of interpreted as a
+header. Named column selection cannot be combined with `--header absent`.
+
 Uncompressed `.npy` input is memory-mapped read-only and must contain one
 non-empty, two-dimensional, real numeric array. It has no headers, so
 `--id-column`, `--item-columns`, and `--delimiter` do not apply. Compressed

@@ -174,6 +174,12 @@ def _add_matrix_input_options(parser: argparse.ArgumentParser) -> None:
         help="Input delimiter (auto-detect comma, tab, semicolon, or whitespace if omitted)",
     )
     parser.add_argument(
+        "--header",
+        choices=["auto", "present", "absent"],
+        default="auto",
+        help="Delimited input header mode (default: auto)",
+    )
+    parser.add_argument(
         "--id-column",
         default=None,
         metavar="NAME",
@@ -504,6 +510,7 @@ def _run_command(args: argparse.Namespace) -> int:
         args.delimiter,
         args.id_column,
         _parse_name_list(args.item_columns),
+        args.header,
     )
     if args.command == "response-time":
         scores, direction = _score_response_times(

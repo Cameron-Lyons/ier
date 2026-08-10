@@ -8,12 +8,14 @@ import sys
 from array import array
 from itertools import chain
 from pathlib import Path
-from typing import TYPE_CHECKING, TextIO
+from typing import TYPE_CHECKING, Literal, TextIO
 
 import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+HeaderMode = Literal["auto", "present", "absent"]
 
 
 def _row_starts_with_non_numeric_value(row: list[str]) -> bool:
@@ -73,12 +75,15 @@ def _load_npy_input(
     delimiter: str | None,
     id_column: str | None,
     item_columns: list[str] | None,
+    header_mode: HeaderMode,
 ) -> tuple[np.ndarray, None]:
     """Memory-map one headerless real numeric NumPy matrix."""
     if delimiter is not None:
         raise ValueError("--delimiter is not supported with .npy input")
     if id_column is not None or item_columns is not None:
         raise ValueError("--id-column and --item-columns are not supported with .npy input")
+    if header_mode != "auto":
+        raise ValueError("--header is not supported with .npy input")
 
     try:
         loaded = np.load(path, allow_pickle=False, mmap_mode="r")
@@ -129,12 +134,17 @@ def _load_input(
     delimiter: str | None,
     id_column: str | None = None,
     item_columns: list[str] | None = None,
+    header_mode: HeaderMode = "auto",
 ) -> tuple[np.ndarray, list[str] | None]:
     """Stream selected numeric items and optionally preserve a named identifier."""
+    if header_mode not in {"auto", "present", "absent"}:
+        raise ValueError("header mode must be 'auto', 'present', or 'absent'")
+    if header_mode == "absent" and (id_column is not None or item_columns is not None):
+        raise ValueError("--header absent cannot be used with --id-column or --item-columns")
     if path.name.casefold().endswith(".npy.gz"):
         raise ValueError("compressed .npy input is not supported; use uncompressed .npy")
     if path.suffix.casefold() == ".npy":
-        return _load_npy_input(path, delimiter, id_column, item_columns)
+        return _load_npy_input(path, delimiter, id_column, item_columns, header_mode)
 
     source = _input_label(path)
     row_iterator = iter(_iter_rows(path, delimiter))
@@ -151,11 +161,11 @@ def _load_input(
     id_index: int | None = None
     item_indices: list[int] | None = None
     header: list[str] | None = None
-    if id_column is not None or selected_names is not None:
+    if id_column is not None or selected_names is not None or header_mode == "present":
         header = [cell.strip() for cell in first_row]
         data_rows: Iterator[list[str]] = row_iterator
         expected_width: int | None = len(header)
-    elif _row_starts_with_non_numeric_value(first_row):
+    elif header_mode == "auto" and _row_starts_with_non_numeric_value(first_row):
         data_rows = row_iterator
         expected_width = None
     else:
