@@ -898,6 +898,7 @@ class TestCli(unittest.TestCase):
             ["--delimiter", ","],
             ["--id-column", "participant"],
             ["--item-columns", "i1,i2"],
+            ["--header", "absent"],
         ]:
             with self.subTest(option=option):
                 stderr = StringIO()
@@ -1349,6 +1350,58 @@ class TestCli(unittest.TestCase):
 
         self.assertIsNone(identifiers)
         np.testing.assert_array_equal(matrix, [[4.0, 3.0], [6.0, 5.0]])
+
+    def test_explicit_header_mode_supports_fully_numeric_headers(self) -> None:
+        numeric_headers = self.root / "fully-numeric-headers.csv"
+        numeric_headers.write_text("1,2,3\n4,5,6\n7,8,9\n", encoding="utf-8")
+
+        matrix, identifiers = _load_input(numeric_headers, None, header_mode="present")
+
+        self.assertIsNone(identifiers)
+        np.testing.assert_array_equal(matrix, [[4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
+
+    def test_explicit_headerless_mode_rejects_nonnumeric_first_row(self) -> None:
+        malformed = self.root / "malformed-first-row.csv"
+        malformed.write_text("not-a-number,2,3\n4,5,6\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "failed to parse numeric matrix"):
+            _load_input(malformed, None, header_mode="absent")
+
+    def test_header_mode_works_across_matrix_commands(self) -> None:
+        numeric_headers = self.root / "numeric-command-headers.csv"
+        numeric_headers.write_text("1,2,3,4\n1,1,1,1\n1,2,3,4\n", encoding="utf-8")
+
+        for command in ["screen", "composite", "response-time"]:
+            with self.subTest(command=command):
+                output = self.root / f"{command}.json"
+                args = [
+                    command,
+                    str(numeric_headers),
+                    "--header",
+                    "present",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(output),
+                ]
+                if command != "response-time":
+                    args.extend(["--indices", "irv"])
+
+                self.assertEqual(main(args), 0)
+                payload = json.loads(output.read_text(encoding="utf-8"))
+                scores = payload["scores"]
+                if command == "screen":
+                    scores = scores["irv"]
+                self.assertEqual(len(scores), 2)
+
+    def test_headerless_mode_rejects_named_column_selection(self) -> None:
+        with self.assertRaisesRegex(ValueError, "--header absent cannot be used"):
+            _load_input(
+                self.csv_path,
+                None,
+                id_column="participant",
+                header_mode="absent",
+            )
 
     def test_item_column_selection_works_across_commands_and_outputs(self) -> None:
         mixed = self.root / "mixed-command-columns.csv"

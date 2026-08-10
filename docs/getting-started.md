@@ -119,6 +119,12 @@ Named item selection requires a header. Item-index options such as
 `--mad-positive-items` use zero-based positions in the selected order, not the
 original file's column positions.
 
+Delimited input detects a header automatically. For ambiguous files, make the
+contract explicit: `--header present` always treats the first non-empty row as a
+header, including when every column name looks numeric, while `--header absent`
+requires the first row to contain data. Named ID or item columns require `auto` or
+`present` mode.
+
 For large headerless numeric matrices, save an uncompressed NumPy array and pass
 it directly. The CLI memory-maps `.npy` input read-only instead of copying it:
 
