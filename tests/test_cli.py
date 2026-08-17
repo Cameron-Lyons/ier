@@ -716,10 +716,36 @@ class TestCli(unittest.TestCase):
         self.assertEqual(payload["respondent_ids"], ["fast", "typical"])
         self.assertEqual(payload["scores"]["irv"], [0.0, np.std([1.0, 2.0, 3.0])])
 
+    def test_missing_value_tokens_work_with_standard_input(self) -> None:
+        stdin = StringIO("NA,2,3,4\n4,-99,6,8\n")
+        stdout = StringIO()
+
+        with patch("sys.stdin", stdin), patch("sys.stdout", stdout):
+            code = main(
+                [
+                    "screen",
+                    "-",
+                    "--missing-value",
+                    "NA",
+                    "--missing-value",
+                    "-99",
+                    "--indices",
+                    "irv",
+                    "--format",
+                    "json",
+                    "--output",
+                    "-",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        np.testing.assert_allclose(payload["scores"]["irv"], [np.std([2, 3, 4]), np.std([4, 6, 8])])
+
     def test_gzip_input_and_output(self) -> None:
         timings = self.root / "timings.csv.gz"
         with gzip.open(timings, mode="wt", newline="", encoding="utf-8") as handle:
-            handle.write("participant,t1,t2,t3\nfast,0.4,0.5,0.6\nsteady,1,1,1\ntypical,2,3,4\n")
+            handle.write("participant,t1,t2,t3\nfast,0.4,NA,0.6\nsteady,1,1,1\ntypical,2,3,4\n")
         out = self.root / "timing-scores.json.gz"
 
         code = main(
@@ -728,6 +754,8 @@ class TestCli(unittest.TestCase):
                 str(timings),
                 "--id-column",
                 "participant",
+                "--missing-value",
+                "NA",
                 "--threshold",
                 "1",
                 "--format",
@@ -899,6 +927,7 @@ class TestCli(unittest.TestCase):
             ["--id-column", "participant"],
             ["--item-columns", "i1,i2"],
             ["--header", "absent"],
+            ["--missing-value", "NA"],
         ]:
             with self.subTest(option=option):
                 stderr = StringIO()
@@ -1916,6 +1945,34 @@ class TestCli(unittest.TestCase):
             matrix,
             np.array([[1.0, np.nan, 3.0], [np.nan, 5.0, 6.0]]),
         )
+
+    def test_custom_missing_tokens_load_as_nan_and_preserve_first_data_row(self) -> None:
+        missing = self.root / "custom-missing-values.csv"
+        missing.write_text("NA,2,-99\n4,N/A,6\n", encoding="utf-8")
+
+        matrix, identifiers = _load_input(
+            missing,
+            None,
+            missing_values=["NA", "N/A", "-99"],
+        )
+
+        self.assertIsNone(identifiers)
+        np.testing.assert_equal(
+            matrix,
+            np.array([[np.nan, 2.0, np.nan], [4.0, np.nan, 6.0]]),
+        )
+
+    def test_invalid_missing_value_tokens_are_rejected(self) -> None:
+        cases = [
+            (["  "], "must be nonblank"),
+            (["NA", " NA "], "cannot contain duplicates"),
+        ]
+        for missing_values, message in cases:
+            with (
+                self.subTest(missing_values=missing_values),
+                self.assertRaisesRegex(ValueError, message),
+            ):
+                _load_input(self.csv_path, None, missing_values=missing_values)
 
     def test_blank_first_cell_does_not_discard_first_data_row(self) -> None:
         missing = self.root / "missing-first.csv"

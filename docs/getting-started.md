@@ -125,6 +125,17 @@ header, including when every column name looks numeric, while `--header absent`
 requires the first row to contain data. Named ID or item columns require `auto` or
 `present` mode.
 
+Blank cells are always loaded as missing values. Survey exports that use explicit
+markers can map each exact, whitespace-trimmed token to `NaN` without preprocessing:
+
+```bash
+ier screen responses.csv --missing-value NA --missing-value -99
+```
+
+The option may be repeated and also works with gzip input and standard input. It
+applies only to scored numeric cells, so identifier and unselected metadata values
+remain unchanged.
+
 For large headerless numeric matrices, save an uncompressed NumPy array and pass
 it directly. The CLI memory-maps `.npy` input read-only instead of copying it:
 
@@ -133,7 +144,7 @@ ier screen responses.npy --indices irv longstring --format json
 ```
 
 Binary input must contain one non-empty, two-dimensional, real numeric array.
-Header options, `--delimiter`, and `.npy.gz` input are not supported.
+Header, missing-value, and delimiter options and `.npy.gz` input are not supported.
 
 Timing matrices have a dedicated command so their units cannot be mixed with
 item-response indices:

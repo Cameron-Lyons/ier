@@ -138,9 +138,10 @@ ier --version
 
 Input matrices may be comma-, tab-, semicolon-, or whitespace-delimited. Common
 delimiters are auto-detected unless `--delimiter` is supplied. Blank fields in
-delimited files are loaded as missing values (`NaN`). Header detection is automatic
-by default; use `--header present` for numeric column names or `--header absent` to
-require every row to be numeric. Use `--id-column NAME` to
+delimited files are loaded as missing values (`NaN`). Repeat `--missing-value TOKEN`
+to map explicit survey-export markers such as `NA` or `-99` to missing values.
+Header detection is automatic by default; use `--header present` for numeric column
+names or `--header absent` to require every row to be numeric. Use `--id-column NAME` to
 remove a named header column from scoring and preserve its unique, nonblank values
 in text, JSON, CSV, and NPZ output. Use `--item-columns q1,q2,...` to select and order
 the numeric item matrix while ignoring unselected metadata columns; repeat the
