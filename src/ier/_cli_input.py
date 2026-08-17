@@ -18,13 +18,16 @@ if TYPE_CHECKING:
 HeaderMode = Literal["auto", "present", "absent"]
 
 
-def _row_starts_with_non_numeric_value(row: list[str]) -> bool:
+def _row_starts_with_non_numeric_value(
+    row: list[str], missing_values: frozenset[str] = frozenset()
+) -> bool:
     """Return whether the first non-empty cell cannot be parsed as a number."""
     for cell in row:
-        if not cell.strip():
+        stripped = cell.strip()
+        if not stripped or stripped in missing_values:
             continue
         try:
-            float(cell)
+            float(stripped)
         except ValueError:
             return True
         return False
@@ -34,6 +37,24 @@ def _row_starts_with_non_numeric_value(row: list[str]) -> bool:
 def _parse_numeric_cell(cell: str) -> float:
     """Parse a matrix cell, treating blank delimited fields as missing values."""
     return float(cell) if cell.strip() else np.nan
+
+
+def _parse_numeric_cell_with_missing_values(cell: str, missing_values: frozenset[str]) -> float:
+    """Parse a matrix cell with explicit missing-value tokens."""
+    stripped = cell.strip()
+    return np.nan if not stripped or stripped in missing_values else float(stripped)
+
+
+def _normalize_missing_values(missing_values: list[str] | None) -> frozenset[str]:
+    """Validate and normalize explicit delimited missing-value tokens."""
+    if missing_values is None:
+        return frozenset()
+    normalized = [value.strip() for value in missing_values]
+    if any(not value for value in normalized):
+        raise ValueError("missing-value tokens must be nonblank")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("missing-value tokens cannot contain duplicates")
+    return frozenset(normalized)
 
 
 def _iter_rows_from_stream(handle: TextIO, delimiter: str | None) -> Iterator[list[str]]:
@@ -135,8 +156,10 @@ def _load_input(
     id_column: str | None = None,
     item_columns: list[str] | None = None,
     header_mode: HeaderMode = "auto",
+    missing_values: list[str] | None = None,
 ) -> tuple[np.ndarray, list[str] | None]:
     """Stream selected numeric items and optionally preserve a named identifier."""
+    missing_value_tokens = _normalize_missing_values(missing_values)
     if header_mode not in {"auto", "present", "absent"}:
         raise ValueError("header mode must be 'auto', 'present', or 'absent'")
     if header_mode == "absent" and (id_column is not None or item_columns is not None):
@@ -144,6 +167,8 @@ def _load_input(
     if path.name.casefold().endswith(".npy.gz"):
         raise ValueError("compressed .npy input is not supported; use uncompressed .npy")
     if path.suffix.casefold() == ".npy":
+        if missing_value_tokens:
+            raise ValueError("--missing-value is not supported with .npy input")
         return _load_npy_input(path, delimiter, id_column, item_columns, header_mode)
 
     source = _input_label(path)
@@ -165,7 +190,9 @@ def _load_input(
         header = [cell.strip() for cell in first_row]
         data_rows: Iterator[list[str]] = row_iterator
         expected_width: int | None = len(header)
-    elif header_mode == "auto" and _row_starts_with_non_numeric_value(first_row):
+    elif header_mode == "auto" and _row_starts_with_non_numeric_value(
+        first_row, missing_value_tokens
+    ):
         data_rows = row_iterator
         expected_width = None
     else:
@@ -231,7 +258,13 @@ def _load_input(
             (row[index] for index in item_indices) if item_indices is not None else iter(row)
         )
         try:
-            numeric_values.extend(_parse_numeric_cell(cell) for cell in selected_cells)
+            if missing_value_tokens:
+                numeric_values.extend(
+                    _parse_numeric_cell_with_missing_values(cell, missing_value_tokens)
+                    for cell in selected_cells
+                )
+            else:
+                numeric_values.extend(_parse_numeric_cell(cell) for cell in selected_cells)
         except ValueError as err:
             raise ValueError(f"failed to parse numeric matrix from {source}: {err}") from err
 

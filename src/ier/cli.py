@@ -180,6 +180,14 @@ def _add_matrix_input_options(parser: argparse.ArgumentParser) -> None:
         help="Delimited input header mode (default: auto)",
     )
     parser.add_argument(
+        "--missing-value",
+        action="append",
+        dest="missing_values",
+        default=None,
+        metavar="TOKEN",
+        help="Delimited missing-value token; repeat for multiple exact tokens",
+    )
+    parser.add_argument(
         "--id-column",
         default=None,
         metavar="NAME",
@@ -511,6 +519,7 @@ def _run_command(args: argparse.Namespace) -> int:
         args.id_column,
         _parse_name_list(args.item_columns),
         args.header,
+        args.missing_values,
     )
     if args.command == "response-time":
         scores, direction = _score_response_times(

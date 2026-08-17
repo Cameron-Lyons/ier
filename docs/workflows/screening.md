@@ -342,10 +342,17 @@ first row contains ambiguous names such as numeric item codes, or `--header abse
 to ensure a malformed first data row is reported instead of interpreted as a
 header. Named column selection cannot be combined with `--header absent`.
 
+Repeat `--missing-value TOKEN` to treat exact, whitespace-trimmed survey-export
+markers such as `NA`, `.`, or `-99` as missing numeric cells. Configured markers
+participate in automatic header detection, so a headerless first row containing a
+missing marker is retained as data. Identifier and unselected metadata columns are
+not transformed.
+
 Uncompressed `.npy` input is memory-mapped read-only and must contain one
 non-empty, two-dimensional, real numeric array. It has no headers, so
-`--id-column`, `--item-columns`, and `--delimiter` do not apply. Compressed
-`.npy.gz` input is not supported because it cannot be memory-mapped.
+`--id-column`, `--item-columns`, `--missing-value`, and `--delimiter` do not
+apply. Compressed `.npy.gz` input is not supported because it cannot be
+memory-mapped.
 
 Use `-` as the data path to read a forward-only standard-input stream, and use
 `--output -` to select standard output explicitly. Input and output paths ending
