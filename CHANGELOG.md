@@ -5,6 +5,21 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-08-18
+
+### Added
+
+- Consolidated the unreleased screening, composite-scoring, response-time,
+  archive, missing-value, and command-line improvements into the next PyPI
+  minor release after 1.6.2.
+
+### Changed
+
+- Improved throughput and bounded-memory behavior across the major scoring
+  kernels while retaining the established public API defaults.
+- Restored the public distribution version line to follow the latest version
+  available from PyPI.
+
 ## [2.19.31] - 2026-08-17
 
 ### Added
