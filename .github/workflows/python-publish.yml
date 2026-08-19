@@ -104,6 +104,7 @@ jobs:
         run: |
           uv venv
           uv pip install --python .venv/bin/python dist/*.whl
+          source .venv/bin/activate
           .venv/bin/python scripts/smoke_test_install.py
 
   publish-testpypi:
