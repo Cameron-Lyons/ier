@@ -772,6 +772,40 @@ class TestCli(unittest.TestCase):
         self.assertEqual(payload["scores"], [0.5, 1.0, 3.0])
         self.assertEqual(payload["flags"], [True, True, False])
 
+    def test_utf8_bom_is_removed_across_delimited_transports(self) -> None:
+        contents = "\ufeffparticipant,i1,i2,i3\nfirst,1,2,3\nsecond,4,5,6\n"
+        plain = self.root / "bom.csv"
+        compressed = self.root / "bom.csv.gz"
+        plain.write_text(contents, encoding="utf-8")
+        with gzip.open(compressed, mode="wt", newline="", encoding="utf-8") as handle:
+            handle.write(contents)
+
+        for path in [plain, compressed, Path("-")]:
+            with self.subTest(path=path):
+                if path == Path("-"):
+                    with patch("sys.stdin", StringIO(contents)):
+                        matrix, identifiers = _load_input(path, None, id_column="participant")
+                else:
+                    matrix, identifiers = _load_input(path, None, id_column="participant")
+
+                self.assertEqual(identifiers, ["first", "second"])
+                np.testing.assert_array_equal(matrix, [[1, 2, 3], [4, 5, 6]])
+
+    def test_utf8_bom_preserves_headerless_first_data_row(self) -> None:
+        path = self.root / "bom-headerless.csv"
+        path.write_text("\ufeff1,2,3\n4,5,6\n", encoding="utf-8")
+
+        matrix = _load_matrix(path, None)
+
+        np.testing.assert_array_equal(matrix, [[1, 2, 3], [4, 5, 6]])
+
+    def test_utf8_bom_is_only_valid_at_the_start_of_input(self) -> None:
+        path = self.root / "midstream-bom.csv"
+        path.write_text("1,\ufeff2,3\n4,5,6\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "failed to parse numeric matrix"):
+            _load_matrix(path, None)
+
     def test_csv_commands_stream_to_plain_gzip_and_standard_output(self) -> None:
         screen_out = self.root / "screen.csv"
         composite_out = self.root / "composite.csv.gz"

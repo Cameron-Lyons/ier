@@ -65,6 +65,8 @@ def _iter_rows_from_stream(handle: TextIO, delimiter: str | None) -> Iterator[li
         line = handle.readline()
         if not line:
             break
+        if not sample_lines:
+            line = line.removeprefix("\ufeff")
         sample_lines.append(line)
         sample_size += len(line)
 
