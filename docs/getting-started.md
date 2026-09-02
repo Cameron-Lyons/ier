@@ -136,6 +136,10 @@ The option may be repeated and also works with gzip input and standard input. It
 applies only to scored numeric cells, so identifier and unselected metadata values
 remain unchanged.
 
+A single leading UTF-8 byte-order mark is removed automatically before delimiter
+and header detection. This applies equally to plain files, gzip input, and standard
+input; a marker elsewhere in the matrix remains invalid data.
+
 For large headerless numeric matrices, save an uncompressed NumPy array and pass
 it directly. The CLI memory-maps `.npy` input read-only instead of copying it:
 

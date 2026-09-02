@@ -140,6 +140,7 @@ Input matrices may be comma-, tab-, semicolon-, or whitespace-delimited. Common
 delimiters are auto-detected unless `--delimiter` is supplied. Blank fields in
 delimited files are loaded as missing values (`NaN`). Repeat `--missing-value TOKEN`
 to map explicit survey-export markers such as `NA` or `-99` to missing values.
+One leading UTF-8 byte-order mark is removed automatically from delimited input.
 Header detection is automatic by default; use `--header present` for numeric column
 names or `--header absent` to require every row to be numeric. Use `--id-column NAME` to
 remove a named header column from scoring and preserve its unique, nonblank values

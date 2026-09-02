@@ -5,6 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-08-24
+
+### Fixed
+
+- Delimited input removes one leading UTF-8 byte-order mark before delimiter and
+  header detection. Plain files, gzip-compressed files, and standard input now
+  accept BOM-prefixed headers and headerless numeric rows consistently, while a
+  misplaced marker still produces a structured numeric parse error. The check
+  runs once in the existing sample buffer and adds no dependency.
+- On a 2,000,000-cell delimited benchmark, plain input parses in 187 ms and
+  BOM-prefixed input in 189 ms, a 0.9% difference with no per-row work.
+
+### Security
+
+- The locked quality environment now uses pip 26.2.1, resolving
+  `PYSEC-2026-3721` without changing the package's runtime dependencies.
+
 ## [1.7.0] - 2026-08-18
 
 ### Added
