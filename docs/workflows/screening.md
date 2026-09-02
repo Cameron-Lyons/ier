@@ -348,6 +348,10 @@ participate in automatic header detection, so a headerless first row containing 
 missing marker is retained as data. Identifier and unselected metadata columns are
 not transformed.
 
+The loader removes one leading UTF-8 byte-order mark from delimited input before
+delimiter and header detection. The normalization occurs once for plain, gzip, and
+standard-input streams; markers elsewhere remain invalid numeric content.
+
 Uncompressed `.npy` input is memory-mapped read-only and must contain one
 non-empty, two-dimensional, real numeric array. It has no headers, so
 `--id-column`, `--item-columns`, `--missing-value`, and `--delimiter` do not
