@@ -191,15 +191,18 @@ def _load_input(
     if id_column is not None or selected_names is not None or header_mode == "present":
         header = [cell.strip() for cell in first_row]
         data_rows: Iterator[list[str]] = row_iterator
-        expected_width: int | None = len(header)
+        expected_width = len(header)
+        width_reference = "the header"
     elif header_mode == "auto" and _row_starts_with_non_numeric_value(
         first_row, missing_value_tokens
     ):
         data_rows = row_iterator
-        expected_width = None
+        expected_width = len(first_row)
+        width_reference = "the header"
     else:
         data_rows = chain((first_row,), row_iterator)
         expected_width = len(first_row)
+        width_reference = "the first data row"
 
     if id_column is not None:
         assert header is not None
@@ -237,13 +240,10 @@ def _load_input(
     n_items = len(item_indices) if item_indices is not None else None
 
     for row in data_rows:
-        if expected_width is None:
-            expected_width = len(row)
-        elif len(row) != expected_width:
-            widths = sorted({expected_width, len(row)})
+        if len(row) != expected_width:
             raise ValueError(
-                f"jagged delimited input in {source}: rows have unequal lengths {widths}; "
-                "expected a rectangular respondent×item matrix"
+                f"jagged delimited input in {source}: data row {n_rows + 1} has "
+                f"{len(row)} columns; expected {expected_width} to match {width_reference}"
             )
 
         if id_index is not None:

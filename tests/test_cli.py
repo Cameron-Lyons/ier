@@ -1966,8 +1966,28 @@ class TestCli(unittest.TestCase):
     def test_jagged_csv_errors(self) -> None:
         jagged = self.root / "jagged.csv"
         jagged.write_text("1,2,3\n4,5\n", encoding="utf-8")
-        with self.assertRaisesRegex(ValueError, "jagged"):
+        with self.assertRaisesRegex(
+            ValueError,
+            "data row 2 has 2 columns; expected 3 to match the first data row",
+        ):
             _load_matrix(jagged, ",")
+
+    def test_automatic_header_width_is_enforced(self) -> None:
+        cases = [
+            ("narrow", "i1,i2,i3\n1,2\n3,4\n", 2, 3),
+            ("wide", "i1,i2\n1,2,3\n4,5,6\n", 3, 2),
+        ]
+
+        for name, contents, actual, expected in cases:
+            with self.subTest(name=name):
+                path = self.root / f"{name}-header-width.csv"
+                path.write_text(contents, encoding="utf-8")
+                message = (
+                    f"data row 1 has {actual} columns; expected {expected} to match the header"
+                )
+
+                with self.assertRaisesRegex(ValueError, message):
+                    _load_matrix(path, ",")
 
     def test_blank_csv_cells_load_as_nan(self) -> None:
         missing = self.root / "missing-values.csv"

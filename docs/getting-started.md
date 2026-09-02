@@ -123,7 +123,9 @@ Delimited input detects a header automatically. For ambiguous files, make the
 contract explicit: `--header present` always treats the first non-empty row as a
 header, including when every column name looks numeric, while `--header absent`
 requires the first row to contain data. Named ID or item columns require `auto` or
-`present` mode.
+`present` mode. When a header is detected or declared, every non-empty data row
+must contain the same number of columns; mismatches fail before scoring rather
+than silently redefining the matrix width.
 
 Blank cells are always loaded as missing values. Survey exports that use explicit
 markers can map each exact, whitespace-trimmed token to `NaN` without preprocessing:

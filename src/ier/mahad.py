@@ -132,7 +132,7 @@ def _compute_mahalanobis_distance(x: np.ndarray) -> np.ndarray:
 
     if s[0] == 0:
         inv_s = np.zeros_like(s)
-    elif cond_number < 1 / eps:
+    elif s[-1] > 0 and cond_number < 1 / eps:
         inv_s = 1.0 / s
     else:
         threshold = eps * max(cov_matrix.shape) * s[0]
