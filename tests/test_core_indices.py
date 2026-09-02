@@ -321,6 +321,16 @@ class TestMahadFunction(unittest.TestCase):
 
         np.testing.assert_array_equal(distances, np.zeros(20))
 
+    def test_rank_deficient_covariance_avoids_dividing_by_zero(self) -> None:
+        """Test a nonzero covariance with an exact zero singular value."""
+        indices = np.arange(30, dtype=float).reshape(10, 3)
+        data = np.full((10, 3), 2.0) + np.sin(indices + 1.0) * 0.1
+
+        distances = mahad(data)
+
+        self.assertTrue(np.all(np.isfinite(distances)))
+        self.assertTrue(np.all(distances >= 0))
+
     def test_matrix_product_matches_quadratic_form(self) -> None:
         """Test bounded distance evaluation against the direct quadratic form."""
         rng = np.random.default_rng(42)

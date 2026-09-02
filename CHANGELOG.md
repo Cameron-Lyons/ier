@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.2] - 2026-09-02
+
+### Fixed
+
+- Delimited input now validates every data row against a detected or declared
+  header's width, reporting the first mismatched row instead of silently using
+  that row to define the matrix width.
+- Mahalanobis distance calculation now uses its pseudo-inverse path when a
+  nonzero covariance matrix contains an exact zero singular value, avoiding a
+  divide-by-zero warning.
+
 ## [1.7.1] - 2026-08-24
 
 ### Fixed
