@@ -5,15 +5,17 @@ formats, and lossless NumPy archives:
 
 | Format | Destination | Best for |
 |--------|-------------|----------|
-| `text` | file, `.gz`, or standard output | Interactive review |
-| `json` | file, `.gz`, or standard output | Structured metadata and web tooling |
-| `csv` | file, `.gz`, or standard output | Row-oriented statistics workflows |
+| `text` | file, compressed file, or standard output | Interactive review |
+| `json` | file, compressed file, or standard output | Structured metadata and web tooling |
+| `csv` | file, compressed file, or standard output | Row-oriented statistics workflows |
 | `npz` | explicit `.npz` file | Fast, typed Python and NumPy workflows |
 
 CSV rows and JSON respondent arrays are written forward-only with bounded output
 allocation. JSON converts non-finite numbers to `null`, and CSV emits empty
 cells. NPZ preserves NumPy dtypes and non-finite values exactly without object
-arrays or pickling.
+arrays or pickling. For text formats, `.gz`, `.bz2`, and `.xz` suffixes select
+gzip, bzip2, and XZ compression from the Python standard library. XZ output uses
+its fast low-memory preset to limit compression workspace.
 
 Screen and composite commands report soft per-index failures on standard error
 without mixing warnings into standard output. Their JSON results retain an
@@ -33,7 +35,8 @@ ier response-time timings.csv --format npz --output timing.npz
 ```
 
 NPZ output requires `--output` with a `.npz` suffix. It cannot target standard
-output or an additional `.gz` layer; the NPZ container is already a ZIP archive.
+output or an additional compression layer; the NPZ container is already a ZIP
+archive.
 Every writer completes the archive in a temporary directory beside the target
 before an atomic replacement. Handled write failures leave existing content
 intact and clean up partial output; successful replacement retains existing

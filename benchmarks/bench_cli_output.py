@@ -3,6 +3,7 @@
 Usage:
     uv run python benchmarks/bench_cli_output.py
     uv run python benchmarks/bench_cli_output.py --format json --respondents 250000
+    uv run python benchmarks/bench_cli_output.py --format json --compression xz
     uv run python benchmarks/bench_cli_output.py --workflow composite --format all
     uv run python benchmarks/bench_cli_output.py --workflow composite --flagged
     uv run python benchmarks/bench_cli_output.py --workflow composite --probability
@@ -38,6 +39,14 @@ if TYPE_CHECKING:
     from ier.types import ScreenResult
 
 OutputFormat = Literal["csv", "json", "npz"]
+Compression = Literal["none", "gzip", "bzip2", "xz"]
+
+_COMPRESSION_SUFFIXES: dict[Compression, str] = {
+    "none": "",
+    "gzip": ".gz",
+    "bzip2": ".bz2",
+    "xz": ".xz",
+}
 
 
 def _make_screen_result(n_respondents: int, n_indices: int) -> ScreenResult:
@@ -206,6 +215,12 @@ def main() -> None:
         choices=["csv", "json", "npz", "all", "both"],
         default="all",
     )
+    parser.add_argument(
+        "--compression",
+        choices=list(_COMPRESSION_SUFFIXES),
+        default="none",
+        help="Compress CSV or JSON output with a standard-library codec",
+    )
     args = parser.parse_args()
 
     if args.respondents < 1 or args.indices < 1 or args.repeats < 1:
@@ -214,6 +229,10 @@ def main() -> None:
         parser.error("--flagged requires --workflow composite")
     if args.probability and args.workflow != "composite":
         parser.error("--probability requires --workflow composite")
+    if args.compression != "none" and args.format not in {"csv", "json"}:
+        parser.error("--compression requires --format csv or json")
+
+    compression: Compression = args.compression
 
     screen_result = (
         _make_screen_result(args.respondents, args.indices) if args.workflow == "screen" else None
@@ -237,12 +256,15 @@ def main() -> None:
 
     print(
         f"workflow={args.workflow} respondents={args.respondents} "
-        f"indices={args.indices} flagged={args.flagged} probability={args.probability}"
+        f"indices={args.indices} flagged={args.flagged} probability={args.probability} "
+        f"compression={compression}"
     )
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         for output_format in formats:
-            destination = root / f"{args.workflow}.{output_format}"
+            destination = root / (
+                f"{args.workflow}.{output_format}{_COMPRESSION_SUFFIXES[compression]}"
+            )
             if args.workflow == "screen":
                 assert screen_result is not None
                 operation = partial(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import gzip
 import sys
 from array import array
 from itertools import chain
@@ -11,6 +10,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TextIO
 
 import numpy as np
+
+from ier._cli_streams import _is_compressed_npy_path, _open_text_path
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -128,7 +129,7 @@ def _load_npy_input(
 
 
 def _iter_rows(path: Path, delimiter: str | None) -> Iterator[list[str]]:
-    """Yield plain, gzip-compressed, or standard-input delimited rows."""
+    """Yield plain, compressed, or standard-input delimited rows."""
     if delimiter is not None and (len(delimiter) != 1 or delimiter in "\r\n"):
         raise ValueError("delimiter must be exactly one non-newline character")
 
@@ -137,13 +138,8 @@ def _iter_rows(path: Path, delimiter: str | None) -> Iterator[list[str]]:
         for row in _iter_rows_from_stream(sys.stdin, delimiter):
             found = True
             yield row
-    elif path.suffix.casefold() == ".gz":
-        with gzip.open(path, mode="rt", newline="", encoding="utf-8") as handle:
-            for row in _iter_rows_from_stream(handle, delimiter):
-                found = True
-                yield row
     else:
-        with path.open(newline="", encoding="utf-8") as handle:
+        with _open_text_path(path, "r") as handle:
             for row in _iter_rows_from_stream(handle, delimiter):
                 found = True
                 yield row
@@ -166,7 +162,7 @@ def _load_input(
         raise ValueError("header mode must be 'auto', 'present', or 'absent'")
     if header_mode == "absent" and (id_column is not None or item_columns is not None):
         raise ValueError("--header absent cannot be used with --id-column or --item-columns")
-    if path.name.casefold().endswith(".npy.gz"):
+    if _is_compressed_npy_path(path):
         raise ValueError("compressed .npy input is not supported; use uncompressed .npy")
     if path.suffix.casefold() == ".npy":
         if missing_value_tokens:

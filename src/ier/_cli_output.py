@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import gzip
 import json
 import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -20,6 +19,7 @@ from ier._cli_composite import (
     validate_composite_flags,
     validate_composite_probabilities,
 )
+from ier._cli_streams import _open_text_path
 
 if TYPE_CHECKING:
     from ier.types import IndexCatalog, ScreenResult
@@ -49,11 +49,7 @@ def _output_stream(path: Path | None) -> Iterator[TextIO]:
     if path is None or path == Path("-"):
         yield sys.stdout
         return
-    if path.suffix.casefold() == ".gz":
-        with gzip.open(path, mode="wt", newline="", encoding="utf-8") as handle:
-            yield handle
-        return
-    with path.open(mode="w", newline="", encoding="utf-8") as handle:
+    with _open_text_path(path, "w") as handle:
         yield handle
 
 
@@ -116,7 +112,7 @@ def _write_json_output(
     path: Path | None,
     writer: Callable[[TextIO], None],
 ) -> None:
-    """Write JSON to a plain, gzip, or standard-output destination."""
+    """Write JSON to a plain, compressed, or standard-output destination."""
     with _output_stream(path) as handle:
         writer(handle)
         if path is None or path == Path("-"):

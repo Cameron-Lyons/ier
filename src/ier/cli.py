@@ -214,7 +214,10 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
         "--output",
         type=Path,
         default=None,
-        help="Write to a path, optionally .gz; use '-' for stdout; NPZ requires a .npz path",
+        help=(
+            "Write to a path, optionally .gz, .bz2, or .xz; use '-' for stdout; "
+            "NPZ requires a .npz path"
+        ),
     )
     parser.add_argument(
         "--top",
@@ -463,7 +466,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=None,
-        help="Write output to a path, optionally .gz; use '-' for stdout",
+        help="Write output to a path, optionally .gz, .bz2, or .xz; use '-' for stdout",
     )
 
     return parser

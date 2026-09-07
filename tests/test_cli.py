@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import bz2
 import csv
 import gzip
 import json
+import lzma
 import tempfile
 import unittest
 from io import StringIO
@@ -742,35 +744,45 @@ class TestCli(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         np.testing.assert_allclose(payload["scores"]["irv"], [np.std([2, 3, 4]), np.std([4, 6, 8])])
 
-    def test_gzip_input_and_output(self) -> None:
-        timings = self.root / "timings.csv.gz"
-        with gzip.open(timings, mode="wt", newline="", encoding="utf-8") as handle:
-            handle.write("participant,t1,t2,t3\nfast,0.4,NA,0.6\nsteady,1,1,1\ntypical,2,3,4\n")
-        out = self.root / "timing-scores.json.gz"
+    def test_standard_library_compressed_input_and_output(self) -> None:
+        contents = "participant,t1,t2,t3\nfast,0.4,NA,0.6\nsteady,1,1,1\ntypical,2,3,4\n"
+        cases = [(".gz", gzip.open), (".bz2", bz2.open), (".xz", lzma.open)]
 
-        code = main(
-            [
-                "response-time",
-                str(timings),
-                "--id-column",
-                "participant",
-                "--missing-value",
-                "NA",
-                "--threshold",
-                "1",
-                "--format",
-                "json",
-                "--output",
-                str(out),
-            ]
-        )
+        for suffix, open_file in cases:
+            with self.subTest(suffix=suffix):
+                timings = self.root / f"timings.csv{suffix}"
+                with open_file(
+                    timings,
+                    mode="wt",
+                    newline="",
+                    encoding="utf-8",
+                ) as handle:
+                    handle.write(contents)
+                out = self.root / f"timing-scores.json{suffix}"
 
-        self.assertEqual(code, 0)
-        with gzip.open(out, mode="rt", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        self.assertEqual(payload["respondent_ids"], ["fast", "steady", "typical"])
-        self.assertEqual(payload["scores"], [0.5, 1.0, 3.0])
-        self.assertEqual(payload["flags"], [True, True, False])
+                code = main(
+                    [
+                        "response-time",
+                        str(timings),
+                        "--id-column",
+                        "participant",
+                        "--missing-value",
+                        "NA",
+                        "--threshold",
+                        "1",
+                        "--format",
+                        "json",
+                        "--output",
+                        str(out),
+                    ]
+                )
+
+                self.assertEqual(code, 0)
+                with open_file(out, mode="rt", encoding="utf-8") as handle:
+                    payload = json.load(handle)
+                self.assertEqual(payload["respondent_ids"], ["fast", "steady", "typical"])
+                self.assertEqual(payload["scores"], [0.5, 1.0, 3.0])
+                self.assertEqual(payload["flags"], [True, True, False])
 
     def test_utf8_bom_is_removed_across_delimited_transports(self) -> None:
         contents = "\ufeffparticipant,i1,i2,i3\nfirst,1,2,3\nsecond,4,5,6\n"
@@ -1000,18 +1012,22 @@ class TestCli(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not an archive"):
             _load_matrix(archive, None)
 
-    def test_compressed_npy_input_returns_structured_error(self) -> None:
-        path = self.root / "responses.npy.gz"
-        with gzip.open(path, mode="wb") as handle:
-            np.save(handle, np.ones((2, 3), dtype=np.float64))
-        stderr = StringIO()
+    def test_compressed_npy_inputs_return_structured_error(self) -> None:
+        cases = [(".gz", gzip.open), (".bz2", bz2.open), (".xz", lzma.open)]
 
-        with patch("sys.stderr", stderr):
-            code = main(["screen", str(path), "--indices", "irv"])
+        for suffix, open_file in cases:
+            with self.subTest(suffix=suffix):
+                path = self.root / f"responses.npy{suffix}"
+                with open_file(path, mode="wb") as handle:
+                    np.save(handle, np.ones((2, 3), dtype=np.float64))
+                stderr = StringIO()
 
-        self.assertEqual(code, 1)
-        self.assertIn("compressed .npy input is not supported", stderr.getvalue())
-        self.assertNotIn("Traceback", stderr.getvalue())
+                with patch("sys.stderr", stderr):
+                    code = main(["screen", str(path), "--indices", "irv"])
+
+                self.assertEqual(code, 1)
+                self.assertIn("compressed .npy input is not supported", stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_indices_command_text_output(self) -> None:
         stdout = StringIO()

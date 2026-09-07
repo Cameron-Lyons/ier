@@ -134,13 +134,13 @@ markers can map each exact, whitespace-trimmed token to `NaN` without preprocess
 ier screen responses.csv --missing-value NA --missing-value -99
 ```
 
-The option may be repeated and also works with gzip input and standard input. It
-applies only to scored numeric cells, so identifier and unselected metadata values
-remain unchanged.
+The option may be repeated and also works with compressed input and standard
+input. It applies only to scored numeric cells, so identifier and unselected
+metadata values remain unchanged.
 
 A single leading UTF-8 byte-order mark is removed automatically before delimiter
-and header detection. This applies equally to plain files, gzip input, and standard
-input; a marker elsewhere in the matrix remains invalid data.
+and header detection. This applies equally to plain files, compressed input, and
+standard input; a marker elsewhere in the matrix remains invalid data.
 
 For large headerless numeric matrices, save an uncompressed NumPy array and pass
 it directly. The CLI memory-maps `.npy` input read-only instead of copying it:
@@ -150,7 +150,8 @@ ier screen responses.npy --indices irv longstring --format json
 ```
 
 Binary input must contain one non-empty, two-dimensional, real numeric array.
-Header, missing-value, and delimiter options and `.npy.gz` input are not supported.
+Header, missing-value, and delimiter options and compressed `.npy` input are not
+supported.
 
 Timing matrices have a dedicated command so their units cannot be mixed with
 item-response indices:
@@ -171,15 +172,16 @@ strict_flags = response_time_score_flags(median_times, cutoff_percentile=1)
 
 Use `direction="high"` when reflagging fast-component mixture probabilities.
 
-Scoring commands also accept forward-only standard input and gzip-compressed
-files without extra packages:
+Scoring commands also accept forward-only standard input and gzip-, bzip2-, or
+XZ-compressed files without extra packages:
 
 ```bash
 cat responses.csv | ier screen - --indices irv longstring --format json
 ier screen responses.csv.gz --format json --output screening.json.gz
+ier screen responses.csv.xz --format csv --output screening.csv.xz
 ```
 
-CSV rows and JSON respondent arrays are forward-only for plain files, gzip
+CSV rows and JSON respondent arrays are forward-only for plain files, compressed
 files, and standard output, so large respondent-level exports do not retain the
 complete document in memory.
 
