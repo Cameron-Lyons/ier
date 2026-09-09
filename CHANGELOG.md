@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.3] - 2026-09-07
+
+### Added
+
+- Command-line delimited input and text, JSON, and CSV output now support bzip2
+  (`.bz2`) and XZ (`.xz`) files alongside gzip. Codec selection remains
+  suffix-based, forward-only, and entirely within the Python standard library.
+
+### Changed
+
+- Plain and compressed command-line files now share one UTF-8 text-stream
+  boundary. Compressed `.npy` inputs are rejected consistently for all three
+  codecs because they cannot retain the existing memory-mapped load path.
+- XZ output uses its fast low-memory preset. On the reproducible synthetic
+  100,000-row, five-index JSON benchmark, plain output takes 0.694 seconds and 13.5 MiB;
+  gzip takes 2.764 seconds and 1.4 MiB, bzip2 takes 1.320 seconds and 2.2 MiB,
+  and XZ takes 0.810 seconds and 0.6 MiB with 9.1 MiB peak traced allocation.
+
 ## [1.7.2] - 2026-09-02
 
 ### Fixed

@@ -349,20 +349,20 @@ missing marker is retained as data. Identifier and unselected metadata columns a
 not transformed.
 
 The loader removes one leading UTF-8 byte-order mark from delimited input before
-delimiter and header detection. The normalization occurs once for plain, gzip, and
-standard-input streams; markers elsewhere remain invalid numeric content.
+delimiter and header detection. The normalization occurs once for plain,
+compressed, and standard-input streams; markers elsewhere remain invalid numeric
+content.
 
 Uncompressed `.npy` input is memory-mapped read-only and must contain one
 non-empty, two-dimensional, real numeric array. It has no headers, so
 `--id-column`, `--item-columns`, `--missing-value`, and `--delimiter` do not
-apply. Compressed `.npy.gz` input is not supported because it cannot be
-memory-mapped.
+apply. Compressed `.npy` input is not supported because it cannot be memory-mapped.
 
 Use `-` as the data path to read a forward-only standard-input stream, and use
 `--output -` to select standard output explicitly. Input and output paths ending
-in `.gz` are compressed or decompressed transparently with no optional package.
-CSV rows and JSON respondent arrays are emitted in bounded chunks across all
-three destinations.
+in `.gz`, `.bz2`, or `.xz` are compressed or decompressed transparently with no
+optional package. CSV rows and JSON respondent arrays are emitted in bounded
+chunks across all destinations.
 
 JSON output is standards-compliant: unavailable or non-finite scores and summary
 statistics are encoded as `null`. CSV output represents non-finite scores as empty
