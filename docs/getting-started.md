@@ -119,6 +119,16 @@ Named item selection requires a header. Item-index options such as
 `--mad-positive-items` use zero-based positions in the selected order, not the
 original file's column positions.
 
+Some survey exports prepend report titles or metadata. Use `--skip-rows N` to
+discard exactly `N` physical input lines before delimiter and header detection:
+
+```bash
+ier screen survey-export.csv --skip-rows 2 --id-column participant_id
+```
+
+Blank preamble lines count toward `N`. The option works for plain, compressed,
+and forward-only standard-input streams; it does not apply to `.npy` matrices.
+
 Delimited input detects a header automatically. For ambiguous files, make the
 contract explicit: `--header present` always treats the first non-empty row as a
 header, including when every column name looks numeric, while `--header absent`

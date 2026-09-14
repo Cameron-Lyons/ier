@@ -131,6 +131,7 @@ ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
 ier screen responses.csv.gz --format json --output screening.json.gz
 ier screen responses.csv.xz --format csv --output screening.csv.xz
+ier screen survey-export.csv --skip-rows 2 --id-column participant_id
 ier screen responses.npy --indices irv longstring
 cat responses.csv | ier screen - --indices irv longstring --format json
 ier indices --format json
@@ -141,6 +142,8 @@ Input matrices may be comma-, tab-, semicolon-, or whitespace-delimited. Common
 delimiters are auto-detected unless `--delimiter` is supplied. Blank fields in
 delimited files are loaded as missing values (`NaN`). Repeat `--missing-value TOKEN`
 to map explicit survey-export markers such as `NA` or `-99` to missing values.
+Use `--skip-rows N` to discard exactly `N` physical preamble lines before
+delimiter and header detection.
 One leading UTF-8 byte-order mark is removed automatically from delimited input.
 Header detection is automatic by default; use `--header present` for numeric column
 names or `--header absent` to require every row to be numeric. Use `--id-column NAME` to

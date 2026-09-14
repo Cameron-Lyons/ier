@@ -58,8 +58,16 @@ def _normalize_missing_values(missing_values: list[str] | None) -> frozenset[str
     return frozenset(normalized)
 
 
-def _iter_rows_from_stream(handle: TextIO, delimiter: str | None) -> Iterator[list[str]]:
+def _iter_rows_from_stream(
+    handle: TextIO,
+    delimiter: str | None,
+    skip_rows: int = 0,
+) -> Iterator[list[str]]:
     """Yield non-empty rows from a forward-only text stream."""
+    for _ in range(skip_rows):
+        if not handle.readline():
+            break
+
     sample_lines: list[str] = []
     sample_size = 0
     while sample_size < 4096:
@@ -128,19 +136,23 @@ def _load_npy_input(
     return matrix, None
 
 
-def _iter_rows(path: Path, delimiter: str | None) -> Iterator[list[str]]:
+def _iter_rows(
+    path: Path,
+    delimiter: str | None,
+    skip_rows: int = 0,
+) -> Iterator[list[str]]:
     """Yield plain, compressed, or standard-input delimited rows."""
     if delimiter is not None and (len(delimiter) != 1 or delimiter in "\r\n"):
         raise ValueError("delimiter must be exactly one non-newline character")
 
     found = False
     if path == Path("-"):
-        for row in _iter_rows_from_stream(sys.stdin, delimiter):
+        for row in _iter_rows_from_stream(sys.stdin, delimiter, skip_rows):
             found = True
             yield row
     else:
         with _open_text_path(path, "r") as handle:
-            for row in _iter_rows_from_stream(handle, delimiter):
+            for row in _iter_rows_from_stream(handle, delimiter, skip_rows):
                 found = True
                 yield row
 
@@ -155,9 +167,12 @@ def _load_input(
     item_columns: list[str] | None = None,
     header_mode: HeaderMode = "auto",
     missing_values: list[str] | None = None,
+    skip_rows: int = 0,
 ) -> tuple[np.ndarray, list[str] | None]:
     """Stream selected numeric items and optionally preserve a named identifier."""
     missing_value_tokens = _normalize_missing_values(missing_values)
+    if isinstance(skip_rows, bool) or not isinstance(skip_rows, int) or skip_rows < 0:
+        raise ValueError("skip rows must be a non-negative integer")
     if header_mode not in {"auto", "present", "absent"}:
         raise ValueError("header mode must be 'auto', 'present', or 'absent'")
     if header_mode == "absent" and (id_column is not None or item_columns is not None):
@@ -165,12 +180,14 @@ def _load_input(
     if _is_compressed_npy_path(path):
         raise ValueError("compressed .npy input is not supported; use uncompressed .npy")
     if path.suffix.casefold() == ".npy":
+        if skip_rows:
+            raise ValueError("--skip-rows is not supported with .npy input")
         if missing_value_tokens:
             raise ValueError("--missing-value is not supported with .npy input")
         return _load_npy_input(path, delimiter, id_column, item_columns, header_mode)
 
     source = _input_label(path)
-    row_iterator = iter(_iter_rows(path, delimiter))
+    row_iterator = iter(_iter_rows(path, delimiter, skip_rows))
     first_row = next(row_iterator)
 
     selected_names: list[str] | None = None

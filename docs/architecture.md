@@ -54,8 +54,8 @@ The command-line path is split by responsibility:
 
 - `cli.py` defines arguments, converts index options, and coordinates commands.
 - `_cli_streams.py` owns suffix-selected, standard-library text compression.
-- `_cli_input.py` owns forward-only delimited input, named-column selection, and
-  memory-mapped NumPy input.
+- `_cli_input.py` owns forward-only delimited input, preamble removal,
+  named-column selection, and memory-mapped NumPy input.
 - `_cli_composite.py` validates shared respondent alignment and flag metadata
   contracts for every composite serializer.
 - `_cli_output.py` renders text plus bounded strict JSON and CSV results.
@@ -257,3 +257,4 @@ Plotting remains optional and reports a centralized install hint from
 - Shared fixed and percentile flagging throughput and memory: `benchmarks/bench_flagging.py`.
 - CLI JSON, CSV, and NPZ serialization: `benchmarks/bench_cli_output.py`.
   The same benchmark accepts `--compression gzip|bzip2|xz` for text formats.
+- Delimited parsing with and without preamble rows: `benchmarks/bench_cli_input.py`.

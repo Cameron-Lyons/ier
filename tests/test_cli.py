@@ -784,6 +784,94 @@ class TestCli(unittest.TestCase):
                 self.assertEqual(payload["scores"], [0.5, 1.0, 3.0])
                 self.assertEqual(payload["flags"], [True, True, False])
 
+    def test_skip_rows_works_across_delimited_transports(self) -> None:
+        contents = (
+            "Survey export,not matrix data\n"
+            "Generated metadata,ignore this line\n"
+            "\ufeffparticipant;i1;i2;i3\n"
+            "first;1;2;3\n"
+            "second;4;5;6\n"
+        )
+        cases = [
+            ("plain", ".csv", None),
+            ("gzip", ".csv.gz", gzip.open),
+            ("bzip2", ".csv.bz2", bz2.open),
+            ("xz", ".csv.xz", lzma.open),
+        ]
+
+        for name, suffix, open_file in cases:
+            with self.subTest(name=name):
+                path = self.root / f"preamble{suffix}"
+                if open_file is None:
+                    path.write_text(contents, encoding="utf-8")
+                else:
+                    with open_file(path, mode="wt", encoding="utf-8") as handle:
+                        handle.write(contents)
+                out = self.root / f"{name}-preamble.json"
+
+                code = main(
+                    [
+                        "screen",
+                        str(path),
+                        "--skip-rows",
+                        "2",
+                        "--id-column",
+                        "participant",
+                        "--indices",
+                        "irv",
+                        "--format",
+                        "json",
+                        "--output",
+                        str(out),
+                    ]
+                )
+
+                self.assertEqual(code, 0)
+                payload = json.loads(out.read_text(encoding="utf-8"))
+                self.assertEqual(payload["respondent_ids"], ["first", "second"])
+                self.assertEqual(len(payload["scores"]["irv"]), 2)
+
+        standard_out = self.root / "standard-preamble.json"
+        with patch("sys.stdin", StringIO(contents)):
+            code = main(
+                [
+                    "screen",
+                    "-",
+                    "--skip-rows",
+                    "2",
+                    "--id-column",
+                    "participant",
+                    "--indices",
+                    "irv",
+                    "--format",
+                    "json",
+                    "--output",
+                    str(standard_out),
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            json.loads(standard_out.read_text(encoding="utf-8"))["respondent_ids"],
+            ["first", "second"],
+        )
+
+    def test_invalid_skip_rows_return_structured_errors(self) -> None:
+        for value in [-1, True, 1.5]:
+            with (
+                self.subTest(value=value),
+                self.assertRaisesRegex(ValueError, "skip rows must be a non-negative integer"),
+            ):
+                _load_input(self.csv_path, None, skip_rows=value)
+
+        stderr = StringIO()
+        with patch("sys.stderr", stderr):
+            code = main(["screen", str(self.root / "missing.csv"), "--skip-rows", "-1"])
+
+        self.assertEqual(code, 1)
+        self.assertIn("skip rows must be a non-negative integer", stderr.getvalue())
+        self.assertNotIn("No such file", stderr.getvalue())
+
     def test_utf8_bom_is_removed_across_delimited_transports(self) -> None:
         contents = "\ufeffparticipant,i1,i2,i3\nfirst,1,2,3\nsecond,4,5,6\n"
         plain = self.root / "bom.csv"
@@ -909,8 +997,9 @@ class TestCli(unittest.TestCase):
     def test_matrix_loader_converts_rows_incrementally(self) -> None:
         converted_cells = 0
 
-        def iter_rows(path: Path, delimiter: str | None) -> object:
+        def iter_rows(path: Path, delimiter: str | None, skip_rows: int = 0) -> object:
             del path, delimiter
+            self.assertEqual(skip_rows, 0)
             yield ["1", "2"]
             self.assertEqual(converted_cells, 2)
             yield ["3", "4"]
@@ -974,6 +1063,7 @@ class TestCli(unittest.TestCase):
             ["--item-columns", "i1,i2"],
             ["--header", "absent"],
             ["--missing-value", "NA"],
+            ["--skip-rows", "1"],
         ]:
             with self.subTest(option=option):
                 stderr = StringIO()
