@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.4] - 2026-09-14
+
+### Added
+
+- All matrix-scoring commands accept `--skip-rows N` to discard survey-export
+  preambles before delimiter and header detection. The option counts physical
+  input lines and works consistently for plain, gzip, bzip2, XZ, and
+  forward-only standard-input streams without adding a dependency.
+
+### Changed
+
+- Preamble removal now occurs before the existing bounded delimiter sample, so
+  metadata punctuation cannot distort format detection and the first retained
+  row keeps the established header, missing-value, and UTF-8 marker behavior.
+- On the reproducible 100,000-respondent, 20-item input benchmark, the unchanged
+  default path takes 1.0340 seconds and 16.214 MiB peak traced allocation;
+  discarding two preamble lines takes 1.0393 seconds and 16.213 MiB, a 0.5%
+  opt-in difference with no added peak allocation.
+
 ## [1.7.3] - 2026-09-07
 
 ### Added

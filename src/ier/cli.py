@@ -188,6 +188,13 @@ def _add_matrix_input_options(parser: argparse.ArgumentParser) -> None:
         help="Delimited missing-value token; repeat for multiple exact tokens",
     )
     parser.add_argument(
+        "--skip-rows",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Physical input lines to discard before delimiter and header detection",
+    )
+    parser.add_argument(
         "--id-column",
         default=None,
         metavar="NAME",
@@ -523,6 +530,7 @@ def _run_command(args: argparse.Namespace) -> int:
         _parse_name_list(args.item_columns),
         args.header,
         args.missing_values,
+        args.skip_rows,
     )
     if args.command == "response-time":
         scores, direction = _score_response_times(

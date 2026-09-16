@@ -324,6 +324,7 @@ ier screen data.csv --indices infrequency \
   --infrequency-item-indices 3,7 \
   --infrequency-expected-responses 5,1 --infrequency-missing fail
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
+ier screen survey-export.csv --skip-rows 2 --id-column participant_id
 ier response-time timings.csv --metric median --threshold 1.0
 ier screen data.csv.gz --format json --output screening.json.gz
 ier screen data.npy --indices irv longstring --format json
@@ -341,6 +342,11 @@ Header detection defaults to `--header auto`. Use `--header present` when the
 first row contains ambiguous names such as numeric item codes, or `--header absent`
 to ensure a malformed first data row is reported instead of interpreted as a
 header. Named column selection cannot be combined with `--header absent`.
+
+Use `--skip-rows N` when an export begins with report titles or metadata. The
+loader discards exactly `N` physical lines before delimiter sampling and header
+detection, including blank lines, across plain, compressed, and standard-input
+streams. The option does not apply to `.npy` matrices.
 
 Repeat `--missing-value TOKEN` to treat exact, whitespace-trimmed survey-export
 markers such as `NA`, `.`, or `-99` as missing numeric cells. Configured markers
