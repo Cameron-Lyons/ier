@@ -58,6 +58,14 @@ def _parse_int_list(raw: str | None) -> list[int] | None:
     return [int(part) for part in parts]
 
 
+def _parse_configured_int_list(raw: str | None, option: str) -> list[int] | None:
+    """Parse an optional item list while rejecting an explicitly empty value."""
+    parsed = _parse_int_list(raw)
+    if raw is not None and parsed is None:
+        raise ValueError(f"{option} must include at least one item index")
+    return parsed
+
+
 def _parse_float_list(raw: str | None) -> list[float] | None:
     if raw is None:
         return None
@@ -146,6 +154,14 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
         psychsyn_critval=args.psychsyn_critval,
         psychant_critval=args.psychant_critval,
         evenodd_factors=_parse_int_list(args.evenodd_factors),
+        acquiescence_positive_items=_parse_configured_int_list(
+            args.acquiescence_positive_items,
+            "--acquiescence-positive-items",
+        ),
+        acquiescence_negative_items=_parse_configured_int_list(
+            args.acquiescence_negative_items,
+            "--acquiescence-negative-items",
+        ),
         mad_positive_items=_parse_int_list(args.mad_positive_items),
         mad_negative_items=_parse_int_list(args.mad_negative_items),
         mad_scale_min=args.mad_scale_min,
@@ -261,6 +277,16 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         "--evenodd-factors",
         default=None,
         help="Comma-separated factor lengths, e.g. '5,5'",
+    )
+    parser.add_argument(
+        "--acquiescence-positive-items",
+        default=None,
+        help="Comma-separated 0-based positively worded item indices",
+    )
+    parser.add_argument(
+        "--acquiescence-negative-items",
+        default=None,
+        help="Comma-separated 0-based negatively worded item indices",
     )
     parser.add_argument("--mad-positive-items", default=None, help="Comma-separated item indices")
     parser.add_argument("--mad-negative-items", default=None, help="Comma-separated item indices")

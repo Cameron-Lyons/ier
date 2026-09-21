@@ -1,4 +1,4 @@
-"""Benchmark predefined semantic and MAD item-pair scoring.
+"""Benchmark predefined semantic, MAD, and acquiescence item-pair scoring.
 
 Usage:
     uv run python benchmarks/bench_pair_differences.py
@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier import mad, semantic_ant, semantic_syn
+from ier import acquiescence, mad, semantic_ant, semantic_syn
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -64,8 +64,17 @@ def main() -> None:
         data[rng.random(data.shape) < args.missing_rate] = np.nan
 
     n_pairs = args.items // 2
-    pairs = [(index, index + n_pairs) for index in range(n_pairs)]
+    positive_items = list(range(n_pairs))
+    negative_items = list(range(n_pairs, n_pairs * 2))
+    pairs = list(zip(positive_items, negative_items, strict=True))
     operations: dict[str, Callable[[], np.ndarray]] = {
+        "acquiescence": lambda: acquiescence(
+            data,
+            scale_min=1,
+            scale_max=5,
+            positive_items=positive_items,
+            negative_items=negative_items,
+        ),
         "semantic_syn": lambda: semantic_syn(data, pairs),
         "semantic_ant": lambda: semantic_ant(data, pairs),
         "mad": lambda: mad(data, item_pairs=pairs, scale_min=1, scale_max=5),

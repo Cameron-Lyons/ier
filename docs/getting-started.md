@@ -92,6 +92,8 @@ Or from the CLI:
 ier screen responses.csv --scale-min 1 --scale-max 5 --min-flags 2
 ier screen responses.csv --indices irv longstring missing_rate --min-valid-indices 2
 ier screen responses.csv --index-percentile irv=90 --index-percentile longstring=99
+ier screen responses.csv --indices acquiescence --scale-min 1 --scale-max 5 \
+  --acquiescence-positive-items 0,2 --acquiescence-negative-items 1,3
 ```
 
 For files with a respondent identifier column, preserve it in every output format

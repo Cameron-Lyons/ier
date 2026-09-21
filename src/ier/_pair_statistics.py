@@ -1,10 +1,46 @@
 """Bounded reductions for predefined item pairs."""
 
 import warnings
+from collections.abc import Sequence
+from operator import index
 
 import numpy as np
 
 from ier._row_statistics import row_mean, row_slices
+
+
+def validate_paired_item_indices(
+    left_indices: Sequence[int],
+    right_indices: Sequence[int],
+    n_columns: int,
+    *,
+    left_name: str,
+    right_name: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Validate two ordered, equally sized item-index lists."""
+    if len(left_indices) == 0 or len(right_indices) == 0:
+        raise ValueError(f"{left_name} and {right_name} cannot be empty")
+    if len(left_indices) != len(right_indices):
+        raise ValueError(f"{left_name} and {right_name} must contain the same number of items")
+
+    normalized: list[np.ndarray] = []
+    for name, values in ((left_name, left_indices), (right_name, right_indices)):
+        result = np.empty(len(values), dtype=np.intp)
+        for position, value in enumerate(values):
+            if isinstance(value, (bool, np.bool_)):
+                raise ValueError(f"{name} must contain integer column indices")
+            try:
+                item_index = index(value)
+            except TypeError as error:
+                raise ValueError(f"{name} must contain integer column indices") from error
+            if item_index < 0 or item_index >= n_columns:
+                raise ValueError(
+                    f"item index {item_index} out of bounds for data with {n_columns} columns"
+                )
+            result[position] = item_index
+        normalized.append(result)
+
+    return normalized[0], normalized[1]
 
 
 def paired_mean_absolute_difference(
@@ -16,9 +52,11 @@ def paired_mean_absolute_difference(
     ignore_nan: bool,
 ) -> np.ndarray:
     """Reduce absolute differences for aligned column pairs in row batches."""
-    n_pairs = min(len(left_indices), len(right_indices))
-    left_indices = left_indices[:n_pairs]
-    right_indices = right_indices[:n_pairs]
+    if len(left_indices) != len(right_indices):
+        raise ValueError("paired index arrays must contain the same number of items")
+    n_pairs = len(left_indices)
+    if n_pairs == 0:
+        raise ValueError("paired index arrays cannot be empty")
     scores = np.empty(len(x))
 
     for start, stop in row_slices(len(x), n_pairs):

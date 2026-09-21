@@ -73,6 +73,35 @@ result = screen(
 Missing required config is recorded in `result["errors"]` instead of aborting
 the whole screening run. `composite()` uses the same soft-fail policy.
 
+## Balanced acquiescence
+
+The default acquiescence score uses the normalized response mean. Balanced
+surveys can isolate yea-saying from item content by pairing positively and
+negatively worded items:
+
+```python
+result = screen(
+    data,
+    indices=["acquiescence"],
+    options=IndexOptions(
+        scale_min=1,
+        scale_max=5,
+        acquiescence_positive_items=[0, 2],
+        acquiescence_negative_items=[1, 3],
+    ),
+)
+```
+
+```bash
+ier screen responses.csv --indices acquiescence --scale-min 1 --scale-max 5 \
+  --acquiescence-positive-items 0,2 --acquiescence-negative-items 1,3
+```
+
+Both lists use 0-based positions in the scored matrix and pair in order. They
+must be nonempty and equal in length; invalid pairs become a normal soft failure,
+or a structured command error with `--strict`, rather than dropping trailing
+items silently.
+
 ## Consensus completeness
 
 An unavailable component score is not a flag. When incomplete item data or a

@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.5] - 2026-09-21
+
+### Added
+
+- The `screen` command now exposes balanced acquiescence scoring through
+  `--acquiescence-positive-items` and `--acquiescence-negative-items`. Ordered,
+  0-based polarity pairs use the existing response-scale bounds and work with
+  every established input and output transport without adding a dependency.
+
+### Changed
+
+- The predefined pair benchmark now covers balanced acquiescence alongside MAD
+  and semantic consistency. On 100,000 respondents, 80 items, 40 pairs, and 10%
+  missing responses, balanced acquiescence takes 16.4 ms and MAD takes 16.5 ms;
+  both retain a 6.8 MiB peak traced allocation after shared validation.
+
+### Fixed
+
+- Balanced acquiescence and MAD now reject unequal positive/negative item lists
+  instead of silently ignoring trailing configuration. Both public paths share
+  integer and matrix-bound validation, and explicitly empty command-line lists
+  produce structured errors.
+
 ## [1.7.4] - 2026-09-14
 
 ### Added

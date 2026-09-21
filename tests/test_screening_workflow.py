@@ -97,6 +97,20 @@ class TestAcquiescence(unittest.TestCase):
         with self.assertRaises(ValueError):
             acquiescence(data, positive_items=[], negative_items=[])
 
+    def test_unequal_item_counts_raise_instead_of_truncating(self) -> None:
+        data = [[1, 2, 3, 4]]
+        with self.assertRaisesRegex(ValueError, "same number of items"):
+            acquiescence(data, positive_items=[0, 2], negative_items=[1])
+
+    def test_non_integer_item_indices_raise(self) -> None:
+        data = [[1, 2, 3, 4]]
+        with self.assertRaisesRegex(ValueError, "integer column indices"):
+            acquiescence(
+                data,
+                positive_items=[0, 2],
+                negative_items=[1, cast("Any", 3.0)],
+            )
+
     def test_out_of_bounds_index_raises(self) -> None:
         data = [[1, 2, 3]]
         with self.assertRaises(ValueError):
@@ -444,6 +458,19 @@ class TestScreen(unittest.TestCase):
             ),
         )
         self.assertIn("mad", result["indices_used"])
+
+    def test_acquiescence_included_with_balanced_items(self) -> None:
+        result = screen(
+            self.data,
+            indices=["acquiescence"],
+            options=IndexOptions(
+                scale_min=1,
+                scale_max=5,
+                acquiescence_positive_items=[0, 2, 4],
+                acquiescence_negative_items=[1, 3, 5],
+            ),
+        )
+        self.assertIn("acquiescence", result["indices_used"])
 
     def test_missing_optional_config_recorded_in_errors(self) -> None:
         result = screen(self.data, indices=["mad", "evenodd"])
