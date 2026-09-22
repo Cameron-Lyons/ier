@@ -57,8 +57,10 @@ instrument, pair positively and negatively worded items in order with
 `IndexOptions.acquiescence_positive_items` and
 `IndexOptions.acquiescence_negative_items`, or the matching CLI options. Lists
 must be nonempty and equal in length so every configured item participates;
-indices are 0-based positions in the scored matrix. Negative items are
-reverse-scored using `scale_min` and `scale_max` before each pair is averaged.
+indices are 0-based positions in the scored matrix. Both item polarities use raw
+agreement responses, without reversing negative items. Pair means are normalized
+using `scale_min` and `scale_max`, so agreement with every item scores 1 and
+disagreement with every item scores 0.
 
 The registry's `longstring` index uses `longstring_scores()` for numeric response
 matrices. The standalone `longstring()` helper analyzes text strings only and

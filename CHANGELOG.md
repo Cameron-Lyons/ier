@@ -18,11 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The predefined pair benchmark now covers balanced acquiescence alongside MAD
   and semantic consistency. On 100,000 respondents, 80 items, 40 pairs, and 10%
-  missing responses, balanced acquiescence takes 16.4 ms and MAD takes 16.5 ms;
+  missing responses, balanced acquiescence takes 18.0 ms and MAD takes 18.3 ms;
   both retain a 6.8 MiB peak traced allocation after shared validation.
 
 ### Fixed
 
+- Balanced acquiescence now averages raw agreement responses without reversing
+  negatively worded items. All-agree and all-disagree patterns score 1 and 0;
+  opposing responses across item polarities score 0.5. This corrects the
+  previous balanced-mode calculation for both Python and the new CLI options.
 - Balanced acquiescence and MAD now reject unequal positive/negative item lists
   instead of silently ignoring trailing configuration. Both public paths share
   integer and matrix-bound validation, and explicitly empty command-line lists

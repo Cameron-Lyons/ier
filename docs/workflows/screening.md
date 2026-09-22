@@ -102,6 +102,12 @@ must be nonempty and equal in length; invalid pairs become a normal soft failure
 or a structured command error with `--strict`, rather than dropping trailing
 items silently.
 
+Supply raw agreement responses for both item polarities. Negative items are not
+reverse-scored when measuring acquiescence (see
+[Hinz et al., 2007](https://pmc.ncbi.nlm.nih.gov/articles/PMC2736523/)). On a 1–5
+scale, agreeing with all items scores 1, disagreeing with all items scores 0, and
+agreeing with one polarity while disagreeing with the other scores 0.5.
+
 ## Consensus completeness
 
 An unavailable component score is not a flag. When incomplete item data or a

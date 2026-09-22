@@ -9,6 +9,8 @@ References:
 - Paulhus, D. L. (1991). Measurement and control of response bias. In J. P. Robinson,
   P. R. Shaver, & L. S. Wrightsman (Eds.), Measures of personality and social
   psychological attitudes (pp. 17-59). Academic Press.
+- Hinz et al. (2007). The acquiescence effect in responding to a questionnaire.
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC2736523/
 """
 
 import numpy as np
@@ -33,8 +35,9 @@ def acquiescence(
     In simple mode (no item lists), computes the normalized mean response per person
     on a [0, 1] scale where 0.5 indicates no bias.
 
-    In balanced-pair mode (with positive/negative items), isolates pure acquiescence
-    bias by averaging (positive + reversed_negative) / 2 across pairs, then normalizing.
+    In balanced-pair mode (with positive/negative items), averages raw agreement
+    responses across each pair, then normalizes. Negative items must NOT be
+    reverse-scored: agreeing with both item polarities indicates acquiescence.
 
     Parameters:
     - x: A matrix of data where rows are individuals and columns are item responses.
@@ -96,12 +99,11 @@ def acquiescence(
         raw_scores = np.empty(len(x_array))
         for start, stop in row_slices(len(x_array), n_pairs):
             positive = np.asarray(x_array[start:stop, positive_indices], dtype=float)
-            reversed_negative = np.asarray(
+            negative = np.asarray(
                 x_array[start:stop, negative_indices],
                 dtype=float,
             )
-            np.subtract(scale_max + scale_min, reversed_negative, out=reversed_negative)
-            np.add(positive, reversed_negative, out=positive)
+            np.add(positive, negative, out=positive)
             positive *= 0.5
             raw_scores[start:stop] = row_mean(positive, ignore_nan=na_rm)
     else:

@@ -171,8 +171,9 @@ library provides the worker pool, so this adds no dependency.
 Balanced acquiescence mode pairs positively and negatively worded items by their
 0-based matrix positions. Supply both equal-length lists through
 `IndexOptions` or the two `--acquiescence-*-items` options; unequal lists fail
-instead of silently dropping configured items. Negative items are reverse-scored
-using the configured or inferred response-scale bounds.
+instead of silently dropping configured items. Supply raw agreement responses
+for both item polarities, without reverse-scoring negative items. Pair means are
+normalized using the configured or inferred response-scale bounds.
 
 After index scoring, screening flag counts and composite scores are reduced one
 index at a time. Large multi-index workflows therefore avoid a second

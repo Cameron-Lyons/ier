@@ -2258,7 +2258,7 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(code, 0)
         payload = json.loads(output.read_text(encoding="utf-8"))
-        np.testing.assert_allclose(payload["scores"]["acquiescence"], [0.5, 0.875, 0.5])
+        np.testing.assert_allclose(payload["scores"]["acquiescence"], [1.0, 0.5, 0.0])
 
     def test_invalid_acquiescence_cli_pairs_return_structured_errors(self) -> None:
         cases = [
