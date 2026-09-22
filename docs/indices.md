@@ -35,7 +35,7 @@ defaults, and options that must be configured before an index can run.
 | `missing_rate` | Missing-response proportion | high | no | yes | optional item subset / applicability mask |
 | `u3_poly` | Polytomous person-fit / Guttman-like | high | yes | no | `scale_min` / `scale_max` |
 | `midpoint` | Midpoint responding | high | yes | no | `scale_min` / `scale_max`, `midpoint_tolerance` |
-| `acquiescence` | Agreeing / yea-saying | high | yes | no | scale bounds; optional item lists |
+| `acquiescence` | Agreeing / yea-saying | high | yes | no | scale bounds; optional equal-length polarity lists |
 | `guttman` | Guttman errors | high | yes | yes | `guttman_normalize` |
 | `individual_reliability` | Split-half individual reliability | low | no | yes | `reliability_n_splits`, seed |
 | `onset` | Carelessness onset item index | present | no | no | `onset_window_size`, `onset_min_items` |
@@ -52,6 +52,16 @@ profile under the default low-direction percentile rule.
 `individual_reliability(..., random_seed=...)` uses an isolated reproducible
 random stream. It does not reset or advance NumPy's process-wide random state.
 
+`acquiescence` uses the normalized respondent mean by default. For a balanced
+instrument, pair positively and negatively worded items in order with
+`IndexOptions.acquiescence_positive_items` and
+`IndexOptions.acquiescence_negative_items`, or the matching CLI options. Lists
+must be nonempty and equal in length so every configured item participates;
+indices are 0-based positions in the scored matrix. Both item polarities use raw
+agreement responses, without reversing negative items. Pair means are normalized
+using `scale_min` and `scale_max`, so agreement with every item scores 1 and
+disagreement with every item scores 0.
+
 The registry's `longstring` index uses `longstring_scores()` for numeric response
 matrices. The standalone `longstring()` helper analyzes text strings only and
 rejects numeric or multidimensional arrays.
@@ -64,7 +74,9 @@ bounds are inferred from the observed data.
 `mad` also reverse-scores the second item in each pair. Provide
 `mad_scale_min` and `mad_scale_max` when observed responses may omit a scale
 endpoint or use fractional endpoints. Higher MAD values mean greater paired
-inconsistency. The standalone `semantic_syn_flag()` and `semantic_ant_flag()`
+inconsistency. Positive and negative item lists must contain the same number of
+items; mismatched lists are rejected rather than truncated. The standalone
+`semantic_syn_flag()` and `semantic_ant_flag()`
 helpers flag unusually low consistency scores.
 
 `missing_rate` is opt-in because planned skip logic and matrix preprocessing can

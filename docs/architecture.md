@@ -40,6 +40,10 @@ _validation / _flagging    ← shared input checks and threshold helpers
   use the same bounded approach. Orchestration retains its documented per-index
   result vectors but does not construct another complete respondent-by-index
   matrix for final reductions.
+- **Paired-item validation.** Balanced acquiescence and MAD share one ordered-pair
+  boundary for integer conversion, matrix bounds, and equal cardinality. Their
+  bounded numeric kernels therefore receive exact pairs and never discard a
+  trailing configured item.
 - **Reusable decisions.** `screen_scores()` reapplies direction-aware flagging,
   completeness, consensus, and summaries to retained registered score vectors.
   `composite_scores()` reuses raw composite-enabled vectors for alternative

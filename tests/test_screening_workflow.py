@@ -53,6 +53,18 @@ class TestAcquiescence(unittest.TestCase):
         )
         self.assertGreater(scores[0], 0.5)
 
+    def test_balanced_pairs_measure_agreement_independently_of_item_content(self) -> None:
+        data = [
+            [5, 5, 5, 5],
+            [1, 1, 1, 1],
+            [5, 1, 5, 1],
+            [1, 5, 1, 5],
+        ]
+        scores = acquiescence(
+            data, scale_min=1, scale_max=5, positive_items=[0, 2], negative_items=[1, 3]
+        )
+        np.testing.assert_allclose(scores, [1.0, 0.0, 0.5, 0.5])
+
     def test_balanced_pair_mode_batches_without_mutating_input(self) -> None:
         rng = np.random.default_rng(20260803)
         data = rng.integers(1, 6, size=(51, 8)).astype(float)
@@ -60,7 +72,7 @@ class TestAcquiescence(unittest.TestCase):
         original = data.copy()
         positive_items = [0, 2, 4, 6]
         negative_items = [1, 3, 5, 7]
-        pairs = (data[:, positive_items] + (6.0 - data[:, negative_items])) * 0.5
+        pairs = (data[:, positive_items] + data[:, negative_items]) * 0.5
         expected = np.clip((np.nanmean(pairs, axis=1) - 1.0) / 4.0, 0.0, 1.0)
 
         with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 24):
@@ -96,6 +108,20 @@ class TestAcquiescence(unittest.TestCase):
         data = [[1, 2, 3]]
         with self.assertRaises(ValueError):
             acquiescence(data, positive_items=[], negative_items=[])
+
+    def test_unequal_item_counts_raise_instead_of_truncating(self) -> None:
+        data = [[1, 2, 3, 4]]
+        with self.assertRaisesRegex(ValueError, "same number of items"):
+            acquiescence(data, positive_items=[0, 2], negative_items=[1])
+
+    def test_non_integer_item_indices_raise(self) -> None:
+        data = [[1, 2, 3, 4]]
+        with self.assertRaisesRegex(ValueError, "integer column indices"):
+            acquiescence(
+                data,
+                positive_items=[0, 2],
+                negative_items=[1, cast("Any", 3.0)],
+            )
 
     def test_out_of_bounds_index_raises(self) -> None:
         data = [[1, 2, 3]]
@@ -444,6 +470,19 @@ class TestScreen(unittest.TestCase):
             ),
         )
         self.assertIn("mad", result["indices_used"])
+
+    def test_acquiescence_included_with_balanced_items(self) -> None:
+        result = screen(
+            self.data,
+            indices=["acquiescence"],
+            options=IndexOptions(
+                scale_min=1,
+                scale_max=5,
+                acquiescence_positive_items=[0, 2, 4],
+                acquiescence_negative_items=[1, 3, 5],
+            ),
+        )
+        self.assertIn("acquiescence", result["indices_used"])
 
     def test_missing_optional_config_recorded_in_errors(self) -> None:
         result = screen(self.data, indices=["mad", "evenodd"])

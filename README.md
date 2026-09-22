@@ -22,6 +22,7 @@ For a comprehensive methods review, see
 - Fixed or per-index sample-relative screening thresholds with cutoff provenance
 - Skip-logic-aware missing-response rates with required-item subsets and applicability masks
 - Configurable attention-check missing policies with count or proportion scoring
+- Balanced acquiescence scoring from Python and the CLI with explicit polarity pairs
 - Programmatic and CLI index catalog with defaults and configuration requirements
 - CLI preservation of named respondent identifier columns
 - CLI selection of named item columns from files containing metadata
@@ -111,6 +112,8 @@ ier screen data.csv --index-percentile irv=90 --index-percentile longstring=99
 ier screen data.csv --indices irv longstring missing_rate --min-valid-indices 2
 ier screen data.csv --indices irv mad --strict
 ier screen data.csv --workers 4
+ier screen data.csv --indices acquiescence --scale-min 1 --scale-max 5 \
+  --acquiescence-positive-items 0,2 --acquiescence-negative-items 1,3
 ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
 ier screen data.csv --indices infrequency \
   --infrequency-item-indices 3,7 \
@@ -164,6 +167,13 @@ commands use `--workers N`. The default is sequential (`1`) for predictable
 resource use. Higher values preserve index and failure ordering and can improve
 large multi-index workloads, but they may increase peak memory. The standard
 library provides the worker pool, so this adds no dependency.
+
+Balanced acquiescence mode pairs positively and negatively worded items by their
+0-based matrix positions. Supply both equal-length lists through
+`IndexOptions` or the two `--acquiescence-*-items` options; unequal lists fail
+instead of silently dropping configured items. Supply raw agreement responses
+for both item polarities, without reverse-scoring negative items. Pair means are
+normalized using the configured or inferred response-scale bounds.
 
 After index scoring, screening flag counts and composite scores are reduced one
 index at a time. Large multi-index workflows therefore avoid a second

@@ -635,6 +635,11 @@ class TestMAD(unittest.TestCase):
         with self.assertRaises(ValueError):
             mad(data, positive_items=[0, 10], negative_items=[1, 2], scale_max=5)
 
+    def test_unequal_item_counts_raise_instead_of_truncating(self) -> None:
+        data = [[1, 2, 3, 4]]
+        with self.assertRaisesRegex(ValueError, "same number of items"):
+            mad(data, positive_items=[0, 2], negative_items=[1], scale_max=5)
+
     def test_both_item_specs_raises(self) -> None:
         """Test that specifying both item_pairs and positive/negative raises."""
         data = [[1, 2, 3, 4]]

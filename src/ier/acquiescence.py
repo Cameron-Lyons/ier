@@ -9,11 +9,14 @@ References:
 - Paulhus, D. L. (1991). Measurement and control of response bias. In J. P. Robinson,
   P. R. Shaver, & L. S. Wrightsman (Eds.), Measures of personality and social
   psychological attitudes (pp. 17-59). Academic Press.
+- Hinz et al. (2007). The acquiescence effect in responding to a questionnaire.
+  https://pmc.ncbi.nlm.nih.gov/articles/PMC2736523/
 """
 
 import numpy as np
 
 from ier._flagging import threshold_flags
+from ier._pair_statistics import validate_paired_item_indices
 from ier._row_statistics import row_mean, row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -32,15 +35,18 @@ def acquiescence(
     In simple mode (no item lists), computes the normalized mean response per person
     on a [0, 1] scale where 0.5 indicates no bias.
 
-    In balanced-pair mode (with positive/negative items), isolates pure acquiescence
-    bias by averaging (positive + reversed_negative) / 2 across pairs, then normalizing.
+    In balanced-pair mode (with positive/negative items), averages raw agreement
+    responses across each pair, then normalizes. Negative items must NOT be
+    reverse-scored: agreeing with both item polarities indicates acquiescence.
 
     Parameters:
     - x: A matrix of data where rows are individuals and columns are item responses.
     - scale_min: Minimum value of the response scale. If None, inferred from data.
     - scale_max: Maximum value of the response scale. If None, inferred from data.
     - positive_items: List of column indices (0-based) for positively-worded items.
-    - negative_items: List of column indices (0-based) for negatively-worded items.
+                      Must be paired in order with ``negative_items``.
+    - negative_items: Equally sized list of column indices (0-based) for
+                      negatively-worded items.
     - na_rm: Boolean indicating whether to ignore missing values during computation.
 
     Returns:
@@ -49,7 +55,8 @@ def acquiescence(
       strong agreement bias.
 
     Raises:
-    - ValueError: If inputs are invalid or item indices are out of bounds.
+    - ValueError: If inputs are invalid, paired lists differ in length, or item
+                  indices are not integers within the matrix bounds.
 
     Example:
         >>> data = [[5, 5, 5, 5], [1, 1, 1, 1], [3, 3, 3, 3]]
@@ -58,6 +65,23 @@ def acquiescence(
         [1.0, 0.0, 0.5]
     """
     x_array = validate_matrix_input(x, check_type=False)
+
+    has_positive = positive_items is not None
+    has_negative = negative_items is not None
+
+    if has_positive != has_negative:
+        raise ValueError("must specify both positive_items and negative_items, or neither")
+
+    positive_indices: np.ndarray | None = None
+    negative_indices: np.ndarray | None = None
+    if positive_items is not None and negative_items is not None:
+        positive_indices, negative_indices = validate_paired_item_indices(
+            positive_items,
+            negative_items,
+            x_array.shape[1],
+            left_name="positive_items",
+            right_name="negative_items",
+        )
 
     if scale_min is None:
         scale_min = float(np.nanmin(x_array))
@@ -70,36 +94,16 @@ def acquiescence(
     if scale_range == 0:
         return np.full(x_array.shape[0], 0.5)
 
-    has_positive = positive_items is not None
-    has_negative = negative_items is not None
-
-    if has_positive != has_negative:
-        raise ValueError("must specify both positive_items and negative_items, or neither")
-
-    if has_positive and has_negative:
-        assert positive_items is not None
-        assert negative_items is not None
-
-        if len(positive_items) == 0 or len(negative_items) == 0:
-            raise ValueError("positive_items and negative_items cannot be empty")
-
-        n_cols = x_array.shape[1]
-        for idx in positive_items + negative_items:
-            if idx < 0 or idx >= n_cols:
-                raise ValueError(f"item index {idx} out of bounds for data with {n_cols} columns")
-
-        min_len = min(len(positive_items), len(negative_items))
-        selected_positive = positive_items[:min_len]
-        selected_negative = negative_items[:min_len]
+    if positive_indices is not None and negative_indices is not None:
+        n_pairs = len(positive_indices)
         raw_scores = np.empty(len(x_array))
-        for start, stop in row_slices(len(x_array), min_len):
-            positive = np.asarray(x_array[start:stop, selected_positive], dtype=float)
-            reversed_negative = np.asarray(
-                x_array[start:stop, selected_negative],
+        for start, stop in row_slices(len(x_array), n_pairs):
+            positive = np.asarray(x_array[start:stop, positive_indices], dtype=float)
+            negative = np.asarray(
+                x_array[start:stop, negative_indices],
                 dtype=float,
             )
-            np.subtract(scale_max + scale_min, reversed_negative, out=reversed_negative)
-            np.add(positive, reversed_negative, out=positive)
+            np.add(positive, negative, out=positive)
             positive *= 0.5
             raw_scores[start:stop] = row_mean(positive, ignore_nan=na_rm)
     else:

@@ -19,6 +19,7 @@ from ier import composite, composite_flag, composite_probability, composite_summ
 from ier._cli_input import _load_input, _load_matrix
 from ier._cli_output import _emit_composite_json, _emit_composite_text, _write_composite_csv
 from ier.cli import (
+    _parse_configured_int_list,
     _parse_float_list,
     _parse_int_list,
     _parse_name_list,
@@ -2203,6 +2204,7 @@ class TestCli(unittest.TestCase):
                 "evenodd",
                 "semantic_syn",
                 "mad",
+                "acquiescence",
                 "--evenodd-factors",
                 "2,3",
                 "--semantic-item-pairs",
@@ -2215,16 +2217,87 @@ class TestCli(unittest.TestCase):
                 "0.5",
                 "--mad-scale-max",
                 "5.5",
+                "--acquiescence-positive-items",
+                "0,2",
+                "--acquiescence-negative-items",
+                "1,3",
                 "--top",
                 "1",
             ]
         )
         self.assertEqual(code, 0)
 
+    def test_balanced_acquiescence_cli_scores_configured_pairs(self) -> None:
+        path = self.root / "balanced.csv"
+        output = self.root / "balanced.json"
+        path.write_text(
+            "positive_1,negative_1,positive_2,negative_2\n5,5,5,5\n5,1,4,2\n1,1,1,1\n",
+            encoding="utf-8",
+        )
+
+        code = main(
+            [
+                "screen",
+                str(path),
+                "--indices",
+                "acquiescence",
+                "--acquiescence-positive-items",
+                "0,2",
+                "--acquiescence-negative-items",
+                "1,3",
+                "--scale-min",
+                "1",
+                "--scale-max",
+                "5",
+                "--format",
+                "json",
+                "--output",
+                str(output),
+            ]
+        )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        np.testing.assert_allclose(payload["scores"]["acquiescence"], [1.0, 0.5, 0.0])
+
+    def test_invalid_acquiescence_cli_pairs_return_structured_errors(self) -> None:
+        cases = [
+            (
+                [
+                    "--acquiescence-positive-items",
+                    "0,2",
+                    "--acquiescence-negative-items",
+                    "1",
+                ],
+                "same number of items",
+            ),
+            (["--acquiescence-positive-items", ""], "must include at least one item index"),
+        ]
+        for arguments, message in cases:
+            with self.subTest(arguments=arguments):
+                stderr = StringIO()
+                with patch("sys.stderr", stderr):
+                    code = main(
+                        [
+                            "screen",
+                            str(self.csv_path),
+                            "--indices",
+                            "acquiescence",
+                            "--strict",
+                            *arguments,
+                        ]
+                    )
+                self.assertEqual(code, 1)
+                self.assertIn(message, stderr.getvalue())
+                self.assertNotIn("Traceback", stderr.getvalue())
+
     def test_parse_helpers(self) -> None:
         self.assertIsNone(_parse_int_list(None))
         self.assertIsNone(_parse_int_list(""))
         self.assertEqual(_parse_int_list("1, 2"), [1, 2])
+        self.assertEqual(_parse_configured_int_list("1, 2", "--items"), [1, 2])
+        with self.assertRaisesRegex(ValueError, "must include"):
+            _parse_configured_int_list(" , ", "--items")
         self.assertIsNone(_parse_float_list(None))
         self.assertIsNone(_parse_float_list(" , "))
         self.assertEqual(_parse_float_list("1.5,2"), [1.5, 2.0])

@@ -14,7 +14,11 @@ References:
 import numpy as np
 
 from ier._flagging import threshold_flags
-from ier._pair_statistics import paired_mean_absolute_difference, resolve_scale_bounds
+from ier._pair_statistics import (
+    paired_mean_absolute_difference,
+    resolve_scale_bounds,
+    validate_paired_item_indices,
+)
 from ier._validation import MatrixLike, validate_matrix_input
 
 
@@ -40,8 +44,10 @@ def mad(
     - x: A matrix of data where rows are individuals and columns are item responses.
          Can be a 2D list or numpy array. Responses should NOT be pre-reversed.
     - positive_items: List of column indices (0-based) for positively-worded items.
-    - negative_items: List of column indices (0-based) for negatively-worded items.
-                     These items will be reverse-scored before comparison.
+                      Must be paired in order with ``negative_items``.
+    - negative_items: Equally sized list of column indices (0-based) for
+                      negatively-worded items. These items will be reverse-scored
+                      before comparison.
     - item_pairs: Alternative to positive/negative_items. List of (positive, negative)
                  index tuples representing paired items to compare.
     - scale_max: Maximum value of the response scale (required for reverse scoring).
@@ -54,7 +60,8 @@ def mad(
       inconsistent responses to reverse-worded item pairs.
 
     Raises:
-    - ValueError: If inputs are invalid or item indices are out of bounds.
+    - ValueError: If inputs are invalid, paired lists differ in length, or item
+                  indices are not integers within the matrix bounds.
 
     Example:
         >>> data = [[5, 1, 4, 2], [3, 3, 3, 3], [5, 2, 4, 1]]
@@ -74,12 +81,13 @@ def mad(
     if positive_items is None or negative_items is None:
         raise ValueError("must specify either item_pairs or both positive_items and negative_items")
 
-    if len(positive_items) == 0 or len(negative_items) == 0:
-        raise ValueError("positive_items and negative_items cannot be empty")
-
-    for idx in positive_items + negative_items:
-        if idx < 0 or idx >= n_cols:
-            raise ValueError(f"item index {idx} out of bounds for data with {n_cols} columns")
+    positive_indices, negative_indices = validate_paired_item_indices(
+        positive_items,
+        negative_items,
+        n_cols,
+        left_name="positive_items",
+        right_name="negative_items",
+    )
 
     bounds = resolve_scale_bounds(
         x_array,
@@ -92,8 +100,8 @@ def mad(
 
     return paired_mean_absolute_difference(
         x_array,
-        np.asarray(positive_items, dtype=np.intp),
-        np.asarray(negative_items, dtype=np.intp),
+        positive_indices,
+        negative_indices,
         right_reflection=resolved_min + resolved_max,
         ignore_nan=na_rm,
     )
