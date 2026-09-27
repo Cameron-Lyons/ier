@@ -69,6 +69,7 @@ OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
 uv run python benchmarks/bench_response_checks.py --checks 40
+uv run python benchmarks/bench_lz.py --missing-rate 0.1
 ```
 
 The sequence benchmark measures longstring, repeating-pattern, and Markov
@@ -82,6 +83,9 @@ The response-check benchmark measures missing-response and attention-check
 scoring, including applicability masks and all attention-check missing policies.
 Use `--checks` to vary the number of selected items and `--order F` to compare
 column-contiguous inputs; timing and allocation are measured separately.
+The person-fit benchmark also separates timing from allocation tracing. Use
+`--missing-rate 0` for complete responses, `--order F` for column-contiguous
+inputs, and `--model 1pl` for Rasch scoring instead of the default 2PL model.
 
 Verify release artifacts after packaging changes:
 

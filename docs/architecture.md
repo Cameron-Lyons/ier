@@ -172,7 +172,12 @@ posterior or diagnostic probability without your own validation study. Its
 shared piecewise NumPy kernel evaluates positive and negative values separately,
 avoiding overflow while preserving finite-tail precision and exact infinite
 endpoints. The lz theta and likelihood paths reuse the same kernel for both
-complete batches and missing-data rows.
+complete and missing-response batches. Each bounded batch excludes missing
+items from the ability score equation, information, and likelihood reductions
+when `na_rm=True`; entirely missing rows remain unavailable. With `na_rm=False`,
+missing responses propagate through ability estimation. This shares one solver
+and likelihood implementation across both input paths without per-respondent
+Python loops.
 The CLI computes this transform from the final aggregate vector only when
 `--include-probability` is requested. JSON and CSV then serialize it
 forward-only, while NPZ stores one additional typed vector; index scoring is not
