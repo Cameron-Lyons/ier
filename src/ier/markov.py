@@ -16,14 +16,12 @@ from typing import Any
 import numpy as np
 
 from ier._flagging import threshold_flags
-from ier._response_sequences import compact_rows
-from ier._row_statistics import row_slices
+from ier._response_sequences import sequence_batches
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
 
 _MAX_DENSE_STATES = 64
 _TRANSITION_BATCH_WORKSPACE_BYTES = 64 * 1024 * 1024
-_CATEGORY_DISCOVERY_ROWS = 4096
 
 
 def markov(
@@ -55,37 +53,27 @@ def markov(
     """
     x_array = validate_matrix_input(x, min_columns=3, check_type=False)
 
-    has_missing = any(
-        np.isnan(x_array[start:stop]).any() for start, stop in row_slices(*x_array.shape)
-    )
-    if not na_rm and has_missing:
-        raise ValueError("data contains missing values. Set na_rm=True to handle them")
-
-    if not has_missing:
-        return _markov_complete(x_array)
-
     result = np.full(len(x_array), np.nan)
-    for start, stop in row_slices(*x_array.shape):
-        packed, counts = compact_rows(x_array[start:stop])
-        if packed.shape[1] < 2:
+    for start, stop, block, counts in sequence_batches(x_array, na_rm=na_rm):
+        if block.shape[1] < 2:
             continue
-        # Encode padding as an observed category; counts exclude every padded
-        # transition, so no artificial category enters the dense state table.
-        first_value = packed[np.flatnonzero(counts)[0], 0]
-        np.copyto(packed, first_value, where=np.isnan(packed))
-        result[start:stop] = _markov_complete(packed, counts=counts)
+        if counts is not None:
+            # Compaction owns this block. Reuse an observed category for padding;
+            # counts exclude padded transitions without adding a synthetic state.
+            first_value = block[np.flatnonzero(counts)[0], 0]
+            np.copyto(block, first_value, where=np.isnan(block))
+        result[start:stop] = _markov_complete(block, counts=counts)
 
     return result
 
 
 def _markov_complete(x: np.ndarray, *, counts: np.ndarray | None = None) -> np.ndarray:
     """Score complete or padded rows with bounded dense batches or a sparse fallback."""
-    encoder = _dense_state_encoder(x)
-    if encoder is None:
+    state_batch = _encode_states(x)
+    if state_batch is None:
         return _transition_entropies_sparse(x, counts=counts)
 
-    minimum, states = encoder
-    n_states = len(states) if minimum is None else int(np.max(states)) + 1
+    encoded, n_states = state_batch
     n_items = x.shape[1]
     integer_bytes = np.dtype(np.intp).itemsize
     float_bytes = np.dtype(float).itemsize
@@ -99,70 +87,43 @@ def _markov_complete(x: np.ndarray, *, counts: np.ndarray | None = None) -> np.n
     result = np.empty(len(x), dtype=float)
     for start in range(0, len(x), batch_rows):
         stop = min(start + batch_rows, len(x))
-        encoded = _encode_state_batch(x[start:stop], minimum, states)
         batch_counts = None if counts is None else counts[start:stop]
-        transition_counts = _dense_transition_counts(encoded, n_states, counts=batch_counts)
+        transition_counts = _dense_transition_counts(
+            encoded[start:stop], n_states, counts=batch_counts
+        )
         result[start:stop] = _transition_entropy_batch(transition_counts)
     if counts is not None:
         result[counts < 2] = np.nan
     return result
 
 
-def _dense_state_encoder(x: np.ndarray) -> tuple[float | None, np.ndarray] | None:
-    """Return a bounded dense encoder, or None for high-cardinality data."""
-    minimum = float(np.min(x))
-    maximum = float(np.max(x))
-    if np.isfinite(minimum) and np.isfinite(maximum):
-        span = maximum - minimum
-        if span < _MAX_DENSE_STATES:
-            n_states = int(span) + 1
-            mapping = _direct_state_mapping(x, n_states)
-            if mapping is not None:
-                return minimum, mapping
+def _encode_states(x: np.ndarray) -> tuple[np.ndarray, int] | None:
+    """Encode one bounded sequence block, or use sparse scoring above 64 states."""
+    minimum = np.min(x)
+    maximum = np.max(x)
+    integral = x.dtype.kind in "iu"
+    span = float("inf")
+    if integral:
+        # Keep integer labels exact, including neighboring values beyond 2**53.
+        span = int(maximum) - int(minimum)
+    elif x.dtype.kind == "f" and np.isfinite(minimum) and np.isfinite(maximum):
+        span = float(maximum) - float(minimum)
 
-    categories = np.array([], dtype=x.dtype)
-    for start in range(0, len(x), _CATEGORY_DISCOVERY_ROWS):
-        found = np.unique(x[start : start + _CATEGORY_DISCOVERY_ROWS])
-        if len(found) > _MAX_DENSE_STATES:
-            return None
-        categories = np.union1d(categories, found)
-        if len(categories) > _MAX_DENSE_STATES:
-            return None
-    return None, categories
+    if span < _MAX_DENSE_STATES and (integral or np.all(x == np.floor(x))):
+        encoded = np.empty(x.shape, dtype=np.intp)
+        np.subtract(x, minimum, out=encoded, casting="unsafe")
+        present = np.bincount(encoded.ravel(), minlength=int(span) + 1) > 0
+        n_states = int(np.count_nonzero(present))
+        if n_states != len(present):
+            # Empty categories need no rows or columns in the transition table.
+            mapping = np.cumsum(present, dtype=np.intp) - 1
+            np.take(mapping, encoded, out=encoded)
+        return encoded, n_states
 
-
-def _direct_state_mapping(x: np.ndarray, n_states: int) -> np.ndarray | None:
-    """Build a compact mapping for a bounded integral response range."""
-    bytes_per_row = x.shape[1] * (np.dtype(float).itemsize + np.dtype(np.intp).itemsize)
-    batch_rows = max(1, _TRANSITION_BATCH_WORKSPACE_BYTES // bytes_per_row)
-    present = np.zeros(n_states, dtype=bool)
-    minimum = float(np.min(x))
-
-    for start in range(0, len(x), batch_rows):
-        batch = x[start : start + batch_rows]
-        if not np.all(batch == np.floor(batch)):
-            return None
-        encoded = np.empty(batch.shape, dtype=np.intp)
-        np.subtract(batch, minimum, out=encoded, casting="unsafe")
-        present |= np.bincount(encoded.ravel(), minlength=n_states) > 0
-
-    return np.cumsum(present, dtype=np.intp) - 1
-
-
-def _encode_state_batch(
-    batch: np.ndarray,
-    minimum: float | None,
-    states: np.ndarray,
-) -> np.ndarray:
-    """Encode one response batch using a direct mapping or sorted categories."""
-    if minimum is None:
-        encoded: np.ndarray = np.searchsorted(states, batch)
-        return encoded
-
-    encoded = np.empty(batch.shape, dtype=np.intp)
-    np.subtract(batch, minimum, out=encoded, casting="unsafe")
-    np.take(states, encoded, out=encoded)
-    return encoded
+    categories = np.unique(x)
+    if len(categories) > _MAX_DENSE_STATES:
+        return None
+    return np.searchsorted(categories, x), len(categories)
 
 
 def _dense_transition_counts(

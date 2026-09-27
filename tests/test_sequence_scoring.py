@@ -153,6 +153,39 @@ def test_integer_categories_are_compared_without_arithmetic(dtype: type) -> None
     np.testing.assert_array_equal(longstring_pattern(data), [4.0])
 
 
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+@pytest.mark.parametrize("near_maximum", [False, True])
+def test_markov_preserves_neighboring_large_integer_categories(
+    dtype: type, near_maximum: bool
+) -> None:
+    bounds = np.iinfo(dtype)
+    base = bounds.max - 2 if near_maximum else bounds.min
+    labels = [base, base + 1, base + 2]
+    patterns = [[0, 1, 0, 2, 0, 1], [2, 2, 2, 2, 2, 2], [0, 2, 0, 2, 1, 0]]
+    data = np.array([[labels[index] for index in row] for row in patterns], dtype=dtype)
+    data.flags.writeable = False
+
+    np.testing.assert_allclose(markov(data), [_entropy(row) for row in patterns], atol=1e-12)
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_markov_is_independent_of_categories_in_other_batches(missing: bool) -> None:
+    rng = np.random.default_rng(8)
+    data = rng.integers(0, 5, size=(83, 17)).astype(float)
+    data += np.arange(len(data))[:, None] * 100
+    if missing:
+        data[8:14, ::3] = np.nan
+        data[28:35] = np.nan
+    original = data.copy()
+    data.flags.writeable = False
+    expected = [_entropy(row[~np.isnan(row)].tolist()) for row in data]
+
+    for batch_rows in [1, 7, 83]:
+        with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", data.shape[1] * batch_rows):
+            np.testing.assert_allclose(markov(data), expected, atol=1e-12)
+    np.testing.assert_array_equal(data, original)
+
+
 def test_single_item_runs_preserve_empty_rows() -> None:
     np.testing.assert_array_equal(longstring_scores([[2.5], [np.nan], [np.inf]]), [1.0, 0.0, 1.0])
 

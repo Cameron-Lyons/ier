@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.8] - 2026-09-27
+
+### Changed
+
+- Markov scoring now shares bounded sequence preparation with longstring indices
+  and encodes each response block once. Category discovery and transition counting
+  reuse that encoding, avoiding repeated full-matrix scans and reducing temporary
+  allocation while preserving scores and missing-value policies.
+- The Markov benchmark now supports missing responses and measures timing
+  separately from allocation tracing.
+
+### Fixed
+
+- Markov scoring preserves distinct large integer category labels instead of
+  merging neighboring values when converting them to floating point.
+
 ## [1.7.7] - 2026-09-27
 
 ### Changed
