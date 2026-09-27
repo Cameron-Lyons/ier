@@ -11,41 +11,23 @@ Timing excludes allocation tracing; peak allocation is measured separately.
 from __future__ import annotations
 
 import argparse
-import gc
 import platform
-import statistics
-import time
-import tracemalloc
 
 import numpy as np
+from _measurement import measure
 
 from ier import mahad
 
 
 def _measure(data: np.ndarray, repeats: int, *, na_rm: bool) -> tuple[float, float]:
-    timings: list[float] = []
-    result: np.ndarray | None = None
-    for _ in range(repeats):
-        gc.collect()
-        started = time.perf_counter()
-        scored = mahad(data, na_rm=na_rm)
-        timings.append(time.perf_counter() - started)
-        if not isinstance(scored, np.ndarray):
-            raise RuntimeError("benchmark expected distance-only output")
-        result = scored
-    gc.collect()
-    tracemalloc.start()
-    try:
-        mahad(data, na_rm=na_rm)
-        peak = tracemalloc.get_traced_memory()[1]
-    finally:
-        tracemalloc.stop()
-
-    assert result is not None
+    measurement = measure(lambda: mahad(data, na_rm=na_rm), repeats)
+    result = measurement.result
+    if not isinstance(result, np.ndarray):
+        raise RuntimeError("benchmark expected distance-only output")
     valid = ~np.isnan(data).any(axis=1)
     if not np.isfinite(result[valid]).all() or not np.isnan(result[~valid]).all():
         raise RuntimeError("benchmark produced invalid distances")
-    return statistics.median(timings), peak / 1024 / 1024
+    return measurement.median_seconds, measurement.peak_mib
 
 
 def main() -> None:

@@ -8,12 +8,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
-import time
-import tracemalloc
 
 import numpy as np
+from _measurement import measure
 
 from ier import person_total
 
@@ -52,19 +49,8 @@ def main() -> None:
     for _ in range(args.warmup):
         person_total(data)
 
-    timings: list[float] = []
-    peaks: list[int] = []
-    result: np.ndarray | None = None
-    for _ in range(args.repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        result = person_total(data)
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-
-    assert result is not None
+    measurement = measure(lambda: person_total(data), args.repeats)
+    result = measurement.result
     if not np.isfinite(result).any():
         raise RuntimeError("benchmark produced no finite person–total correlations")
 
@@ -73,8 +59,8 @@ def main() -> None:
         f"repeats={args.repeats} warmup={args.warmup}"
     )
     print(
-        f"person_total: median={statistics.median(timings):.4f}s "
-        f"peak={statistics.median(peaks) / 1024 / 1024:.1f} MiB"
+        f"person_total: median={measurement.median_seconds:.4f}s "
+        f"peak={measurement.peak_mib:.1f} MiB"
     )
 
 

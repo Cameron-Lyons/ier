@@ -9,12 +9,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
-import time
-import tracemalloc
 
 import numpy as np
+from _measurement import measure
 
 from ier import onset
 
@@ -26,26 +23,13 @@ def _measure(
     min_items: int,
     repeats: int,
 ) -> tuple[float, float]:
-    timings: list[float] = []
-    peaks: list[int] = []
-    result: np.ndarray | None = None
-    for _ in range(repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        result = onset(
-            data,
-            window_size=window_size,
-            min_items=min_items,
-        )
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-
-    assert result is not None
+    measurement = measure(
+        lambda: onset(data, window_size=window_size, min_items=min_items), repeats
+    )
+    result = measurement.result
     if not (np.isfinite(result) | np.isnan(result)).all():
         raise RuntimeError("benchmark produced invalid onset scores")
-    return statistics.median(timings), statistics.median(peaks) / 1024 / 1024
+    return measurement.median_seconds, measurement.peak_mib
 
 
 def main() -> None:

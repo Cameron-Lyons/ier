@@ -8,13 +8,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
-import time
-import tracemalloc
 from typing import TYPE_CHECKING
 
 import numpy as np
+from _measurement import measure, measure_many
 
 from ier import (
     response_time,
@@ -39,24 +36,13 @@ def _measure(
     for _ in range(warmup):
         operation()
 
-    timings: list[float] = []
-    peaks: list[int] = []
-    result: np.ndarray | None = None
-    for _ in range(repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        result = operation()
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-
-    assert result is not None
+    measurement = measure(operation, repeats)
+    result = measurement.result
     if not np.isfinite(result).all():
         raise RuntimeError("benchmark produced non-finite scores")
     if probability and np.any((result < 0.0) | (result > 1.0)):
         raise RuntimeError("benchmark produced invalid mixture probabilities")
-    return statistics.median(timings), statistics.median(peaks) / 1024 / 1024
+    return measurement.median_seconds, measurement.peak_mib
 
 
 def main() -> None:
@@ -145,16 +131,17 @@ def main() -> None:
         warmup=args.warmup,
         probability=True,
     )
-    full_sensitivity_seconds, full_sensitivity_peak = _measure(
-        full_sensitivity,
-        repeats=args.repeats,
-        warmup=args.warmup,
+    for _ in range(args.warmup):
+        full_sensitivity()
+        reused_sensitivity()
+    sensitivity = measure_many(
+        {"full": full_sensitivity, "reused": reused_sensitivity}, args.repeats
     )
-    reused_sensitivity_seconds, reused_sensitivity_peak = _measure(
-        reused_sensitivity,
-        repeats=args.repeats,
-        warmup=args.warmup,
-    )
+    full = sensitivity["full"]
+    reused = sensitivity["reused"]
+    np.testing.assert_array_equal(reused.result, full.result)
+    full_sensitivity_seconds, full_sensitivity_peak = full.median_seconds, full.peak_mib
+    reused_sensitivity_seconds, reused_sensitivity_peak = reused.median_seconds, reused.peak_mib
 
     print(
         f"shape={timings.shape} components={args.components} "

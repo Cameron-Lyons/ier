@@ -8,15 +8,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
 import tempfile
-import time
-import tracemalloc
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
+from _measurement import measure_many
 
 from ier import (
     index_catalog,
@@ -26,28 +22,6 @@ from ier import (
     save_score_archive,
 )
 from ier.archive import _stream_npz_archive
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-
-def _measure(
-    operation: Callable[[], dict[str, np.ndarray]],
-    repeats: int,
-) -> tuple[float, float, dict[str, np.ndarray]]:
-    timings: list[float] = []
-    peaks: list[int] = []
-    result: dict[str, np.ndarray] | None = None
-    for _ in range(repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        result = operation()
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-    assert result is not None
-    return statistics.median(timings), statistics.median(peaks) / 1024 / 1024, result
 
 
 def _raw_load(path: Path) -> dict[str, np.ndarray]:
@@ -101,32 +75,6 @@ def _raw_save(path: Path, scores: dict[str, np.ndarray]) -> None:
     _stream_npz_archive(path, payload)
 
 
-def _measure_write_pair(
-    raw_operation: Callable[[], None],
-    validated_operation: Callable[[], None],
-    repeats: int,
-) -> tuple[float, float, float, float]:
-    timings: dict[str, list[float]] = {"raw": [], "validated": []}
-    peaks: dict[str, list[int]] = {"raw": [], "validated": []}
-    operations = {"raw": raw_operation, "validated": validated_operation}
-    for repeat in range(repeats):
-        order = ("raw", "validated") if repeat % 2 == 0 else ("validated", "raw")
-        for label in order:
-            gc.collect()
-            tracemalloc.start()
-            started = time.perf_counter()
-            operations[label]()
-            timings[label].append(time.perf_counter() - started)
-            peaks[label].append(tracemalloc.get_traced_memory()[1])
-            tracemalloc.stop()
-    return (
-        statistics.median(timings["raw"]),
-        statistics.median(peaks["raw"]) / 1024 / 1024,
-        statistics.median(timings["validated"]),
-        statistics.median(peaks["validated"]) / 1024 / 1024,
-    )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--respondents", type=int, default=100_000)
@@ -169,84 +117,55 @@ def main() -> None:
             threshold=timing_threshold,
         )
 
-        raw_seconds, raw_peak, raw = _measure(lambda: _raw_load(validated_path), args.repeats)
-        validated_seconds, validated_peak, validated = _measure(
-            lambda: load_score_archive(validated_path)["scores"],
+        loads = measure_many(
+            {
+                "raw": lambda: _raw_load(validated_path),
+                "validated": lambda: load_score_archive(validated_path)["scores"],
+                "raw_timing": lambda: _raw_response_time_load(timing_path),
+                "validated_timing": lambda: _validated_response_time_load(timing_path),
+            },
             args.repeats,
         )
-        raw_timing_seconds, raw_timing_peak, raw_timing = _measure(
-            lambda: _raw_response_time_load(timing_path),
-            args.repeats,
-        )
-        validated_timing_seconds, validated_timing_peak, validated_timing = _measure(
-            lambda: _validated_response_time_load(timing_path),
-            args.repeats,
-        )
-        raw_save_seconds, raw_save_peak, validated_save_seconds, validated_save_peak = (
-            _measure_write_pair(
-                lambda: _raw_save(raw_path, scores),
-                lambda: save_score_archive(validated_path, scores),
-                args.write_repeats,
-            )
-        )
-        (
-            raw_timing_save_seconds,
-            raw_timing_save_peak,
-            validated_timing_save_seconds,
-            validated_timing_save_peak,
-        ) = _measure_write_pair(
-            lambda: _raw_response_time_save(
-                raw_timing_path,
-                timing_scores,
-                timing_flags,
-                timing_threshold,
-            ),
-            lambda: save_response_time_archive(
-                timing_path,
-                timing_scores,
-                timing_flags,
-                threshold=timing_threshold,
-            ),
+        writes = measure_many(
+            {
+                "raw": lambda: _raw_save(raw_path, scores),
+                "validated": lambda: save_score_archive(validated_path, scores),
+                "raw_timing": lambda: _raw_response_time_save(
+                    raw_timing_path, timing_scores, timing_flags, timing_threshold
+                ),
+                "validated_timing": lambda: save_response_time_archive(
+                    timing_path, timing_scores, timing_flags, threshold=timing_threshold
+                ),
+            },
             args.write_repeats,
         )
 
     for name in names:
-        np.testing.assert_array_equal(validated[name], raw[name])
+        np.testing.assert_array_equal(loads["validated"].result[name], loads["raw"].result[name])
     for name in ("scores", "flags"):
-        np.testing.assert_array_equal(validated_timing[name], raw_timing[name])
+        np.testing.assert_array_equal(
+            loads["validated_timing"].result[name], loads["raw_timing"].result[name]
+        )
 
     print(
         f"respondents={args.respondents} indices={args.indices} "
         f"load_repeats={args.repeats} write_repeats={args.write_repeats}"
     )
-    print(f"raw load: median={raw_seconds:.4f}s peak={raw_peak:.1f} MiB")
-    print(
-        f"validated load: median={validated_seconds:.4f}s peak={validated_peak:.1f} MiB "
-        f"overhead={validated_seconds / raw_seconds:.2f}x"
-    )
-    print(
-        f"raw response-time load: median={raw_timing_seconds:.4f}s peak={raw_timing_peak:.1f} MiB"
-    )
-    print(
-        f"validated response-time load: median={validated_timing_seconds:.4f}s "
-        f"peak={validated_timing_peak:.1f} MiB "
-        f"overhead={validated_timing_seconds / raw_timing_seconds:.2f}x"
-    )
-    print(f"raw save: median={raw_save_seconds:.4f}s peak={raw_save_peak:.1f} MiB")
-    print(
-        f"validated save: median={validated_save_seconds:.4f}s "
-        f"peak={validated_save_peak:.1f} MiB "
-        f"overhead={validated_save_seconds / raw_save_seconds:.2f}x"
-    )
-    print(
-        f"raw response-time save: median={raw_timing_save_seconds:.4f}s "
-        f"peak={raw_timing_save_peak:.1f} MiB"
-    )
-    print(
-        f"validated response-time save: median={validated_timing_save_seconds:.4f}s "
-        f"peak={validated_timing_save_peak:.1f} MiB "
-        f"overhead={validated_timing_save_seconds / raw_timing_save_seconds:.2f}x"
-    )
+    for label, measurements in (("load", loads), ("save", writes)):
+        for prefix, raw_name, validated_name in (
+            ("", "raw", "validated"),
+            ("response-time ", "raw_timing", "validated_timing"),
+        ):
+            raw = measurements[raw_name]
+            validated = measurements[validated_name]
+            print(
+                f"raw {prefix}{label}: median={raw.median_seconds:.4f}s peak={raw.peak_mib:.1f} MiB"
+            )
+            print(
+                f"validated {prefix}{label}: median={validated.median_seconds:.4f}s "
+                f"peak={validated.peak_mib:.1f} MiB "
+                f"overhead={validated.median_seconds / raw.median_seconds:.2f}x"
+            )
 
 
 if __name__ == "__main__":

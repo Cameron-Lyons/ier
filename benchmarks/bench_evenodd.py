@@ -8,12 +8,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
-import time
-import tracemalloc
 
 import numpy as np
+from _measurement import measure
 
 from ier import evenodd
 
@@ -46,22 +43,10 @@ def main() -> None:
     for _ in range(args.warmup):
         evenodd(data, factors)
 
-    timings: list[float] = []
-    peaks: list[int] = []
-    result: np.ndarray | None = None
-    for _ in range(args.repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        scored = evenodd(data, factors)
-        if not isinstance(scored, np.ndarray):
-            raise RuntimeError("benchmark expected score-only even-odd output")
-        result = scored
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-
-    assert result is not None
+    measurement = measure(lambda: evenodd(data, factors), args.repeats)
+    result = measurement.result
+    if not isinstance(result, np.ndarray):
+        raise RuntimeError("benchmark expected score-only even-odd output")
     if not np.isfinite(result).all():
         raise RuntimeError("benchmark produced non-finite even-odd scores")
 
@@ -69,10 +54,7 @@ def main() -> None:
         f"shape={data.shape} factors={args.factors} factor_items={args.factor_items} "
         f"missing_rate={args.missing_rate} repeats={args.repeats} warmup={args.warmup}"
     )
-    print(
-        f"evenodd: median={statistics.median(timings):.4f}s "
-        f"peak={statistics.median(peaks) / 1024 / 1024:.1f} MiB"
-    )
+    print(f"evenodd: median={measurement.median_seconds:.4f}s peak={measurement.peak_mib:.1f} MiB")
 
 
 if __name__ == "__main__":

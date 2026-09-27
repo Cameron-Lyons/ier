@@ -12,16 +12,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
 import tempfile
-import time
-import tracemalloc
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+from _measurement import measure
 
 from ier._cli_npz import _write_composite_npz, _write_screen_npz
 from ier._cli_output import (
@@ -173,19 +170,10 @@ def _benchmark(
     destination: Path,
     repeats: int,
 ) -> tuple[float, float, float]:
-    timings: list[float] = []
-    peaks: list[int] = []
-    for _ in range(repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        operation()
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
+    measurement = measure(operation, repeats)
     return (
-        statistics.median(timings),
-        statistics.median(peaks) / 1024 / 1024,
+        measurement.median_seconds,
+        measurement.peak_mib,
         destination.stat().st_size / 1024 / 1024,
     )
 
