@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.10] - 2026-09-27
+
+### Changed
+
+- Lz person-fit scoring now uses the same bounded ability-estimation and
+  likelihood kernels for complete and missing responses. Missing items are
+  excluded from each respondent's reductions without switching the whole
+  matrix to per-respondent Python loops.
+- Consolidated person-fit tests around independent scalar references and
+  extended the benchmark to missing responses, array layouts, and both IRT
+  models, with timing measured separately from allocation tracing.
+
+### Fixed
+
+- Lz scores with unavailable item parameters now remain unavailable for complete
+  response rows, matching missing-response scoring, instead of becoming zero
+  when the likelihood variance is NaN.
+
 ## [1.7.9] - 2026-09-27
 
 ### Changed
