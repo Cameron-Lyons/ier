@@ -178,6 +178,12 @@ when `na_rm=True`; entirely missing rows remain unavailable. With `na_rm=False`,
 missing responses propagate through ability estimation. This shares one solver
 and likelihood implementation across both input paths without per-respondent
 Python loops.
+Binary response matrices are reused without modification; polytomous inputs
+allocate a converted matrix and fill it in bounded blocks. Difficulty estimation
+shares the bounded item-mean reduction used by Guttman and person-total scoring,
+and discrimination estimation uses bounded row totals. These reductions avoid
+full-matrix NaN replacement copies. Items with no observed responses have
+unavailable difficulty estimates and are omitted when `na_rm=True`.
 The CLI computes this transform from the final aggregate vector only when
 `--include-probability` is requested. JSON and CSV then serialize it
 forward-only, while NPZ stores one additional typed vector; index scoring is not

@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.11] - 2026-09-27
+
+### Changed
+
+- Person-fit preprocessing now reuses binary inputs without modifying them,
+  detects binary categories with bounded scans, and converts polytomous responses
+  in bounded blocks instead of allocating full-matrix conversion workspaces.
+- Guttman, person-total, and person-fit difficulty estimation now share one
+  bounded item-mean reduction. Person-fit discrimination estimation also uses
+  bounded row totals to avoid full-matrix NaN replacement copies.
+- The person-fit benchmark now accepts a category count for comparing binary and
+  polytomous preprocessing.
+
+### Fixed
+
+- Person-fit difficulty estimation leaves entirely missing items unavailable
+  without emitting a mean-of-empty-slice warning. Missing-aware scoring omits
+  those items and returns unavailable scores for entirely missing respondents.
+
 ## [1.7.10] - 2026-09-27
 
 ### Changed

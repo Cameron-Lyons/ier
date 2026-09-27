@@ -1,4 +1,4 @@
-"""Bounded row-wise mean, median, and standard-deviation reductions."""
+"""Bounded row-wise sum, mean, median, and standard-deviation reductions."""
 
 from collections.abc import Iterator
 
@@ -20,6 +20,16 @@ def row_mean(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
     for start, stop in row_slices(len(x), x.shape[1]):
         means[start:stop] = _row_mean_block(x[start:stop], ignore_nan=ignore_nan)
     return means
+
+
+def row_sum(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
+    """Calculate floating-point row totals without a complete missing-value copy."""
+    sums = np.empty(len(x))
+    for start, stop in row_slices(len(x), x.shape[1]):
+        block = x[start:stop]
+        valid = ~np.isnan(block) if ignore_nan else True
+        sums[start:stop] = np.sum(block, axis=1, dtype=float, where=valid)
+    return sums
 
 
 def row_median(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
