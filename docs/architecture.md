@@ -185,18 +185,20 @@ Retained summary vectors and mixture probabilities pass through the same shared
 single-vector validation and threshold boundary, so cutoff sensitivity analysis
 does not recalculate row summaries or refit EM.
 
-Markov transition entropy counts categorical pairs in bounded row batches for
-up to 64 observed states. Higher-cardinality inputs use only each row's observed
-states and pairs, avoiding a dense global state-square allocation. Both paths
-evaluate the equivalent count form of conditional entropy.
+Markov transition entropy discovers and encodes categories once per bounded
+sequence block, reusing the encoded values for transition counting. Dense tables
+contain only the block's observed states, up to 64; higher-cardinality blocks
+use each row's observed states and pairs. Integral labels retain their original
+precision, including adjacent 64-bit integers beyond floating-point precision.
+Both paths evaluate the equivalent count form of conditional entropy.
 
 Longstring and repeating-pattern scoring share bounded sequence preparation for
 complete and missing-response inputs. Batches with missing responses compact
 observed values in their original order; NaN padding and observed lengths exclude
 artificial runs and overlong candidate patterns. Both indices reuse a cumulative
 run-length kernel that counts consecutive matches without per-column Python loops
-or scalar fallbacks. Markov scoring also compacts missing responses, masks padded
-transitions, and retains its sparse fallback for high-cardinality responses.
+or scalar fallbacks. Markov scoring reuses the same sequence preparation, masks
+padded transitions, and retains its sparse fallback for high-cardinality responses.
 All-missing rows still return zero for longstring indices and NaN for Markov
 entropy, and `na_rm=False` still rejects missing responses. These paths use NumPy
 kernels without requiring a native extension or compiler.
@@ -219,6 +221,24 @@ from 3.15 to 1.54 MiB for longstring. Full screening remained at 82.45 MiB becau
 other indices determine its peak. Smaller inputs can use more temporary memory:
 complete 10,000-by-80 longstring scoring increased from 0.32 to 0.85 MiB. The
 shared row budget bounds these workspaces independently of respondent count.
+
+For the Markov refactor against commit `1e76814`, the same 100,000-by-80 workload
+gave these medians with five alternating before/after runs following one warmup
+per implementation (same seed, Python, NumPy, and BLAS settings as above):
+
+| Operation | Missing responses | Before | After | Peak allocation before → after |
+|-----------|------------------:|-------:|------:|-------------------------------:|
+| Markov | 0% | 130.9 ms | 66.0 ms | 77.86 → 5.41 MiB |
+| Markov | 10% | 153.1 ms | 135.3 ms | 9.22 → 9.22 MiB |
+| Default screening | 0% | 789.0 ms | 725.0 ms | 82.45 → 70.39 MiB |
+
+Use `benchmarks/bench_sequence_scoring.py --respondents 100000 --missing-rate 0
+--operations markov screen` to reproduce the complete-response workload, and
+`--missing-rate 0.1` for omissions. Whole-workflow gains depend on the other
+indices: missing-data screening timing varied between runs, with this alternating
+comparison measuring 876.4 ms before and 919.2 ms after and unchanged 63.40 MiB
+peak allocation. Small response scales benefit most; 64- and 65-state inputs
+showed little timing change. Allocation tracing remains separate from timing.
 
 Even–odd consistency reduces factor correlations directly into respondent-level
 sums and valid-factor counts. Correlation kernels use centered row workspaces and

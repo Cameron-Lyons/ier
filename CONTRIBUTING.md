@@ -65,6 +65,7 @@ Optional benchmarks:
 ```bash
 uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_detection.py
+OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
 ```
@@ -74,6 +75,8 @@ indices alongside default screening and composite workflows. Compare with
 `--missing-rate 0` to check complete-data performance. Use the same Python,
 NumPy, BLAS thread count, and benchmark arguments for before/after comparisons;
 wall-clock timing and peak allocation are measured in separate runs.
+The Markov benchmark follows the same measurement policy and accepts `--states`
+to compare small response scales with its sparse high-cardinality path.
 
 Verify release artifacts after packaging changes:
 
