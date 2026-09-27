@@ -8,12 +8,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
-import time
-import tracemalloc
 
 import numpy as np
+from _measurement import measure
 
 from ier import individual_reliability
 
@@ -25,26 +22,14 @@ def _measure(
     split_seed: int,
     repeats: int,
 ) -> tuple[float, float]:
-    timings: list[float] = []
-    peaks: list[int] = []
-    result: np.ndarray | None = None
-    for _ in range(repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        result = individual_reliability(
-            data,
-            n_splits=splits,
-            random_seed=split_seed,
-        )
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-
-    assert result is not None
+    measurement = measure(
+        lambda: individual_reliability(data, n_splits=splits, random_seed=split_seed),
+        repeats,
+    )
+    result = measurement.result
     if not np.isfinite(result).any():
         raise RuntimeError("benchmark produced no finite scores")
-    return statistics.median(timings), statistics.median(peaks) / 1024 / 1024
+    return measurement.median_seconds, measurement.peak_mib
 
 
 def main() -> None:

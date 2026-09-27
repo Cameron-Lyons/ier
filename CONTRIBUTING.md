@@ -76,32 +76,46 @@ OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_psychsyn.py --structure in
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_psychsyn.py --operation psychsyn_critval --missing-mode scattered
 ```
 
+All performance benchmarks share `benchmarks/_measurement.py`. Timed repeats
+run with allocation tracing disabled; one additional call per operation measures
+peak traced allocation in MiB. The peak is allocation during that call, not total
+process memory. Input generation, imports, requested warmups, garbage collection,
+and disposal of previous results stay outside the timing window. Callers retain
+the last timed result for correctness checks. Paired measurements alternate
+operation order. Allocation tracing is stopped even when a measured call fails;
+already-active tracing is rejected to avoid reporting distorted timings.
+
+Use the same Python, NumPy, BLAS thread count, and benchmark arguments for
+before/after comparisons. Older benchmark results that included tracing in the
+timer are not directly comparable; rerun both revisions with the same measurement
+method. Lower reported times after this tooling change do not indicate a change
+in scoring performance. The detection benchmark is a synthetic accuracy study
+and does not measure runtime or allocation.
+
 The sequence benchmark measures longstring, repeating-pattern, and Markov
 indices alongside default screening and composite workflows. Compare with
-`--missing-rate 0` to check complete-data performance. Use the same Python,
-NumPy, BLAS thread count, and benchmark arguments for before/after comparisons;
-wall-clock timing and peak allocation are measured in separate runs.
-The Markov benchmark follows the same measurement policy and accepts `--states`
+`--missing-rate 0` to check complete-data performance.
+The Markov benchmark accepts `--states`
 to compare small response scales with its sparse high-cardinality path.
 The response-check benchmark measures missing-response and attention-check
 scoring, including applicability masks and all attention-check missing policies.
 Use `--checks` to vary the number of selected items and `--order F` to compare
-column-contiguous inputs; timing and allocation are measured separately.
-The person-fit benchmark also separates timing from allocation tracing. Use
+column-contiguous inputs.
+For the person-fit benchmark, use
 `--missing-rate 0` for complete responses, `--order F` for column-contiguous
 inputs, `--categories 5` for polytomous responses instead of binary data, and
 `--model 1pl` for Rasch scoring instead of the default 2PL model.
 Use `--operation discrimination` to isolate 2PL item-discrimination estimation;
 that measurement excludes binary-response preparation. The default `lz`
 operation includes preprocessing, calibration, and respondent scoring.
-The Mahalanobis benchmark uses the same timing/allocation separation. Use
-`--na-rm` to measure complete-case handling on complete data, `--missing-row-rate`
+For Mahalanobis scoring, use `--na-rm` to measure complete-case handling on
+complete data, `--missing-row-rate`
 to mark a fraction of rows as incomplete, and `--order F` to compare layouts.
 Missing rows automatically enable complete-case handling.
 The psychometric synonym benchmark measures scoring or item discovery with
 `--operation psychsyn_critval`. Use `--structure independent` for sparse pair
 selection, `--missing-mode scattered` to spread omissions across items, and
-`--order F` for column-contiguous responses. Timing excludes allocation tracing.
+`--order F` for column-contiguous responses.
 
 Verify release artifacts after packaging changes:
 

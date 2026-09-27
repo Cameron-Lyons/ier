@@ -12,13 +12,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
 import platform
-import statistics
-import time
-import tracemalloc
 
 import numpy as np
+from _measurement import measure
 
 from ier.psychsyn import psychsyn, psychsyn_critval
 
@@ -62,7 +59,7 @@ def main() -> None:
         data[rng.random(data.shape) < args.missing_rate] = np.nan
     data = np.array(data, order=args.order)
 
-    def operation() -> object:
+    def operation() -> tuple[np.ndarray, np.ndarray] | list[tuple[int, int, float]]:
         if args.operation == "psychsyn_critval":
             return psychsyn_critval(data, min_correlation=args.critval)
         return psychsyn(data, critval=args.critval, diag=True)
@@ -70,28 +67,14 @@ def main() -> None:
     for _ in range(args.warmup):
         operation()
 
-    timings: list[float] = []
-    for _ in range(args.repeats):
-        gc.collect()
-        started = time.perf_counter()
-        operation()
-        timings.append(time.perf_counter() - started)
-
-    gc.collect()
-    tracemalloc.start()
-    try:
-        operation()
-        peak = tracemalloc.get_traced_memory()[1]
-    finally:
-        tracemalloc.stop()
-
-    if args.operation == "psychsyn":
-        scores, diagnostic = psychsyn(data, critval=args.critval, diag=True)
+    measurement = measure(operation, args.repeats)
+    if isinstance(measurement.result, tuple):
+        scores, diagnostic = measurement.result
         selected_pairs = int(diagnostic.max(initial=0))
         if not np.isfinite(scores[diagnostic > 0]).all() or np.isinf(scores).any():
             raise RuntimeError("benchmark produced non-finite psychometric synonym scores")
     else:
-        selected_pairs = len(psychsyn_critval(data, min_correlation=args.critval))
+        selected_pairs = len(measurement.result)
 
     print(f"Python {platform.python_version()} / NumPy {np.__version__}")
     print(
@@ -100,8 +83,8 @@ def main() -> None:
         f"repeats={args.repeats} warmup={args.warmup} seed={args.seed}"
     )
     print(
-        f"{args.operation}: median={statistics.median(timings):.4f}s "
-        f"peak={peak / 1024 / 1024:.1f} MiB"
+        f"{args.operation}: median={measurement.median_seconds:.4f}s "
+        f"peak={measurement.peak_mib:.1f} MiB"
     )
 
 
