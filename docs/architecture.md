@@ -139,6 +139,11 @@ Attention-check scoring keeps its legacy missing-as-pass behavior by default but
 also supports missing-as-failure, available-case omission, and strict propagation.
 The policy is carried through `IndexOptions`; unavailable scores reuse the same
 flagging and composite-coverage rules as every other registry index.
+Missing-response and attention-check scoring share ordered item-selection
+validation. Both select columns and reduce responses in bounded respondent
+batches; missing-response scoring selects applicability cells within the same
+batch instead of copying the entire selected mask. Attention checks compare
+selected items together and write directly into a single result vector.
 
 Screening counts available scores alongside flags without stacking either set of
 vectors. An optional `min_valid_indices` rule marks rows with insufficient score
@@ -279,6 +284,24 @@ Response-time summaries use the same reductions and partition row medians in
 bounded blocks. Median-based mixture preprocessing therefore does not duplicate
 the complete timing matrix before fitting its respondent-level model.
 
+For response checks against commit `d61be58`, a local 100,000-by-80 float64 matrix
+with 10% missing responses and 40 selected items gave these medians (nine
+alternating before/after runs after one warmup each, seed 20260927, Python 3.14.7,
+NumPy 2.3.5, row-contiguous input):
+
+| Operation | Before | After | Peak allocation before → after |
+|-----------|-------:|------:|-------------------------------:|
+| Attention checks, missing-as-pass proportions | 48.0 ms | 16.3 ms | 1.05 → 3.76 MiB |
+| Missing rates, all items | 8.2 ms | 6.1 ms | 8.46 → 1.26 MiB |
+| Missing rates, selected items with applicability | 33.0 ms | 21.4 ms | 40.66 → 3.56 MiB |
+
+Reproduce the workload with `benchmarks/bench_response_checks.py --checks 40`.
+Timing excludes allocation tracing. Attention checks trade additional bounded
+workspace for throughput; missing-rate scoring reduces temporary allocation.
+Results depend on layout and selection: column-contiguous all-item missing rates
+were about 7% slower in the local comparison, while still using less memory.
+Use `--order F` and `--checks 2` to explore these cases.
+
 ## Optional dependencies
 
 All statistical functionality is available in the NumPy-only base install.
@@ -300,6 +323,8 @@ Plotting remains optional and reports a centralized install hint from
 - Carelessness-onset throughput and memory: `benchmarks/bench_onset.py`.
 - Person–total correlation throughput and memory: `benchmarks/bench_person_total.py`.
 - Row-wise response reduction throughput and memory: `benchmarks/bench_row_reductions.py`.
+- Missing-response and attention-check throughput and memory, including item
+  subsets and applicability masks: `benchmarks/bench_response_checks.py`.
 - Lz person-fit throughput and memory: `benchmarks/bench_lz.py`.
 - Markov transition-entropy throughput and memory: `benchmarks/bench_markov.py`.
 - Sequence indices and screening/composite workflows with configurable missingness:

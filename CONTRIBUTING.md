@@ -68,6 +68,7 @@ uv run python benchmarks/bench_detection.py
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
+uv run python benchmarks/bench_response_checks.py --checks 40
 ```
 
 The sequence benchmark measures longstring, repeating-pattern, and Markov
@@ -77,6 +78,10 @@ NumPy, BLAS thread count, and benchmark arguments for before/after comparisons;
 wall-clock timing and peak allocation are measured in separate runs.
 The Markov benchmark follows the same measurement policy and accepts `--states`
 to compare small response scales with its sparse high-cardinality path.
+The response-check benchmark measures missing-response and attention-check
+scoring, including applicability masks and all attention-check missing policies.
+Use `--checks` to vary the number of selected items and `--order F` to compare
+column-contiguous inputs; timing and allocation are measured separately.
 
 Verify release artifacts after packaging changes:
 

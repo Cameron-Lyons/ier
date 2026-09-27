@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.9] - 2026-09-27
+
+### Changed
+
+- Missing-response and attention-check scoring now share ordered item-selection
+  validation and use bounded respondent batches. Missing-response scoring avoids
+  full selected-response and applicability copies; attention checks compare
+  selected items together while preserving all four missing-response policies.
+- Added a response-check benchmark with configurable item selection, missingness,
+  and array layout, measuring runtime separately from peak allocation.
+
 ## [1.7.8] - 2026-09-27
 
 ### Changed

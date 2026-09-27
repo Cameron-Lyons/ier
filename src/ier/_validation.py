@@ -16,6 +16,21 @@ class SupportsArray(Protocol):
 MatrixLike: TypeAlias = Sequence[Sequence[float | int]] | np.ndarray | SupportsArray | ArrayLike
 
 
+def validate_item_indices(item_indices: Sequence[int], n_columns: int) -> np.ndarray:
+    """Validate an ordered, nonempty selection of distinct matrix columns."""
+    selected = list(item_indices)
+    if not selected:
+        raise ValueError("item_indices cannot be empty")
+    for index in selected:
+        if isinstance(index, bool) or not isinstance(index, (int, np.integer)):
+            raise ValueError("item_indices must contain integer column indices")
+        if index < 0 or index >= n_columns:
+            raise ValueError(f"item index {index} out of bounds for data with {n_columns} columns")
+    if len(set(selected)) != len(selected):
+        raise ValueError("item_indices cannot contain duplicates")
+    return np.asarray(selected, dtype=np.intp)
+
+
 def validate_score_array(values: ArrayLike, *, name: str = "scores") -> np.ndarray:
     """Validate and return one non-empty one-dimensional reusable score vector."""
     try:
