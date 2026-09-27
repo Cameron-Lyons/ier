@@ -8,6 +8,7 @@ careless or random responding.
 
 import numpy as np
 
+from ier._column_statistics import column_mean
 from ier._correlation import row_correlations
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -49,7 +50,7 @@ def person_total(
     if not na_rm and np.isnan(x_array).any():
         return np.full(n_rows, np.nan)
 
-    item_means = _item_means(x_array, na_rm=na_rm, batch_rows=batch_rows)
+    item_means = column_mean(x_array, ignore_nan=na_rm)
     correlations = np.empty(n_rows)
     for start in range(0, n_rows, batch_rows):
         stop = min(start + batch_rows, n_rows)
@@ -61,31 +62,3 @@ def person_total(
         )
 
     return correlations
-
-
-def _item_means(
-    x: np.ndarray,
-    *,
-    na_rm: bool,
-    batch_rows: int,
-) -> np.ndarray:
-    """Calculate column means without a complete floating-point copy."""
-    if not na_rm:
-        result: np.ndarray = np.mean(x, axis=0)
-        return result
-
-    sums = np.zeros(x.shape[1])
-    counts = np.zeros(x.shape[1], dtype=np.intp)
-    for start in range(0, len(x), batch_rows):
-        block = x[start : start + batch_rows]
-        valid = ~np.isnan(block)
-        sums += np.sum(block, axis=0, dtype=float, where=valid)
-        counts += np.sum(valid, axis=0, dtype=np.intp)
-
-    means: np.ndarray = np.divide(
-        sums,
-        counts,
-        out=np.full(x.shape[1], np.nan),
-        where=counts > 0,
-    )
-    return means

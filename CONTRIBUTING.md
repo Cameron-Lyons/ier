@@ -85,7 +85,8 @@ Use `--checks` to vary the number of selected items and `--order F` to compare
 column-contiguous inputs; timing and allocation are measured separately.
 The person-fit benchmark also separates timing from allocation tracing. Use
 `--missing-rate 0` for complete responses, `--order F` for column-contiguous
-inputs, and `--model 1pl` for Rasch scoring instead of the default 2PL model.
+inputs, `--categories 5` for polytomous responses instead of binary data, and
+`--model 1pl` for Rasch scoring instead of the default 2PL model.
 
 Verify release artifacts after packaging changes:
 

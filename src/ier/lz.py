@@ -17,6 +17,8 @@ References:
 
 import numpy as np
 
+from ier._column_statistics import column_mean
+from ier._row_statistics import row_slices, row_sum
 from ier._statistics import logistic_transform
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -154,19 +156,28 @@ def lz_flag(
 
 
 def _dichotomize(x: np.ndarray) -> np.ndarray:
-    """Dichotomize polytomous responses at the observed midpoint."""
-    unique_vals = np.unique(x[~np.isnan(x)])
-    if len(unique_vals) <= 2 and np.all(np.isin(unique_vals, [0, 1])):
-        return x.copy()
+    """Reuse binary responses or dichotomize at the observed midpoint in batches."""
+    for start, stop in row_slices(len(x), x.shape[1]):
+        block = x[start:stop]
+        if not np.all((block == 0) | (block == 1) | np.isnan(block)):
+            break
+    else:
+        return x
 
     midpoint = (np.nanmax(x) + np.nanmin(x)) / 2
-    result = np.where(np.isnan(x), np.nan, (x > midpoint).astype(float))
+    result = np.empty(x.shape)
+    for start, stop in row_slices(len(x), x.shape[1]):
+        block = x[start:stop]
+        np.greater(block, midpoint, out=result[start:stop])
+        np.copyto(result[start:stop], np.nan, where=np.isnan(block))
     return result
 
 
 def _estimate_difficulty(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
     """Estimate item difficulty from proportion correct."""
-    p = np.nanmean(x, axis=0) if na_rm else np.mean(x, axis=0)
+    p = column_mean(x, ignore_nan=na_rm)
+    if np.issubdtype(x.dtype, np.floating):
+        p = p.astype(x.dtype, copy=False)
     p = np.clip(p, 0.001, 0.999)
     b: np.ndarray = -np.log(p / (1 - p))
     return b
@@ -177,7 +188,7 @@ def _estimate_discrimination(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
     n_items = x.shape[1]
     a = np.ones(n_items)
 
-    total_score = np.nansum(x, axis=1) if na_rm else np.sum(x, axis=1)
+    total_score = row_sum(x, ignore_nan=na_rm)
 
     if np.std(total_score) == 0:
         return a
