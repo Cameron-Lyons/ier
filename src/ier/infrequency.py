@@ -16,7 +16,8 @@ References:
 import numpy as np
 
 from ier._flagging import validate_threshold
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._row_statistics import row_slices
+from ier._validation import MatrixLike, validate_item_indices, validate_matrix_input
 from ier.types import InfrequencyMissingPolicy
 
 _MISSING_POLICIES = {"pass", "fail", "omit", "propagate"}
@@ -72,13 +73,7 @@ def infrequency(
             f"({len(expected_responses)}) must have the same length"
         )
 
-    for idx in item_indices:
-        if isinstance(idx, bool) or not isinstance(idx, (int, np.integer)):
-            raise ValueError("item_indices must contain integer column indices")
-        if idx < 0 or idx >= n_cols:
-            raise ValueError(f"item index {idx} out of bounds for data with {n_cols} columns")
-    if len(set(item_indices)) != len(item_indices):
-        raise ValueError("item_indices cannot contain duplicates")
+    selected = validate_item_indices(item_indices, n_cols)
 
     try:
         expected = np.asarray(expected_responses, dtype=float)
@@ -87,40 +82,27 @@ def infrequency(
     if expected.ndim != 1 or not np.isfinite(expected).all():
         raise ValueError("expected_responses must contain finite numeric values")
 
-    failures = np.zeros(x_array.shape[0], dtype=float)
-    available_counts = np.zeros(len(x_array), dtype=np.intp) if missing == "omit" else None
-    unavailable = np.zeros(len(x_array), dtype=bool) if missing == "propagate" else None
-
-    for idx, expected_value in zip(item_indices, expected, strict=True):
-        col = x_array[:, idx]
-        mismatch = col != expected_value
-        if missing == "fail":
-            failures += mismatch
-            continue
-
-        nan_mask = np.isnan(col)
-        mismatch[nan_mask] = False
-        failures += mismatch
-        if available_counts is not None:
-            available_counts += ~nan_mask
-        if unavailable is not None:
-            unavailable |= nan_mask
-
-    if proportion:
-        if available_counts is None:
-            failures /= len(item_indices)
-        else:
-            failures = np.divide(
-                failures,
-                available_counts,
-                out=np.full(len(failures), np.nan),
-                where=available_counts > 0,
-            )
-    elif available_counts is not None:
-        failures[available_counts == 0] = np.nan
-
-    if unavailable is not None:
-        failures[unavailable] = np.nan
+    failures = np.empty(len(x_array), dtype=float)
+    for start, stop in row_slices(len(x_array), len(selected)):
+        block = x_array[start:stop, selected]
+        mismatch = block != expected
+        observed = None if missing == "fail" else ~np.isnan(block)
+        del block  # Release selected responses before allocating the next batch.
+        if observed is not None:
+            mismatch &= observed
+        scores = failures[start:stop]
+        np.sum(mismatch, axis=1, dtype=float, out=scores)
+        if missing == "omit":
+            assert observed is not None
+            counts = np.count_nonzero(observed, axis=1)
+            if proportion:
+                np.divide(scores, counts, out=scores, where=counts > 0)
+            scores[counts == 0] = np.nan
+        elif proportion:
+            scores /= len(selected)
+        if missing == "propagate":
+            assert observed is not None
+            scores[~np.all(observed, axis=1)] = np.nan
 
     return failures
 
