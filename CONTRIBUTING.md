@@ -66,6 +66,7 @@ Optional benchmarks:
 uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_detection.py
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
+OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
 ```
 
 The sequence benchmark measures longstring, repeating-pattern, and Markov
