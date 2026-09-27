@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.14] - 2026-09-27
+
+### Changed
+
+- Person-fit discrimination estimation now reduces binary items together in
+  bounded respondent batches instead of sorting responses and fitting a
+  separate correlation matrix for each item. Centered reductions preserve
+  item-specific missing-response handling, constant-item fallbacks, and
+  discrimination limits.
+- The person-fit benchmark can measure discrimination estimation separately
+  from preprocessing and complete person-fit scoring.
+
 ## [1.7.13] - 2026-09-27
 
 ### Changed
