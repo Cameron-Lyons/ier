@@ -13,6 +13,7 @@ from typing import Any, Literal, overload
 
 import numpy as np
 
+from ier._column_statistics import column_correlations
 from ier._correlation import row_correlations
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
@@ -166,7 +167,7 @@ def psychsyn(
 
     rng = np.random.default_rng(random_seed)
 
-    item_correlations = np.corrcoef(x_array, rowvar=False)
+    item_correlations = column_correlations(x_array)
 
     item_correlations[np.isnan(item_correlations)] = 0
 
@@ -343,7 +344,7 @@ def psychsyn_critval(
 
     x_array = validate_matrix_input(x, min_columns=2)
 
-    item_correlations = np.corrcoef(x_array, rowvar=False)
+    item_correlations = column_correlations(x_array)
     n_items = item_correlations.shape[0]
 
     i_indices, j_indices = np.triu_indices(n_items, k=1)

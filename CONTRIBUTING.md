@@ -71,6 +71,8 @@ OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --resp
 uv run python benchmarks/bench_response_checks.py --checks 40
 uv run python benchmarks/bench_lz.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_mahad.py --na-rm --missing-row-rate 0.1
+OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_psychsyn.py --structure independent --missing-rate 0
+OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_psychsyn.py --operation psychsyn_critval --missing-mode scattered
 ```
 
 The sequence benchmark measures longstring, repeating-pattern, and Markov
@@ -92,6 +94,10 @@ The Mahalanobis benchmark uses the same timing/allocation separation. Use
 `--na-rm` to measure complete-case handling on complete data, `--missing-row-rate`
 to mark a fraction of rows as incomplete, and `--order F` to compare layouts.
 Missing rows automatically enable complete-case handling.
+The psychometric synonym benchmark measures scoring or item discovery with
+`--operation psychsyn_critval`. Use `--structure independent` for sparse pair
+selection, `--missing-mode scattered` to spread omissions across items, and
+`--order F` for column-contiguous responses. Timing excludes allocation tracing.
 
 Verify release artifacts after packaging changes:
 
