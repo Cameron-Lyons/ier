@@ -13,13 +13,10 @@ Timing excludes allocation tracing; peak allocation is measured separately.
 from __future__ import annotations
 
 import argparse
-import gc
 import platform
-import statistics
-import time
-import tracemalloc
 
 import numpy as np
+from _measurement import measure
 
 from ier import lz
 from ier.lz import _dichotomize, _estimate_discrimination
@@ -71,23 +68,8 @@ def main() -> None:
     for _ in range(args.warmup):
         operation()
 
-    timings: list[float] = []
-    result: np.ndarray | None = None
-    for _ in range(args.repeats):
-        gc.collect()
-        started = time.perf_counter()
-        result = operation()
-        timings.append(time.perf_counter() - started)
-
-    gc.collect()
-    tracemalloc.start()
-    try:
-        operation()
-        peak = tracemalloc.get_traced_memory()[1]
-    finally:
-        tracemalloc.stop()
-
-    assert result is not None
+    measurement = measure(operation, args.repeats)
+    result = measurement.result
     if args.operation == "discrimination":
         if not np.isfinite(result).all() or np.any((result < 0.2) | (result > 3.0)):
             raise RuntimeError("benchmark produced invalid discrimination estimates")
@@ -102,8 +84,8 @@ def main() -> None:
         f"model={args.model} repeats={args.repeats} warmup={args.warmup} seed={args.seed}"
     )
     print(
-        f"{args.operation}: median={statistics.median(timings):.4f}s "
-        f"peak={peak / 1024 / 1024:.1f} MiB"
+        f"{args.operation}: median={measurement.median_seconds:.4f}s "
+        f"peak={measurement.peak_mib:.1f} MiB"
     )
 
 

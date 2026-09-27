@@ -13,14 +13,11 @@ in a separate run, excluding input generation and imports.
 from __future__ import annotations
 
 import argparse
-import gc
 import platform
-import statistics
-import time
-import tracemalloc
 from typing import TYPE_CHECKING
 
 import numpy as np
+from _measurement import measure
 
 from ier import IndexOptions, composite, longstring_pattern, longstring_scores, markov, screen
 
@@ -66,17 +63,10 @@ def main() -> None:
             continue
         for _ in range(args.warmup):
             operation()
-        timings = []
-        for _ in range(args.repeats):
-            started = time.perf_counter()
-            operation()
-            timings.append(time.perf_counter() - started)
-        gc.collect()
-        tracemalloc.start()
-        operation()
-        peak = tracemalloc.get_traced_memory()[1]
-        tracemalloc.stop()
-        print(f"{name}: median={statistics.median(timings):.6f}s peak={peak / 1024 / 1024:.2f} MiB")
+        measurement = measure(operation, args.repeats)
+        print(
+            f"{name}: median={measurement.median_seconds:.6f}s peak={measurement.peak_mib:.2f} MiB"
+        )
 
 
 if __name__ == "__main__":

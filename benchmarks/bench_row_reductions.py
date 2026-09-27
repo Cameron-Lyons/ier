@@ -8,13 +8,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
-import time
-import tracemalloc
 from typing import TYPE_CHECKING
 
 import numpy as np
+from _measurement import measure
 
 from ier import acquiescence, irv, midpoint_responding, response_pattern, u3_poly
 
@@ -22,23 +19,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 Score = np.ndarray | dict[str, np.ndarray]
-
-
-def _measure(score: Callable[[], Score], repeats: int) -> tuple[float, float, Score]:
-    timings: list[float] = []
-    peaks: list[int] = []
-    result: Score | None = None
-    for _ in range(repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        result = score()
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-
-    assert result is not None
-    return statistics.median(timings), statistics.median(peaks) / 1024 / 1024, result
 
 
 def _has_finite_score(result: Score) -> bool:
@@ -83,10 +63,10 @@ def main() -> None:
         f"repeats={args.repeats} warmup={args.warmup}"
     )
     for name, score in scorers.items():
-        elapsed, peak_mib, result = _measure(score, args.repeats)
-        if not _has_finite_score(result):
+        measured = measure(score, args.repeats)
+        if not _has_finite_score(measured.result):
             raise RuntimeError(f"{name} produced no finite scores")
-        print(f"{name}: median={elapsed:.4f}s peak={peak_mib:.1f} MiB")
+        print(f"{name}: median={measured.median_seconds:.4f}s peak={measured.peak_mib:.1f} MiB")
 
 
 if __name__ == "__main__":

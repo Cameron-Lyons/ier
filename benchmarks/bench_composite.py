@@ -8,18 +8,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
-import time
-import tracemalloc
-from typing import TYPE_CHECKING
 
 import numpy as np
+from _measurement import measure_many
 
 from ier import IndexOptions, composite, composite_scores, composite_summary
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 
 def _make_data(n_respondents: int, n_items: int, seed: int) -> np.ndarray:
@@ -29,15 +22,6 @@ def _make_data(n_respondents: int, n_items: int, seed: int) -> np.ndarray:
     if n_items >= 6:
         data[1, :] = np.tile([1.0, 5.0], n_items // 2 + 1)[:n_items]
     return data
-
-
-def _peak_mib(operation: Callable[[], object]) -> float:
-    gc.collect()
-    tracemalloc.start()
-    operation()
-    peak = tracemalloc.get_traced_memory()[1]
-    tracemalloc.stop()
-    return peak / 1024 / 1024
 
 
 def _direct_composite(
@@ -85,33 +69,24 @@ def main() -> None:
         _direct_composite(data, options, weight_scenarios[0])
         composite_scores(initial["indices"], weights=weight_scenarios[0])
 
-    full_timings: list[float] = []
-    reused_timings: list[float] = []
-    for _ in range(args.repeats):
-        started = time.perf_counter()
-        direct_results = [_direct_composite(data, options, weights) for weights in weight_scenarios]
-        full_timings.append(time.perf_counter() - started)
-
-        started = time.perf_counter()
-        reused_results = [
-            composite_scores(initial["indices"], weights=weights) for weights in weight_scenarios
-        ]
-        reused_timings.append(time.perf_counter() - started)
-
-    for direct, reused in zip(direct_results, reused_results, strict=True):
-        np.testing.assert_allclose(reused, direct, rtol=1e-14, atol=1e-14, equal_nan=True)
-
-    full_peak = _peak_mib(
-        lambda: [_direct_composite(data, options, weights) for weights in weight_scenarios]
+    measured = measure_many(
+        {
+            "full": lambda: [
+                _direct_composite(data, options, weights) for weights in weight_scenarios
+            ],
+            "reused": lambda: [
+                composite_scores(initial["indices"], weights=weights)
+                for weights in weight_scenarios
+            ],
+        },
+        args.repeats,
     )
-    reused_peak = _peak_mib(
-        lambda: [
-            composite_scores(initial["indices"], weights=weights) for weights in weight_scenarios
-        ]
-    )
+    full, reused = measured["full"], measured["reused"]
+    for direct, retained in zip(full.result, reused.result, strict=True):
+        np.testing.assert_allclose(retained, direct, rtol=1e-14, atol=1e-14, equal_nan=True)
 
-    full_median = statistics.median(full_timings)
-    reused_median = statistics.median(reused_timings)
+    full_median, reused_median = full.median_seconds, reused.median_seconds
+    full_peak, reused_peak = full.peak_mib, reused.peak_mib
     print(f"shape={data.shape} indices={len(names)} scenarios={args.sensitivity_scenarios}")
     print(
         f"composite sensitivity: full={full_median:.4f}s reused={reused_median:.4f}s "

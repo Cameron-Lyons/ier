@@ -11,13 +11,10 @@ Wall-clock timing and peak traced allocation are measured in separate runs.
 from __future__ import annotations
 
 import argparse
-import gc
 import platform
-import statistics
-import time
-import tracemalloc
 
 import numpy as np
+from _measurement import measure
 
 from ier import markov
 
@@ -48,30 +45,18 @@ def main() -> None:
     for _ in range(args.warmup):
         markov(data)
 
-    timings: list[float] = []
-    result: np.ndarray | None = None
-    for _ in range(args.repeats):
-        started = time.perf_counter()
-        result = markov(data)
-        timings.append(time.perf_counter() - started)
-
-    assert result is not None
+    measurement = measure(lambda: markov(data), args.repeats)
+    result = measurement.result
     available = np.sum(~np.isnan(data), axis=1) >= 2
     if not np.isfinite(result[available]).all() or not np.isnan(result[~available]).all():
         raise RuntimeError("benchmark produced unexpected non-finite transition entropy")
-
-    gc.collect()
-    tracemalloc.start()
-    markov(data)
-    peak = tracemalloc.get_traced_memory()[1]
-    tracemalloc.stop()
 
     print(f"Python {platform.python_version()} / NumPy {np.__version__}")
     print(
         f"shape={data.shape} states={args.states} missing_rate={args.missing_rate} "
         f"repeats={args.repeats} warmup={args.warmup}"
     )
-    print(f"markov: median={statistics.median(timings):.4f}s peak={peak / 1024 / 1024:.1f} MiB")
+    print(f"markov: median={measurement.median_seconds:.4f}s peak={measurement.peak_mib:.1f} MiB")
 
 
 if __name__ == "__main__":

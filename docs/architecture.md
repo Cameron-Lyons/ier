@@ -337,6 +337,12 @@ Plotting remains optional and reports a centralized install hint from
 
 ## Parity and simulation
 
+Performance scripts use `benchmarks/_measurement.py` for untraced timed repeats
+and a separate peak-allocation call. Paired comparisons alternate operation order
+and retain the last timed results for correctness checks. See
+[Contributing](https://github.com/Cameron-Lyons/ier/blob/main/CONTRIBUTING.md#run-quality-checks)
+for measurement details and historical-comparison guidance.
+
 - Hand-locked regression fixtures live in `tests/test_golden_parity.py` and
   JSON under `tests/fixtures/parity/`.
 - Detection-rate simulation: `benchmarks/bench_detection.py`.

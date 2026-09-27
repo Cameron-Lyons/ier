@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- All performance benchmarks now share timing and allocation measurement,
+  keeping allocation tracing out of timed calls and preserving measured results
+  for correctness checks. Paired comparisons alternate operation order, and
+  failed memory measurements always stop allocation tracing.
+- Added small CLI smoke runs for every performance benchmark and documented
+  the common measurement method. Historical timings collected with tracing
+  enabled must be rerun before comparing them with the new reports.
+
 ## [1.7.14] - 2026-09-27
 
 ### Changed
