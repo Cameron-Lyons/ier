@@ -5,6 +5,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.13] - 2026-09-27
+
+### Changed
+
+- Psychometric synonym, antonym, and cutoff discovery now share a bounded
+  item-correlation reduction instead of copying the full response matrix.
+  Items with unavailable means are excluded from matrix multiplication while
+  retaining the existing propagation of missing responses by item.
+- The psychometric synonym benchmark now covers item discovery, input layouts,
+  independent or correlated responses, and concentrated or scattered missing
+  values, with runtime measured separately from allocation tracing.
+
+### Fixed
+
+- Undefined item correlations no longer emit division warnings for constant
+  responses. Single-respondent discovery returns unavailable correlations with
+  the correct item-matrix shape instead of failing on a scalar correlation.
+
 ## [1.7.12] - 2026-09-27
 
 ### Changed
