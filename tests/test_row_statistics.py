@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 import ier._row_statistics as row_statistics
 
@@ -142,3 +143,29 @@ def test_wide_rows_still_make_progress() -> None:
     """A row wider than the budget is emitted as a one-row block."""
     with patch.object(row_statistics, "_ROW_BATCH_ELEMENTS", 4):
         assert list(row_statistics.row_slices(3, 10)) == [(0, 1), (1, 2), (2, 3)]
+
+
+@pytest.mark.parametrize("ignore_nan", [False, True])
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+def test_row_totals_match_numpy(ignore_nan: bool, layout: str) -> None:
+    rng = np.random.default_rng(413)
+    data = rng.normal(size=(17, 31))
+    data[rng.random(data.shape) < 0.2] = np.nan
+    data[0] = np.nan
+    data = data[::-2, ::2] if layout == "strided" else np.array(data, order=layout)
+    data.flags.writeable = False
+    expected = np.nansum(data, axis=1) if ignore_nan else np.sum(data, axis=1)
+    with (
+        patch.object(row_statistics, "_ROW_BATCH_ELEMENTS", 20),
+        patch.object(row_statistics.np, "isnan", wraps=np.isnan) as masks,
+    ):
+        actual = row_statistics.row_sum(data, ignore_nan=ignore_nan)
+    assert all(call.args[0].size <= max(20, data.shape[1]) for call in masks.call_args_list)
+    np.testing.assert_allclose(actual, expected, rtol=1e-13, atol=1e-14)
+
+
+def test_integer_row_totals_do_not_overflow() -> None:
+    data = np.full((3, 7), np.iinfo(np.int64).max)
+    np.testing.assert_array_equal(
+        row_statistics.row_sum(data, ignore_nan=True), np.sum(data, axis=1, dtype=float)
+    )

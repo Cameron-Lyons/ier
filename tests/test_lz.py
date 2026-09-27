@@ -7,7 +7,17 @@ import numpy as np
 import pytest
 
 from ier._statistics import logistic_transform
-from ier.lz import _compute_lz, _compute_lz_batch, _estimate_theta, _ml_theta_batch, lz, lz_flag
+from ier.lz import (
+    _compute_lz,
+    _compute_lz_batch,
+    _dichotomize,
+    _estimate_difficulty,
+    _estimate_discrimination,
+    _estimate_theta,
+    _ml_theta_batch,
+    lz,
+    lz_flag,
+)
 
 
 def _reference_theta(responses: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
@@ -411,3 +421,109 @@ def test_missing_solver_handles_extreme_parameters(a_value: float, b_value: floa
     actual_scores = _compute_lz(data, a, b, actual_theta)
     np.testing.assert_allclose(actual_theta, expected_theta, atol=2e-11, rtol=2e-11)
     np.testing.assert_allclose(actual_scores, expected_scores, atol=2e-11, rtol=2e-11)
+
+
+@pytest.mark.parametrize("dtype", [np.bool_, np.uint8, np.int64, np.float32, np.float64])
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+def test_binary_responses_are_reused_without_mutation(dtype: type, layout: str) -> None:
+    rng = np.random.default_rng(213)
+    data = rng.integers(0, 2, (25, 13)).astype(dtype)
+    if np.issubdtype(dtype, np.floating):
+        data[0, 0] = np.nan
+    data = data[::-2, ::2] if layout == "strided" else np.array(data, order=layout)
+    original = data.copy()
+    data.flags.writeable = False
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 31):
+        prepared = _dichotomize(data)
+        assert np.shares_memory(prepared, data)
+        scores = lz(data)
+    assert np.isfinite(scores).all()
+    np.testing.assert_array_equal(data, original)
+
+
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+@pytest.mark.parametrize("dtype", [np.float64, np.float32, np.int64])
+def test_polytomous_preparation_matches_midpoint_reference(layout: str, dtype: type) -> None:
+    rng = np.random.default_rng(115)
+    data = rng.integers(-3, 7, (37, 13)).astype(dtype)
+    if np.issubdtype(dtype, np.floating):
+        data[rng.random(data.shape) < 0.3] = np.nan
+    data = data[::-2, ::2] if layout == "strided" else np.array(data, order=layout)
+    original = data.copy()
+    data.flags.writeable = False
+    midpoint = (np.nanmin(data) + np.nanmax(data)) / 2
+    expected = np.where(np.isnan(data), np.nan, (data > midpoint).astype(float))
+    with (
+        patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 31),
+        patch("ier.lz.np.isnan", wraps=np.isnan) as masks,
+    ):
+        prepared = _dichotomize(data)
+    assert not np.shares_memory(prepared, data)
+    assert all(call.args[0].size <= 31 for call in masks.call_args_list)
+    np.testing.assert_array_equal(prepared, expected)
+    np.testing.assert_array_equal(data, original)
+
+
+def test_binary_scan_reaches_the_final_batch() -> None:
+    data = np.zeros((53, 7))
+    data[-1, -1] = 3.0
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 20):
+        prepared = _dichotomize(data)
+    expected = np.zeros(data.shape)
+    expected[-1, -1] = 1.0
+    np.testing.assert_array_equal(prepared, expected)
+
+
+@pytest.mark.parametrize("na_rm", [False, True])
+@pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64, np.int64])
+def test_difficulty_preserves_input_precision(na_rm: bool, dtype: type) -> None:
+    rng = np.random.default_rng(541)
+    data = rng.integers(0, 2, (257, 17)).astype(dtype)
+    if np.issubdtype(dtype, np.floating):
+        data[rng.random(data.shape) < 0.1] = np.nan
+    proportions = np.nanmean(data, axis=0) if na_rm else np.mean(data, axis=0)
+    proportions = np.clip(proportions, 0.001, 0.999)
+    expected = -np.log(proportions / (1 - proportions))
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 100):
+        actual = _estimate_difficulty(data, na_rm=na_rm)
+    assert actual.dtype == expected.dtype
+    np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize("na_rm", [False, True])
+def test_parameter_estimation_matches_direct_correlations(na_rm: bool) -> None:
+    rng = np.random.default_rng(752)
+    data = rng.integers(0, 2, (97, 13)).astype(float)
+    data[rng.random(data.shape) < 0.3] = np.nan
+    data[:, 0] = 0.0
+    data[:, 1] = 1.0
+    totals = np.nansum(data, axis=1) if na_rm else np.sum(data, axis=1)
+    expected = np.ones(data.shape[1])
+    for column in range(data.shape[1]):
+        valid = ~np.isnan(data[:, column]) if na_rm else np.ones(len(data), dtype=bool)
+        responses = data[valid, column]
+        scores = totals[valid]
+        if np.std(responses) == 0 or np.std(scores) == 0:
+            continue
+        r = np.corrcoef(responses, scores)[0, 1]
+        if not np.isnan(r):
+            r = np.clip(r, -0.99, 0.99)
+            expected[column] = np.clip(r * 1.7 / np.sqrt(1 - r**2), 0.2, 3.0)
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 50):
+        actual = _estimate_discrimination(data, na_rm=na_rm)
+    np.testing.assert_allclose(actual, expected, atol=1e-14, rtol=1e-14)
+
+
+@pytest.mark.parametrize("model", ["1pl", "2pl"])
+@pytest.mark.parametrize("na_rm", [False, True])
+def test_empty_items_and_matrices_do_not_warn(model: str, na_rm: bool) -> None:
+    data = np.array([[1, 0, np.nan, 1], [0, 1, np.nan, 0], [1, 1, np.nan, 0]])
+    scores = lz(data, model=model, na_rm=na_rm)
+    if na_rm:
+        expected = lz(data[:, [0, 1, 3]], model=model)
+        np.testing.assert_allclose(scores, expected, atol=1e-13, rtol=1e-13)
+    else:
+        assert np.isnan(scores).all()
+    scores, flags = lz_flag(np.full((3, 4), np.nan), model=model, na_rm=na_rm)
+    assert np.isnan(scores).all()
+    assert not flags.any()

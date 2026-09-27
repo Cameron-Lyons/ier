@@ -4,6 +4,7 @@ Usage:
     uv run python benchmarks/bench_lz.py
     uv run python benchmarks/bench_lz.py --respondents 20000 --items 100 --repeats 5
     uv run python benchmarks/bench_lz.py --missing-rate 0.1 --order F
+    uv run python benchmarks/bench_lz.py --categories 5 --missing-rate 0.1
 
 Timing excludes allocation tracing; peak allocation is measured separately.
 """
@@ -26,6 +27,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--respondents", type=int, default=10_000)
     parser.add_argument("--items", type=int, default=80)
+    parser.add_argument("--categories", type=int, default=2)
     parser.add_argument("--missing-rate", type=float, default=0.0)
     parser.add_argument("--order", choices=("C", "F"), default="C")
     parser.add_argument("--model", choices=("1pl", "2pl"), default="2pl")
@@ -41,13 +43,17 @@ def main() -> None:
         )
     if not 0.0 <= args.missing_rate < 1.0:
         parser.error("missing-rate must be in [0, 1)")
+    if args.categories < 2:
+        parser.error("categories must be at least 2")
 
     rng = np.random.default_rng(args.seed)
-    data = rng.integers(0, 2, size=(args.respondents, args.items)).astype(float, order=args.order)
+    data = rng.integers(0, args.categories, size=(args.respondents, args.items)).astype(
+        float, order=args.order
+    )
     data[rng.random(data.shape) < args.missing_rate] = np.nan
     # Keep every item observed for parameter estimation, even at high missingness.
     data[0] = 0.0
-    data[1] = 1.0
+    data[1] = args.categories - 1.0
 
     for _ in range(args.warmup):
         lz(data, model=args.model)
@@ -74,7 +80,8 @@ def main() -> None:
         raise RuntimeError("benchmark produced invalid lz values")
     print(f"Python {platform.python_version()} / NumPy {np.__version__}")
     print(
-        f"shape={data.shape} missing_rate={args.missing_rate} order={args.order} "
+        f"shape={data.shape} categories={args.categories} "
+        f"missing_rate={args.missing_rate} order={args.order} "
         f"model={args.model} repeats={args.repeats} warmup={args.warmup} seed={args.seed}"
     )
     print(f"lz: median={statistics.median(timings):.4f}s peak={peak / 1024 / 1024:.1f} MiB")

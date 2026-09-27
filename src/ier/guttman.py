@@ -9,6 +9,7 @@ import warnings
 
 import numpy as np
 
+from ier._column_statistics import column_mean
 from ier._row_statistics import row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -51,7 +52,7 @@ def guttman(
     n_persons = x_array.shape[0]
     n_items = x_array.shape[1]
 
-    item_difficulty = _item_difficulties(x_array, ignore_nan=na_rm)
+    item_difficulty = column_mean(x_array, ignore_nan=na_rm)
     difficulty_order = np.argsort(item_difficulty)
     categories = _small_categorical_values(x_array)
     errors, valid_counts = _count_guttman_errors(
@@ -76,29 +77,6 @@ def guttman(
         result = errors
 
     return result
-
-
-def _item_difficulties(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
-    """Calculate item means without a complete missing-value mask."""
-    if not ignore_nan:
-        result: np.ndarray = np.mean(x, axis=0)
-        return result
-
-    sums = np.zeros(x.shape[1])
-    counts = np.zeros(x.shape[1], dtype=np.intp)
-    for start, stop in row_slices(len(x), x.shape[1]):
-        block = x[start:stop]
-        valid = ~np.isnan(block)
-        sums += np.sum(block, axis=0, dtype=float, where=valid)
-        counts += np.sum(valid, axis=0, dtype=np.intp)
-
-    means: np.ndarray = np.divide(
-        sums,
-        counts,
-        out=np.full(x.shape[1], np.nan),
-        where=counts > 0,
-    )
-    return means
 
 
 def _small_categorical_values(x: np.ndarray) -> np.ndarray | None:
