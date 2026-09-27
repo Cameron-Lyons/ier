@@ -16,8 +16,10 @@ from typing import Any
 import numpy as np
 
 from ier._flagging import threshold_flags
+from ier._response_sequences import compact_rows
+from ier._row_statistics import row_slices
 from ier._summary import calculate_summary_stats
-from ier._validation import MatrixLike, iter_rows, validate_matrix_input
+from ier._validation import MatrixLike, validate_matrix_input
 
 _MAX_DENSE_STATES = 64
 _TRANSITION_BATCH_WORKSPACE_BYTES = 64 * 1024 * 1024
@@ -53,34 +55,34 @@ def markov(
     """
     x_array = validate_matrix_input(x, min_columns=3, check_type=False)
 
-    missing = np.isnan(x_array)
-    has_missing = bool(missing.any())
+    has_missing = any(
+        np.isnan(x_array[start:stop]).any() for start, stop in row_slices(*x_array.shape)
+    )
     if not na_rm and has_missing:
         raise ValueError("data contains missing values. Set na_rm=True to handle them")
 
-    n_rows = x_array.shape[0]
     if not has_missing:
         return _markov_complete(x_array)
 
-    if not np.any(~missing):
-        return np.full(x_array.shape[0], np.nan)
-
-    result = np.zeros(n_rows, dtype=float)
-    for i, row in enumerate(iter_rows(x_array, na_rm=True)):
-        if len(row) < 2:
-            result[i] = np.nan
+    result = np.full(len(x_array), np.nan)
+    for start, stop in row_slices(*x_array.shape):
+        packed, counts = compact_rows(x_array[start:stop])
+        if packed.shape[1] < 2:
             continue
-
-        result[i] = _transition_entropy_row(row)
+        # Encode padding as an observed category; counts exclude every padded
+        # transition, so no artificial category enters the dense state table.
+        first_value = packed[np.flatnonzero(counts)[0], 0]
+        np.copyto(packed, first_value, where=np.isnan(packed))
+        result[start:stop] = _markov_complete(packed, counts=counts)
 
     return result
 
 
-def _markov_complete(x: np.ndarray) -> np.ndarray:
-    """Score complete rows with bounded dense batches or a sparse fallback."""
+def _markov_complete(x: np.ndarray, *, counts: np.ndarray | None = None) -> np.ndarray:
+    """Score complete or padded rows with bounded dense batches or a sparse fallback."""
     encoder = _dense_state_encoder(x)
     if encoder is None:
-        return _transition_entropies_sparse(x)
+        return _transition_entropies_sparse(x, counts=counts)
 
     minimum, states = encoder
     n_states = len(states) if minimum is None else int(np.max(states)) + 1
@@ -90,14 +92,19 @@ def _markov_complete(x: np.ndarray) -> np.ndarray:
     bytes_per_row = integer_bytes * (2 * n_items + n_states * n_states + n_states) + float_bytes * (
         n_states * n_states + n_states
     )
+    if counts is not None:
+        bytes_per_row += n_items * (integer_bytes + np.dtype(bool).itemsize)
     batch_rows = max(1, _TRANSITION_BATCH_WORKSPACE_BYTES // bytes_per_row)
 
     result = np.empty(len(x), dtype=float)
     for start in range(0, len(x), batch_rows):
         stop = min(start + batch_rows, len(x))
         encoded = _encode_state_batch(x[start:stop], minimum, states)
-        transition_counts = _dense_transition_counts(encoded, n_states)
+        batch_counts = None if counts is None else counts[start:stop]
+        transition_counts = _dense_transition_counts(encoded, n_states, counts=batch_counts)
         result[start:stop] = _transition_entropy_batch(transition_counts)
+    if counts is not None:
+        result[counts < 2] = np.nan
     return result
 
 
@@ -158,7 +165,9 @@ def _encode_state_batch(
     return encoded
 
 
-def _dense_transition_counts(encoded: np.ndarray, n_states: int) -> np.ndarray:
+def _dense_transition_counts(
+    encoded: np.ndarray, n_states: int, *, counts: np.ndarray | None = None
+) -> np.ndarray:
     """Count transition pairs for one encoded batch without repeated row IDs."""
     n_rows, n_items = encoded.shape
     pair_ids = np.empty((n_rows, n_items - 1), dtype=np.intp)
@@ -167,14 +176,22 @@ def _dense_transition_counts(encoded: np.ndarray, n_states: int) -> np.ndarray:
     row_offsets = np.arange(n_rows, dtype=np.intp) * (n_states * n_states)
     pair_ids += row_offsets[:, None]
 
-    counts = np.bincount(pair_ids.ravel(), minlength=n_rows * n_states * n_states)
-    return counts.reshape(n_rows, n_states, n_states)
+    if counts is None:
+        observed_pairs = pair_ids.ravel()
+    else:
+        observed_pairs = pair_ids[np.arange(n_items - 1) < counts[:, None] - 1]
+    transitions = np.bincount(observed_pairs, minlength=n_rows * n_states * n_states)
+    return transitions.reshape(n_rows, n_states, n_states)
 
 
-def _transition_entropies_sparse(x: np.ndarray) -> np.ndarray:
+def _transition_entropies_sparse(x: np.ndarray, *, counts: np.ndarray | None = None) -> np.ndarray:
     """Score high-cardinality complete rows without dense state-square arrays."""
     result = np.empty(len(x), dtype=float)
-    for row_index, row in enumerate(x):
+    for row_index, raw_row in enumerate(x):
+        row = raw_row if counts is None else raw_row[: counts[row_index]]
+        if len(row) < 2:
+            result[row_index] = np.nan
+            continue
         result[row_index] = _transition_entropy_row(row)
     return result
 

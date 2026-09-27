@@ -65,7 +65,14 @@ Optional benchmarks:
 ```bash
 uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_detection.py
+OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
 ```
+
+The sequence benchmark measures longstring, repeating-pattern, and Markov
+indices alongside default screening and composite workflows. Compare with
+`--missing-rate 0` to check complete-data performance. Use the same Python,
+NumPy, BLAS thread count, and benchmark arguments for before/after comparisons;
+wall-clock timing and peak allocation are measured in separate runs.
 
 Verify release artifacts after packaging changes:
 
