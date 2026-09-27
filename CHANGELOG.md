@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.12] - 2026-09-27
+
+### Changed
+
+- Mahalanobis scoring now uses a symmetric covariance decomposition and shares
+  complete-row preparation across mean, covariance, and distance calculations.
+- Complete-case selection now uses a bounded missing-value scan and filters
+  only the active row block, avoiding a full selected-response copy while
+  preserving missing-row positions in distances and flags.
+- The Mahalanobis benchmark now covers missing-row handling and array layouts,
+  measuring runtime separately from allocation tracing.
+
+### Fixed
+
+- Mahalanobis covariance conditioning no longer forms a singular-value ratio
+  that can overflow for data with widely different feature scales.
+- A single complete observation now raises a clear validation error instead of
+  dividing by zero when calculating sample covariance.
+
 ## [1.7.11] - 2026-09-27
 
 ### Changed

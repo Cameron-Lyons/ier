@@ -12,6 +12,7 @@ The Mahalanobis distance is thus unitless and scale-invariant, and takes into ac
 correlations of the data set.
 """
 
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -75,29 +76,27 @@ def mahad(
     if method not in ["chi2", "iqr", "zscore"]:
         raise ValueError("method must be one of: 'chi2', 'iqr', 'zscore'")
 
-    if na_rm:
-        valid_mask = ~np.isnan(x_array).any(axis=1)
-        x_filtered = x_array[valid_mask]
-    else:
-        if np.isnan(x_array).any():
-            raise ValueError("data contains missing values. Set na_rm=True to handle them")
-        x_filtered = x_array
-        valid_mask = np.ones(x_array.shape[0], dtype=bool)
-
-    if x_filtered.size == 0:
+    valid_mask = np.empty(len(x_array), dtype=bool)
+    for start, stop in row_slices(len(x_array), x_array.shape[1]):
+        valid_mask[start:stop] = ~np.isnan(x_array[start:stop]).any(axis=1)
+    n_valid = int(np.count_nonzero(valid_mask))
+    has_missing = n_valid != len(x_array)
+    if has_missing and not na_rm:
+        raise ValueError("data contains missing values. Set na_rm=True to handle them")
+    if n_valid == 0:
         raise ValueError("no complete cases found after removing missing values")
-
-    if x_filtered.shape[0] < x_filtered.shape[1]:
+    if n_valid < 2:
+        raise ValueError("at least two complete observations are required")
+    if n_valid < x_array.shape[1]:
         raise ValueError(
-            f"insufficient observations ({x_filtered.shape[0]}) "
-            f"for dimensions ({x_filtered.shape[1]}). "
+            f"insufficient observations ({n_valid}) "
+            f"for dimensions ({x_array.shape[1]}). "
             "Need more observations than variables."
         )
 
-    distances_filtered = _compute_mahalanobis_distance(x_filtered)
-
-    distances = np.full(shape=(x_array.shape[0],), fill_value=np.nan)
-    distances[valid_mask] = distances_filtered
+    distances = _compute_mahalanobis_distance(
+        x_array, valid_mask=valid_mask if has_missing else None
+    )
 
     if flag:
         flags = _flag_outliers(distances, confidence, method, x_array.shape[1])
@@ -106,52 +105,70 @@ def mahad(
     return distances
 
 
-def _compute_mahalanobis_distance(x: np.ndarray) -> np.ndarray:
+def _complete_blocks(
+    x: np.ndarray,
+    valid_mask: np.ndarray | None,
+) -> Iterator[tuple[int, int, np.ndarray]]:
+    """Yield owned response blocks containing only complete observations."""
+    for start, stop in row_slices(len(x), x.shape[1]):
+        if valid_mask is None:
+            block = np.array(x[start:stop], dtype=float, copy=True)
+        else:
+            valid = valid_mask[start:stop]
+            if not np.any(valid):
+                continue
+            block = np.asarray(x[start:stop][valid], dtype=float)
+        yield start, stop, block
+
+
+def _compute_mahalanobis_distance(
+    x: np.ndarray, *, valid_mask: np.ndarray | None = None
+) -> np.ndarray:
     """
     Compute Mahalanobis distances with respondent-bounded workspaces.
 
     Parameters:
-    - x: Matrix of data (n_samples, n_features) with no missing values
+    - x: Matrix of data (n_samples, n_features)
+    - valid_mask: Optional mask selecting complete rows; excluded rows return NaN
 
     Returns:
     - Array of Mahalanobis distances
     """
-    mean_vector = np.mean(x, axis=0, dtype=float)
+    if valid_mask is None:
+        n_valid = len(x)
+        mean_vector = np.mean(x, axis=0, dtype=float)
+    else:
+        n_valid = int(np.count_nonzero(valid_mask))
+        mean_vector = np.zeros(x.shape[1])
+        for _, _, block in _complete_blocks(x, valid_mask):
+            mean_vector += np.sum(block, axis=0)
+        mean_vector /= n_valid
     cov_matrix = np.zeros((x.shape[1], x.shape[1]), dtype=float)
-    for start, stop in row_slices(len(x), x.shape[1]):
-        centered = np.array(x[start:stop], dtype=float, copy=True)
-        centered -= mean_vector
+    for _, _, centered in _complete_blocks(x, valid_mask):
+        np.subtract(centered, mean_vector, out=centered)
         cov_matrix += centered.T @ centered
-    cov_matrix /= len(x) - 1
+    cov_matrix /= n_valid - 1
 
-    u, s, vh = np.linalg.svd(cov_matrix, full_matrices=False)
+    u, s, vh = np.linalg.svd(cov_matrix, full_matrices=False, hermitian=True)
 
     eps = np.finfo(cov_matrix.dtype).eps
-    s_min = s[-1] if s[-1] > 0 else eps
-    cond_number = s[0] / s_min
-
-    if s[0] == 0:
-        inv_s = np.zeros_like(s)
-    elif s[-1] > 0 and cond_number < 1 / eps:
-        inv_s = 1.0 / s
-    else:
-        threshold = eps * max(cov_matrix.shape) * s[0]
-        inv_s = np.zeros_like(s)
-        np.divide(1.0, s, out=inv_s, where=s > threshold)
+    # Preserve the inverse/pseudo-inverse cutoff without an overflowing ratio.
+    threshold = 0.0 if s[-1] > eps * s[0] else eps * max(cov_matrix.shape) * s[0]
+    inv_s = np.zeros_like(s)
+    np.divide(1.0, s, out=inv_s, where=s > threshold)
 
     inv_cov_matrix = (vh.T * inv_s) @ u.T
 
-    squared_distances = np.empty(len(x), dtype=float)
-    for start, stop in row_slices(len(x), x.shape[1]):
-        centered = np.array(x[start:stop], dtype=float, copy=True)
-        centered -= mean_vector
+    squared_distances = np.full(len(x), np.nan)
+    for start, stop, centered in _complete_blocks(x, valid_mask):
+        np.subtract(centered, mean_vector, out=centered)
         transformed = centered @ inv_cov_matrix
-        np.einsum(
-            "ij,ij->i",
-            transformed,
-            centered,
-            out=squared_distances[start:stop],
-        )
+        block_distances = np.einsum("ij,ij->i", transformed, centered)
+        if valid_mask is None:
+            squared_distances[start:stop] = block_distances
+        else:
+            destination = squared_distances[start:stop]
+            destination[valid_mask[start:stop]] = block_distances
 
     np.maximum(squared_distances, 0.0, out=squared_distances)
     np.sqrt(squared_distances, out=squared_distances)

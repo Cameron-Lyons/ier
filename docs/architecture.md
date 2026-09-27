@@ -266,10 +266,13 @@ reduced in bounded chunks.
 Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
 reducer. Pair selection, optional reverse scoring, and missing-aware means stay
 within the common element budget instead of materializing complete pair matrices.
-Mahalanobis scoring uses the same row budget for both centered covariance
-accumulation and quadratic-form evaluation. Only the item-by-item covariance and
-pseudo-inverse remain resident outside each block, so temporary allocation does
-not grow with the respondent count.
+Mahalanobis scoring uses the same row budget for missing-value detection,
+complete-case means, centered covariance accumulation, and quadratic-form
+evaluation. Complete-case selection happens inside each block, so enabling
+`na_rm` does not copy the selected response matrix. Covariance decomposition
+uses its real symmetric structure while retaining the inverse/pseudo-inverse
+cutoff policy. Matrix workspaces depend on the row budget and square item count;
+only the output and complete-case mask scale with the respondent count.
 Guttman scoring likewise batches item means, difficulty-ordered selection,
 valid-response counts, and error accumulation by respondent. Small categorical
 scales use cumulative category counts within each batch, while high-cardinality
