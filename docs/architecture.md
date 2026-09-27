@@ -190,35 +190,35 @@ up to 64 observed states. Higher-cardinality inputs use only each row's observed
 states and pairs, avoiding a dense global state-square allocation. Both paths
 evaluate the equivalent count form of conditional entropy.
 
-Missing-response sequence scoring compacts observed responses in bounded row
-batches, preserving their original order. Longstring and repeating-pattern
-scoring use NaN padding and observed lengths to exclude artificial runs and
-overlong candidate patterns. Markov scoring masks padded transitions and retains
-its sparse fallback for high-cardinality responses. Small missing-response
-longstring inputs retain scalar scoring to avoid batch setup overhead. All-missing
-rows still return zero for longstring indices and NaN for Markov entropy, and
-`na_rm=False` still rejects missing responses. These paths use NumPy kernels
-without requiring a native extension or compiler.
+Longstring and repeating-pattern scoring share bounded sequence preparation for
+complete and missing-response inputs. Batches with missing responses compact
+observed values in their original order; NaN padding and observed lengths exclude
+artificial runs and overlong candidate patterns. Both indices reuse a cumulative
+run-length kernel that counts consecutive matches without per-column Python loops
+or scalar fallbacks. Markov scoring also compacts missing responses, masks padded
+transitions, and retains its sparse fallback for high-cardinality responses.
+All-missing rows still return zero for longstring indices and NaN for Markov
+entropy, and `na_rm=False` still rejects missing responses. These paths use NumPy
+kernels without requiring a native extension or compiler.
 
-For a local benchmark against commit `bc9c562`, a 10,000-by-80 matrix with 10%
-missing responses produced the following median times (five runs after one
-warmup, seed 20260927, Python 3.14.7, NumPy 2.3.5, Intel Core Ultra 5 325,
-`OPENBLAS_NUM_THREADS=1`):
+For a local benchmark against commit `7143d28`, a 100,000-by-80 complete-response
+matrix produced the following median times (five runs after one warmup, seed
+20260927, Python 3.14.7, NumPy 2.3.5, `OPENBLAS_NUM_THREADS=1`):
 
-| Operation | Before | Batched sequences | Speedup |
-|-----------|-------:|------------------:|--------:|
-| Longstring | 72.8 ms | 5.7 ms | 12.8× |
-| Repeating patterns | 493.4 ms | 23.0 ms | 21.4× |
-| Markov entropy | 189.0 ms | 11.8 ms | 16.0× |
-| Default screening | 814.1 ms | 83.5 ms | 9.7× |
-| Default composite | 93.2 ms | 23.8 ms | 3.9× |
+| Operation | Before | Cumulative runs | Speedup |
+|-----------|-------:|----------------:|--------:|
+| Longstring | 73.3 ms | 27.6 ms | 2.7× |
+| Repeating patterns | 494.3 ms | 143.0 ms | 3.5× |
+| Default screening | 1144.2 ms | 652.3 ms | 1.8× |
+| Default composite | 282.7 ms | 200.0 ms | 1.4× |
 
-Reproduce this workload with `benchmarks/bench_sequence_scoring.py`; results
-depend on the machine and response distribution. The batched indices use more
-temporary memory than scalar row loops, bounded by the shared batch budgets.
-Peak traced allocation for the full screening workflow was 16.95 MiB both
-before and after the change. Complete-data screening measured 81.0 ms before
-and 82.6 ms after in the same benchmark setup.
+Reproduce this workload with `benchmarks/bench_sequence_scoring.py --respondents
+100000 --missing-rate 0`; results depend on the machine and response distribution.
+Peak traced allocation fell from 22.89 to 2.07 MiB for repeating patterns and
+from 3.15 to 1.54 MiB for longstring. Full screening remained at 82.45 MiB because
+other indices determine its peak. Smaller inputs can use more temporary memory:
+complete 10,000-by-80 longstring scoring increased from 0.32 to 0.85 MiB. The
+shared row budget bounds these workspaces independently of respondent count.
 
 Even–odd consistency reduces factor correlations directly into respondent-level
 sums and valid-factor counts. Correlation kernels use centered row workspaces and

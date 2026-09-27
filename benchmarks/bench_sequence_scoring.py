@@ -3,6 +3,8 @@
 Usage:
     OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py
     uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0 --respondents 200
+    uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 \
+        --operations longstring longstring_pattern
 
 Wall-clock timings exclude allocation tracing. Peak traced allocation is measured
 in a separate run, excluding input generation and imports.
@@ -34,6 +36,12 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=20260927)
+    parser.add_argument(
+        "--operations",
+        nargs="+",
+        choices=["longstring", "longstring_pattern", "markov", "screen", "composite"],
+        help="Measure only selected operations (default: all)",
+    )
     args = parser.parse_args()
     if args.respondents < 2 or args.items < 3 or args.repeats < 1 or args.warmup < 0:
         parser.error("respondents >= 2, items >= 3, repeats >= 1, and warmup >= 0 are required")
@@ -54,6 +62,8 @@ def main() -> None:
     print(f"Python {platform.python_version()} / NumPy {np.__version__}")
     print(f"shape={data.shape} missing_rate={args.missing_rate} repeats={args.repeats}")
     for name, operation in operations.items():
+        if args.operations is not None and name not in args.operations:
+            continue
         for _ in range(args.warmup):
             operation()
         timings = []

@@ -1,4 +1,4 @@
-"""Independent parity checks for batched, missing-aware response sequences."""
+"""Independent parity checks for bounded response-sequence scoring."""
 
 import math
 from collections import Counter
@@ -45,17 +45,22 @@ def _entropy(row: list[float]) -> float:
 
 @pytest.mark.parametrize("items", [4, 17, 80])
 @pytest.mark.parametrize("layout", ["contiguous", "fortran", "strided"])
-def test_missing_sequences_match_scalar_definitions(items: int, layout: str) -> None:
+@pytest.mark.parametrize("rows", [1, 20, 83])
+@pytest.mark.parametrize("missing", [False, True])
+def test_sequences_match_scalar_definitions(
+    items: int, layout: str, rows: int, missing: bool
+) -> None:
     rng = np.random.default_rng(20260927)
-    data = rng.choice([-2.5, 0.0, 0.25, 9.75], size=(83, items))
-    data[rng.random(data.shape) < np.linspace(0, 1, len(data))[:, None]] = np.nan
+    data = rng.choice([-2.5, 0.0, 0.25, 9.75], size=(rows, items))
+    if missing:
+        data[rng.random(data.shape) < np.linspace(0.2, 1, len(data))[:, None]] = np.nan
     if layout == "fortran":
         data = np.asfortranarray(data)
     elif layout == "strided":
         data = np.repeat(data, 2, axis=1)[:, ::-2]
     original = data.copy()
     data.flags.writeable = False
-    rows = [row[~np.isnan(row)].tolist() for row in data]
+    observed_rows = [row[~np.isnan(row)].tolist() for row in data]
 
     # Tiny batches exercise cross-batch state, partial final batches, and rows
     # with different valid lengths, even within the same batch.
@@ -63,13 +68,17 @@ def test_missing_sequences_match_scalar_definitions(items: int, layout: str) -> 
         patch("ier._row_statistics._ROW_BATCH_ELEMENTS", items * 7),
         patch("ier.markov._TRANSITION_BATCH_WORKSPACE_BYTES", 512),
     ):
-        np.testing.assert_array_equal(longstring_scores(data), [_longest_run(row) for row in rows])
+        np.testing.assert_array_equal(
+            longstring_scores(data), [_longest_run(row) for row in observed_rows]
+        )
         for max_k in [1, 2, 5, 12]:
             np.testing.assert_array_equal(
                 longstring_pattern(data, max_pattern_length=max_k),
-                [_longest_pattern(row, max_k) for row in rows],
+                [_longest_pattern(row, max_k) for row in observed_rows],
             )
-        np.testing.assert_allclose(markov(data), [_entropy(row) for row in rows], atol=1e-12)
+        np.testing.assert_allclose(
+            markov(data), [_entropy(row) for row in observed_rows], atol=1e-12
+        )
     np.testing.assert_array_equal(data, original)
 
 
@@ -126,6 +135,26 @@ def test_wide_missing_sequences_do_not_overflow_run_counts() -> None:
     data[1] = 3.0
     np.testing.assert_array_equal(longstring_pattern(data), [600.0, 0.0] + [600.0] * 38)
     np.testing.assert_array_equal(longstring_scores(data), [1.0, 900.0] + [1.0] * 38)
+
+
+@pytest.mark.parametrize("items", [255, 256, 257, 65535, 65536, 65537])
+def test_run_lengths_at_unsigned_integer_boundaries(items: int) -> None:
+    data = np.vstack((np.ones(items), np.arange(items) % 2, np.arange(items)))
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", items):
+        np.testing.assert_array_equal(longstring_scores(data), [items, 1.0, 1.0])
+        np.testing.assert_array_equal(longstring_pattern(data), [0.0, items, 0.0])
+
+
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+def test_integer_categories_are_compared_without_arithmetic(dtype: type) -> None:
+    bounds = np.iinfo(dtype)
+    data = np.array([[bounds.max, bounds.max, bounds.min, bounds.max, bounds.min]], dtype=dtype)
+    np.testing.assert_array_equal(longstring_scores(data), [2.0])
+    np.testing.assert_array_equal(longstring_pattern(data), [4.0])
+
+
+def test_single_item_runs_preserve_empty_rows() -> None:
+    np.testing.assert_array_equal(longstring_scores([[2.5], [np.nan], [np.inf]]), [1.0, 0.0, 1.0])
 
 
 def test_missing_sequences_reject_strict_policy() -> None:

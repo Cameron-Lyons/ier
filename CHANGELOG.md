@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.7] - 2026-09-27
+
+### Changed
+
+- Longstring and repeating-pattern scoring now share bounded sequence preparation
+  and cumulative run-length kernels, replacing per-column loops and separate
+  scalar fallbacks while preserving scores and missing-value policies.
+- Complete-response pattern workspaces now use the same bounded row budget as
+  missing-response inputs. The sequence benchmark supports selecting individual
+  operations for small, large, and wide matrices.
+
 ## [1.7.6] - 2026-09-27
 
 ### Changed

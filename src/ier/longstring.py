@@ -11,9 +11,8 @@ from typing import Literal, overload
 
 import numpy as np
 
-from ier._response_sequences import compact_rows
-from ier._row_statistics import row_slices
-from ier._validation import MatrixLike, iter_rows, validate_matrix_input
+from ier._response_sequences import sequence_batches, true_run_lengths
+from ier._validation import MatrixLike, validate_matrix_input
 
 
 def _run_length_encode(message: str) -> list[tuple[str, int]]:
@@ -197,32 +196,9 @@ def longstring_pattern(
     """
     x_array = validate_matrix_input(x, min_columns=2, check_type=False)
 
-    has_missing = any(
-        np.isnan(x_array[start:stop]).any() for start, stop in row_slices(*x_array.shape)
-    )
-    if not na_rm and has_missing:
-        raise ValueError("data contains missing values. Set na_rm=True to handle them")
-
-    n_rows = x_array.shape[0]
-    if not has_missing:
-        return _longest_repeating_patterns(x_array, max_pattern_length)
-
-    result = np.zeros(n_rows, dtype=float)
-
-    if n_rows >= 32:
-        for start, stop in row_slices(*x_array.shape):
-            packed, counts = compact_rows(x_array[start:stop])
-            result[start:stop] = _longest_repeating_patterns(
-                packed, max_pattern_length, counts=counts
-            )
-        return result
-
-    for i, row in enumerate(iter_rows(x_array, na_rm)):
-        if len(row) < 4:
-            continue
-
-        result[i] = _longest_repeating_pattern(row, max_pattern_length)
-
+    result = np.empty(len(x_array))
+    for start, stop, block, counts in sequence_batches(x_array, na_rm=na_rm):
+        result[start:stop] = _longest_repeating_patterns(block, max_pattern_length, counts=counts)
     return result
 
 
@@ -238,118 +214,45 @@ def longstring_scores(
     """
     x_array = validate_matrix_input(x, min_columns=1, check_type=False)
 
-    has_missing = any(
-        np.isnan(x_array[start:stop]).any() for start, stop in row_slices(*x_array.shape)
-    )
-    if not na_rm and has_missing:
-        raise ValueError("data contains missing values. Set na_rm=True to handle them")
-
-    if not has_missing:
-        return _longstring_scores_complete(x_array)
-
-    scores = np.zeros(x_array.shape[0], dtype=float)
-
-    if len(x_array) >= 32:
-        for start, stop in row_slices(*x_array.shape):
-            packed, counts = compact_rows(x_array[start:stop])
-            if packed.shape[1] == 0:
-                continue
-            block_scores = _longstring_scores_complete(packed)
+    scores = np.empty(len(x_array))
+    for start, stop, block, counts in sequence_batches(x_array, na_rm=na_rm):
+        lengths = true_run_lengths(block[:, 1:] == block[:, :-1])
+        block_scores = np.max(lengths, axis=1, initial=0).astype(float) + 1.0
+        if counts is not None:
             block_scores[counts == 0] = 0.0
-            scores[start:stop] = block_scores
-        return scores
-
-    for i, row in enumerate(x_array):
-        row_data = row[~np.isnan(row)] if na_rm else row
-        if row_data.size == 0:
-            continue
-
-        change_points = np.flatnonzero(row_data[1:] != row_data[:-1]) + 1
-        run_lengths = np.diff(np.concatenate(([0], change_points, [row_data.size])))
-        scores[i] = float(np.max(run_lengths))
-
+        scores[start:stop] = block_scores
     return scores
-
-
-def _longstring_scores_complete(x: np.ndarray) -> np.ndarray:
-    """Compute longest runs across complete matrix rows."""
-    current = np.ones(x.shape[0], dtype=float)
-    longest = current.copy()
-
-    for column in range(1, x.shape[1]):
-        current = np.where(x[:, column] == x[:, column - 1], current + 1.0, 1.0)
-        longest = np.maximum(longest, current)
-
-    return longest
 
 
 def _longest_repeating_patterns(
     x: np.ndarray, max_k: int, *, counts: np.ndarray | None = None
 ) -> np.ndarray:
-    """Find repeating sub-patterns in complete or NaN-padded matrix rows."""
+    """Find repeating sub-patterns in one bounded complete or NaN-padded batch."""
     n_rows, n_columns = x.shape
-    count_dtype = np.min_scalar_type(n_columns)
-    best = np.zeros(n_rows, dtype=count_dtype)
-    changes = x[:, 1:] != x[:, :-1]
-    change_prefix = np.concatenate(
-        (
-            np.zeros((n_rows, 1), dtype=count_dtype),
-            np.cumsum(changes, axis=1, dtype=count_dtype),
-        ),
+    best = np.zeros(n_rows)
+    if n_columns < 4:
+        return best
+
+    change_prefix = np.empty(x.shape, dtype=np.min_scalar_type(n_columns))
+    change_prefix[:, 0] = 0
+    np.cumsum(
+        x[:, 1:] != x[:, :-1],
         axis=1,
+        dtype=change_prefix.dtype,
+        out=change_prefix[:, 1:],
     )
 
     for k in range(2, min(max_k, n_columns // 2) + 1):
-        match_lengths = np.zeros(n_rows, dtype=count_dtype)
-        eligible = None if counts is None else counts >= 2 * k
-        for position in range(n_columns - k - 1, -1, -1):
-            match_lengths = np.where(
-                x[:, position + k] == x[:, position],
-                match_lengths + 1,
-                0,
-            )
-            nonconstant = change_prefix[:, position + k - 1] != change_prefix[:, position]
-            if eligible is not None:
-                nonconstant &= eligible
-            candidates = np.where(
-                nonconstant & (match_lengths > 0),
-                k + match_lengths,
-                0,
-            )
-            best = np.maximum(best, candidates)
+        lengths = true_run_lengths(x[:, k:] == x[:, :-k])
+        # Each lag-k match extends a repeating pattern by one response. Its
+        # final k responses are a rotation of the first k, so checking that
+        # final window excludes constant patterns regardless of run length.
+        constant = change_prefix[:, k:] == change_prefix[:, 1 : n_columns - k + 1]
+        np.copyto(lengths, 0, where=constant)
+        longest = np.max(lengths, axis=1).astype(float)
+        candidates = np.where(longest > 0, longest + k, 0.0)
+        if counts is not None:
+            candidates[counts < 2 * k] = 0.0
+        np.maximum(best, candidates, out=best)
 
-    return best.astype(float)
-
-
-def _longest_repeating_pattern(row: np.ndarray, max_k: int) -> float:
-    """Find the longest consecutive repeating sub-pattern in a numeric sequence.
-
-    Only counts patterns where the sub-pattern contains at least 2 distinct values
-    (i.e., excludes straight-line / constant sequences which are detected by longstring).
-    """
-    n = len(row)
-    best = 0
-    changes = row[1:] != row[:-1]
-    change_prefix = np.concatenate(([0], np.cumsum(changes, dtype=np.intp)))
-
-    for k in range(2, min(max_k, n // 2) + 1):
-        matches = row[k:] == row[:-k]
-        match_indices = np.arange(matches.size)
-        next_mismatch = np.minimum.accumulate(
-            np.where(~matches, match_indices, matches.size)[::-1]
-        )[::-1]
-        match_lengths = next_mismatch - match_indices
-
-        start = 0
-        while start + k <= n:
-            if change_prefix[start + k - 1] == change_prefix[start]:
-                start += 1
-                continue
-
-            repeat_extension = int(match_lengths[start]) if start < matches.size else 0
-            repeat_len = k + repeat_extension
-            if repeat_extension > 0 and repeat_len > best:
-                best = repeat_len
-            start += repeat_extension + 1
-
-    return float(best)
+    return best
