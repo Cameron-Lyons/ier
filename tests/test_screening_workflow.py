@@ -460,6 +460,26 @@ class TestScreen(unittest.TestCase):
         )
         self.assertIn("evenodd", result["indices_used"])
 
+    def test_evenodd_missing_respondent_is_unavailable(self) -> None:
+        data = np.array(
+            [
+                [1, 1, 2, 2],
+                [1, 2, 2, 1],
+                [np.nan, np.nan, np.nan, np.nan],
+            ]
+        )
+
+        result = screen(
+            data,
+            indices=["evenodd"],
+            options=IndexOptions(evenodd_factors=[4]),
+        )
+
+        self.assertTrue(np.isnan(result["scores"]["evenodd"][2]))
+        self.assertFalse(result["flags"]["evenodd"][2])
+        self.assertEqual(result["valid_index_counts"][2], 0)
+        self.assertEqual(result["summary"]["evenodd"]["n_unavailable"], 1)
+
     def test_mad_included_with_items(self) -> None:
         result = screen(
             self.data,

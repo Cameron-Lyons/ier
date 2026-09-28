@@ -52,6 +52,13 @@ profile under the default low-direction percentile rule.
 `individual_reliability(..., random_seed=...)` uses an isolated reproducible
 random stream. It does not reset or advance NumPy's process-wide random state.
 
+`evenodd` pairs alternating items within each configured factor and averages
+the available respondent-level factor correlations. Factors need at least four
+items to contribute two paired observations; an odd final item is unpaired.
+Respondents without any valid factor correlation receive `NaN`, report a
+diagnostic count of zero, and remain unavailable rather than being flagged.
+Factor sizes must be positive integers whose sum matches the response columns.
+
 `acquiescence` uses the normalized respondent mean by default. For a balanced
 instrument, pair positively and negatively worded items in order with
 `IndexOptions.acquiescence_positive_items` and

@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.15] - 2026-09-28
+
+### Changed
+
+- Even–odd factor definitions now reject non-integer and non-positive sizes,
+  while accepting NumPy integer scalars. Factors too short to provide two item
+  pairs are skipped before correlation work.
+
+### Fixed
+
+- Even–odd consistency now returns `NaN` for respondents without any valid
+  factor correlation instead of a numeric zero. Screening consequently counts
+  those scores as unavailable and does not flag them as low consistency.
+
 ## [1.7.14] - 2026-09-27
 
 ### Changed

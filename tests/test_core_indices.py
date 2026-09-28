@@ -450,7 +450,7 @@ class TestEvenOddFunction(unittest.TestCase):
         expected_scores = np.divide(
             np.sum(matrix, axis=1, where=valid),
             expected_counts,
-            out=np.zeros(len(data)),
+            out=np.full(len(data), np.nan),
             where=expected_counts > 0,
         )
 
@@ -464,11 +464,28 @@ class TestEvenOddFunction(unittest.TestCase):
         np.testing.assert_array_equal(counts, expected_counts)
 
     def test_single_item_factors(self) -> None:
-        """Test even-odd with single-item factors."""
+        """Factors with fewer than two item pairs remain unavailable."""
         data: npt.NDArray[np.float64] = np.array([[1, 2, 3, 4, 5], [2, 3, 4, 5, 6]])
         factors: list[int] = [1, 2, 2]
-        scores: npt.NDArray[np.float64] = evenodd(data, factors)
-        self.assertEqual(len(scores), 2)
+        scores, counts = evenodd(data, factors, diag=True)
+        np.testing.assert_array_equal(np.isnan(scores), [True, True])
+        np.testing.assert_array_equal(counts, [0, 0])
+
+    def test_respondents_without_valid_factor_correlations_are_unavailable(self) -> None:
+        """A valid factor does not turn respondent-level missing data into zero."""
+        data = np.array(
+            [
+                [1, 1, 2, 2],
+                [1, np.nan, 2, np.nan],
+                [np.nan, np.nan, np.nan, np.nan],
+            ]
+        )
+
+        scores, counts = evenodd(data, [4], diag=True)
+
+        np.testing.assert_allclose(scores[:1], [1.0])
+        np.testing.assert_array_equal(np.isnan(scores), [False, True, True])
+        np.testing.assert_array_equal(counts, [1, 0, 0])
 
     def test_validation(self) -> None:
         """Test even-odd raises appropriate errors for invalid inputs."""
@@ -480,6 +497,15 @@ class TestEvenOddFunction(unittest.TestCase):
             evenodd([[1, 2, 3]], [2, 2])
         with self.assertRaises(ValueError):
             evenodd([], [2, 2])
+        for invalid_factors in ([0, 3], [-1, 4], [1.5, 1.5], [True, 2]):
+            with (
+                self.subTest(factors=invalid_factors),
+                self.assertRaisesRegex(ValueError, "positive integers"),
+            ):
+                evenodd([[1, 2, 3]], invalid_factors)  # type: ignore[arg-type]
+
+        scores = evenodd([[1, 1, 2, 2]], [np.int64(4)])
+        np.testing.assert_allclose(scores, [1.0])
 
 
 class TestCalculateCorrelations(unittest.TestCase):
