@@ -490,30 +490,6 @@ def test_difficulty_preserves_input_precision(na_rm: bool, dtype: type) -> None:
     np.testing.assert_array_equal(actual, expected)
 
 
-@pytest.mark.parametrize("na_rm", [False, True])
-def test_parameter_estimation_matches_direct_correlations(na_rm: bool) -> None:
-    rng = np.random.default_rng(752)
-    data = rng.integers(0, 2, (97, 13)).astype(float)
-    data[rng.random(data.shape) < 0.3] = np.nan
-    data[:, 0] = 0.0
-    data[:, 1] = 1.0
-    totals = np.nansum(data, axis=1) if na_rm else np.sum(data, axis=1)
-    expected = np.ones(data.shape[1])
-    for column in range(data.shape[1]):
-        valid = ~np.isnan(data[:, column]) if na_rm else np.ones(len(data), dtype=bool)
-        responses = data[valid, column]
-        scores = totals[valid]
-        if np.std(responses) == 0 or np.std(scores) == 0:
-            continue
-        r = np.corrcoef(responses, scores)[0, 1]
-        if not np.isnan(r):
-            r = np.clip(r, -0.99, 0.99)
-            expected[column] = np.clip(r * 1.7 / np.sqrt(1 - r**2), 0.2, 3.0)
-    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 50):
-        actual = _estimate_discrimination(data, na_rm=na_rm)
-    np.testing.assert_allclose(actual, expected, atol=1e-14, rtol=1e-14)
-
-
 @pytest.mark.parametrize("model", ["1pl", "2pl"])
 @pytest.mark.parametrize("na_rm", [False, True])
 def test_empty_items_and_matrices_do_not_warn(model: str, na_rm: bool) -> None:
@@ -527,3 +503,126 @@ def test_empty_items_and_matrices_do_not_warn(model: str, na_rm: bool) -> None:
     scores, flags = lz_flag(np.full((3, 4), np.nan), model=model, na_rm=na_rm)
     assert np.isnan(scores).all()
     assert not flags.any()
+
+
+def _reference_discrimination(data: np.ndarray, *, na_rm: bool) -> np.ndarray:
+    """Fit each binary item independently using the Pearson definition."""
+    totals = np.nansum(data, axis=1, dtype=float) if na_rm else np.sum(data, axis=1, dtype=float)
+    result = np.ones(data.shape[1])
+    for column in range(data.shape[1]):
+        valid = ~np.isnan(data[:, column]) if na_rm else np.ones(len(data), dtype=bool)
+        responses = data[valid, column]
+        scores = totals[valid]
+        if (
+            len(responses) < 2
+            or not np.isfinite(scores).all()
+            or np.min(responses) == np.max(responses)
+            or np.min(scores) == np.max(scores)
+        ):
+            continue
+        correlation = np.clip(np.corrcoef(responses, scores)[0, 1], -0.99, 0.99)
+        result[column] = np.clip(correlation * 1.7 / np.sqrt(1.0 - correlation**2), 0.2, 3.0)
+    return result
+
+
+@pytest.mark.parametrize("na_rm", [False, True])
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+@pytest.mark.parametrize("dtype", [np.bool_, np.int64, np.float16, np.float32, np.float64])
+@pytest.mark.parametrize("missing", [False, True])
+def test_batched_discrimination_matches_scalar_correlations(
+    na_rm: bool, layout: str, dtype: type, missing: bool
+) -> None:
+    rng = np.random.default_rng(843)
+    data = rng.integers(0, 2, size=(231, 41)).astype(dtype)
+    if missing and np.issubdtype(dtype, np.floating):
+        data[rng.random(data.shape) < 0.3] = np.nan
+    data = data[::-2, ::2] if layout == "strided" else np.array(data, order=layout)
+    original = data.copy()
+    data.flags.writeable = False
+    expected = _reference_discrimination(data, na_rm=na_rm)
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 113):
+        actual = _estimate_discrimination(data, na_rm=na_rm)
+    np.testing.assert_allclose(actual, expected, rtol=1e-13, atol=1e-14)
+    np.testing.assert_array_equal(data, original)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        [[1, 0, 0], [0, 1, 0], [np.nan, 1, 1], [np.nan, 0, 0]],
+        [[np.nan, 0, 1], [np.nan, np.nan, 0], [np.nan, np.nan, 1]],
+        [[0, 1, 0], [1, 0, 0], [0, 0, 1]],
+        [[1, 0, np.nan]],
+        [[np.nan, np.nan]],
+        [[0], [1]],
+        [[0, 0, 0], [1, 1, 1]],
+        [[1, 0, 0], [0, 1, 1], [0, 1, 1]],
+    ],
+)
+@pytest.mark.parametrize("na_rm", [False, True])
+def test_discrimination_degenerate_items_and_correlation_limits(
+    data: list[list[float]], na_rm: bool
+) -> None:
+    matrix = np.asarray(data)
+    expected = _reference_discrimination(matrix, na_rm=na_rm)
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 2):
+        actual = _estimate_discrimination(matrix, na_rm=na_rm)
+    np.testing.assert_allclose(actual, expected, atol=1e-14, rtol=1e-14)
+
+
+def test_discrimination_uses_item_specific_total_variance() -> None:
+    # The first item varies only among respondents with identical total scores.
+    data = np.array([[1, 0, 0], [0, 1, 0], [np.nan, 1, 1], [np.nan, 0, 0]])
+    assert _estimate_discrimination(data)[0] == 1.0
+
+
+@pytest.mark.parametrize("dtype", [np.float16, np.bool_])
+def test_discrimination_rare_responses_and_large_counts(dtype: type) -> None:
+    data = np.zeros((65_537, 4), dtype=dtype)
+    data[:, 0] = 1
+    data[-1, 1] = 1
+    data[::3, 2] = 1
+    data[:2, 3] = 1
+    expected = _reference_discrimination(data, na_rm=True)
+    actual = _estimate_discrimination(data)
+    np.testing.assert_allclose(actual, expected, atol=1e-13, rtol=1e-13)
+
+
+def test_discrimination_workspaces_are_bounded() -> None:
+    data = np.random.default_rng(46).integers(0, 2, (513, 31)).astype(float)
+    data[1, 2] = np.nan
+    expected = _reference_discrimination(data, na_rm=True)
+    with (
+        patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 100),
+        patch("ier.lz.np.isnan", wraps=np.isnan) as masks,
+        patch("ier.lz.np.subtract", wraps=np.subtract) as centers,
+    ):
+        actual = _estimate_discrimination(data)
+    assert masks.call_count > 2
+    assert all(call.args[0].size <= 100 for call in masks.call_args_list)
+    assert centers.call_count > 2
+    assert all(call.kwargs["out"].size <= 50 for call in centers.call_args_list)
+    np.testing.assert_allclose(actual, expected, atol=1e-13)
+
+
+@pytest.mark.parametrize("categories", [2, 5])
+@pytest.mark.parametrize("missing_rate", [0.0, 0.1, 0.8])
+@pytest.mark.parametrize("na_rm", [False, True])
+def test_person_fit_matches_scalar_item_calibration(
+    categories: int, missing_rate: float, na_rm: bool
+) -> None:
+    rng = np.random.default_rng(693)
+    data = rng.integers(0, categories, size=(153, 17)).astype(float)
+    data[rng.random(data.shape) < missing_rate] = np.nan
+    data[0] = 0
+    data[1] = categories - 1
+    data = np.asfortranarray(data)
+    binary = (
+        data if categories == 2 else np.where(np.isnan(data), np.nan, data > (categories - 1) / 2)
+    )
+    discrimination = _reference_discrimination(binary, na_rm=na_rm)
+    expected, expected_flags = lz_flag(data, discrimination=discrimination, na_rm=na_rm)
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 101):
+        actual, actual_flags = lz_flag(data, na_rm=na_rm)
+    np.testing.assert_allclose(actual, expected, atol=1e-12, rtol=1e-12)
+    np.testing.assert_array_equal(actual_flags, expected_flags)

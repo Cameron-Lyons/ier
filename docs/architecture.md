@@ -181,9 +181,15 @@ Python loops.
 Binary response matrices are reused without modification; polytomous inputs
 allocate a converted matrix and fill it in bounded blocks. Difficulty estimation
 shares the bounded item-mean reduction used by Guttman and person-total scoring,
-and discrimination estimation uses bounded row totals. These reductions avoid
-full-matrix NaN replacement copies. Items with no observed responses have
-unavailable difficulty estimates and are omitted when `na_rm=True`.
+and discrimination estimation uses bounded row totals. Discrimination estimates
+reduce item means, item-specific total-score means, and centered cross-products
+in bounded respondent batches, replacing per-item sorting and correlation
+matrices. The binary-item variance uses `n * p * (1 - p)`; total-score variance
+uses centered observations to preserve constant-score fallbacks even when
+different items have different observed respondents. Both centered buffers
+share the element budget. These reductions avoid full-matrix NaN replacement
+copies. Items with no observed responses have unavailable difficulty estimates
+and are omitted when `na_rm=True`.
 The CLI computes this transform from the final aggregate vector only when
 `--include-probability` is requested. JSON and CSV then serialize it
 forward-only, while NPZ stores one additional typed vector; index scoring is not
@@ -330,6 +336,12 @@ Plotting remains optional and reports a centralized install hint from
 `_optional_imports.py`: `pip install 'insufficient-effort[plot]'`.
 
 ## Parity and simulation
+
+Performance scripts use `benchmarks/_measurement.py` for untraced timed repeats
+and a separate peak-allocation call. Paired comparisons alternate operation order
+and retain the last timed results for correctness checks. See
+[Contributing](https://github.com/Cameron-Lyons/ier/blob/main/CONTRIBUTING.md#run-quality-checks)
+for measurement details and historical-comparison guidance.
 
 - Hand-locked regression fixtures live in `tests/test_golden_parity.py` and
   JSON under `tests/fixtures/parity/`.

@@ -8,13 +8,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
-import time
-import tracemalloc
 from typing import TYPE_CHECKING
 
 import numpy as np
+from _measurement import measure
 
 from ier import acquiescence, mad, semantic_ant, semantic_syn
 
@@ -23,22 +20,11 @@ if TYPE_CHECKING:
 
 
 def _measure(operation: Callable[[], np.ndarray], repeats: int) -> tuple[float, float]:
-    timings: list[float] = []
-    peaks: list[int] = []
-    result: np.ndarray | None = None
-    for _ in range(repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        result = operation()
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-
-    assert result is not None
+    measurement = measure(operation, repeats)
+    result = measurement.result
     if not np.isfinite(result).any():
         raise RuntimeError("benchmark produced no finite scores")
-    return statistics.median(timings), statistics.median(peaks) / 1024 / 1024
+    return measurement.median_seconds, measurement.peak_mib
 
 
 def main() -> None:

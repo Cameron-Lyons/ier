@@ -184,41 +184,51 @@ def _estimate_difficulty(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
 
 
 def _estimate_discrimination(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
-    """Estimate item discrimination using point-biserial correlation."""
+    """Estimate binary-item discrimination with bounded point-biserial reductions."""
     n_items = x.shape[1]
     a = np.ones(n_items)
-
     total_score = row_sum(x, ignore_nan=na_rm)
 
-    if np.std(total_score) == 0:
+    # A missing total invalidates every correlation under the strict policy.
+    if not np.isfinite(total_score).all() or np.min(total_score) == np.max(total_score):
         return a
 
-    for j in range(n_items):
-        if na_rm:
-            valid_mask = ~np.isnan(x[:, j])
-            item_resp = x[valid_mask, j]
-            scores = total_score[valid_mask]
-        else:
-            item_resp = x[:, j]
-            scores = total_score
+    counts = np.zeros(n_items, dtype=np.intp)
+    response_sums = np.zeros(n_items)
+    score_sums = np.zeros(n_items)
+    for start, stop in row_slices(len(x), n_items):
+        block = x[start:stop]
+        valid = ~np.isnan(block)
+        counts += np.sum(valid, axis=0, dtype=np.intp)
+        response_sums += np.sum(block, axis=0, dtype=float, where=valid)
+        score_sums += np.einsum("ij,i->j", valid, total_score[start:stop])
 
-        if len(np.unique(item_resp)) < 2:
-            continue
+    observed = counts > 0
+    proportions = np.divide(response_sums, counts, out=np.zeros(n_items), where=observed)
+    score_means = np.divide(score_sums, counts, out=np.zeros(n_items), where=observed)
 
-        if np.std(scores) == 0:
-            continue
+    covariance = np.zeros(n_items)
+    score_variance = np.zeros(n_items)
+    # Budget both centered matrices; each item's totals use its observed respondents.
+    for start, stop in row_slices(len(x), 2 * n_items):
+        block = x[start:stop]
+        valid = ~np.isnan(block)
+        centered_responses = np.zeros(block.shape)
+        centered_scores = np.zeros(block.shape)
+        np.subtract(block, proportions, out=centered_responses, where=valid)
+        np.subtract(total_score[start:stop, None], score_means, out=centered_scores, where=valid)
+        covariance += np.einsum("ij,ij->j", centered_responses, centered_scores)
+        score_variance += np.einsum("ij,ij->j", centered_scores, centered_scores)
+        del centered_responses, centered_scores
 
-        with np.errstate(divide="ignore", invalid="ignore"):
-            corr_matrix = np.corrcoef(item_resp, scores)
-            r_pb = corr_matrix[0, 1]
-
-        if np.isnan(r_pb):
-            continue
-
-        r_pb = np.clip(r_pb, -0.99, 0.99)
-        a[j] = r_pb * 1.7 / np.sqrt(1 - r_pb**2)
-        a[j] = np.clip(a[j], 0.2, 3.0)
-
+    # Binary responses have centered sum of squares n * p * (1 - p).
+    denominator = np.sqrt(score_variance * counts * proportions * (1.0 - proportions))
+    usable = denominator > 0
+    correlations = np.divide(covariance, denominator, out=np.zeros(n_items), where=usable)
+    np.clip(correlations, -0.99, 0.99, out=correlations)
+    a[usable] = np.clip(
+        correlations[usable] * 1.7 / np.sqrt(1.0 - correlations[usable] ** 2), 0.2, 3.0
+    )
     return a
 
 

@@ -11,13 +11,11 @@ from __future__ import annotations
 
 import argparse
 import platform
-import statistics
-import time
-import tracemalloc
 from functools import partial
 from typing import TYPE_CHECKING
 
 import numpy as np
+from _measurement import measure
 
 from ier import infrequency, missing_rate
 
@@ -25,22 +23,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ier.types import InfrequencyMissingPolicy
-
-
-def _measure(score: Callable[[], np.ndarray], repeats: int) -> tuple[float, float]:
-    timings = []
-    for _ in range(repeats):
-        started = time.perf_counter()
-        score()
-        timings.append(time.perf_counter() - started)
-
-    tracemalloc.start()
-    try:
-        score()
-        peak = tracemalloc.get_traced_memory()[1]
-    finally:
-        tracemalloc.stop()
-    return statistics.median(timings), peak / 1024**2
 
 
 def main() -> None:
@@ -89,8 +71,11 @@ def main() -> None:
     for name, score in scorers.items():
         for _ in range(args.warmup):
             score()
-        elapsed, peak_mib = _measure(score, args.repeats)
-        print(f"{name}: median={elapsed * 1000:.3f}ms peak={peak_mib:.2f} MiB")
+        measured = measure(score, args.repeats)
+        print(
+            f"{name}: median={measured.median_seconds * 1000:.3f}ms "
+            f"peak={measured.peak_mib:.2f} MiB"
+        )
 
 
 if __name__ == "__main__":

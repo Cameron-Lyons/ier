@@ -5,7 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.7.14] - 2026-09-28
+## [Unreleased]
+
+### Changed
+
+- All performance benchmarks now share timing and allocation measurement,
+  keeping allocation tracing out of timed calls and preserving measured results
+  for correctness checks. Paired comparisons alternate operation order, and
+  failed memory measurements always stop allocation tracing.
+- Added small CLI smoke runs for every performance benchmark and documented
+  the common measurement method. Historical timings collected with tracing
+  enabled must be rerun before comparing them with the new reports.
+
+## [1.7.15] - 2026-09-28
 
 ### Changed
 
@@ -18,6 +30,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Even–odd consistency now returns `NaN` for respondents without any valid
   factor correlation instead of a numeric zero. Screening consequently counts
   those scores as unavailable and does not flag them as low consistency.
+
+## [1.7.14] - 2026-09-27
+
+### Changed
+
+- Person-fit discrimination estimation now reduces binary items together in
+  bounded respondent batches instead of sorting responses and fitting a
+  separate correlation matrix for each item. Centered reductions preserve
+  item-specific missing-response handling, constant-item fallbacks, and
+  discrimination limits.
+- The person-fit benchmark can measure discrimination estimation separately
+  from preprocessing and complete person-fit scoring.
 
 ## [1.7.13] - 2026-09-27
 

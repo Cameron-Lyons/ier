@@ -8,34 +8,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
-import time
-import tracemalloc
-from typing import TYPE_CHECKING
 
 import numpy as np
+from _measurement import measure
 
 from ier._statistics import logistic_transform
 from ier.composite import _combine_scores
 from ier.screen import _reduce_screen_results
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-
-def _measure(operation: Callable[[], object], repeats: int) -> tuple[float, float]:
-    timings: list[float] = []
-    peaks: list[int] = []
-    for _ in range(repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        operation()
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-    return statistics.median(timings), statistics.median(peaks) / 1024 / 1024
 
 
 def main() -> None:
@@ -82,7 +61,7 @@ def main() -> None:
         else None
     )
 
-    composite_seconds, composite_peak = _measure(
+    composite_measurement = measure(
         lambda: _combine_scores(
             scores,
             {},
@@ -93,12 +72,12 @@ def main() -> None:
         ),
         args.repeats,
     )
-    screen_seconds, screen_peak = _measure(
+    screen_measurement = measure(
         lambda: _reduce_screen_results(scores, flags, args.respondents),
         args.repeats,
     )
     probability_scores = np.linspace(-1000.0, 1000.0, args.respondents)
-    probability_seconds, probability_peak = _measure(
+    probability_measurement = measure(
         lambda: logistic_transform(probability_scores),
         args.repeats,
     )
@@ -108,9 +87,18 @@ def main() -> None:
         f"method={args.method} standardize={args.standardize} weighted={args.weighted} "
         f"min_valid_indices={args.min_valid_indices}"
     )
-    print(f"composite: median={composite_seconds:.4f}s peak={composite_peak:.1f} MiB")
-    print(f"logistic transform: median={probability_seconds:.4f}s peak={probability_peak:.1f} MiB")
-    print(f"screen reductions: median={screen_seconds:.4f}s peak={screen_peak:.1f} MiB")
+    print(
+        f"composite: median={composite_measurement.median_seconds:.4f}s "
+        f"peak={composite_measurement.peak_mib:.1f} MiB"
+    )
+    print(
+        f"logistic transform: median={probability_measurement.median_seconds:.4f}s "
+        f"peak={probability_measurement.peak_mib:.1f} MiB"
+    )
+    print(
+        f"screen reductions: median={screen_measurement.median_seconds:.4f}s "
+        f"peak={screen_measurement.peak_mib:.1f} MiB"
+    )
 
 
 if __name__ == "__main__":

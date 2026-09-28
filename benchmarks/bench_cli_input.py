@@ -8,19 +8,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import statistics
 import tempfile
-import time
-import tracemalloc
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+
+from _measurement import measure
 
 from ier._cli_input import _load_input
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 
 def _write_fixture(
@@ -37,31 +31,6 @@ def _write_fixture(
         handle.write(f"{header}\n")
         for _ in range(n_respondents):
             handle.write(f"{row}\n")
-
-
-def _load_fixture(
-    path: Path,
-    n_respondents: int,
-    n_items: int,
-    skip_rows: int,
-) -> None:
-    matrix, identifiers = _load_input(path, ",", skip_rows=skip_rows)
-    if identifiers is not None or matrix.shape != (n_respondents, n_items):
-        raise RuntimeError("benchmark fixture loaded incorrectly")
-
-
-def _benchmark(operation: Callable[[], None], repeats: int) -> tuple[float, float]:
-    timings: list[float] = []
-    peaks: list[int] = []
-    for _ in range(repeats):
-        gc.collect()
-        tracemalloc.start()
-        started = time.perf_counter()
-        operation()
-        timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
-        tracemalloc.stop()
-    return statistics.median(timings), statistics.median(peaks) / 1024 / 1024
 
 
 def main() -> None:
@@ -84,15 +53,12 @@ def main() -> None:
         for name, skip_rows in cases:
             path = root / f"{name}.csv"
             _write_fixture(path, args.respondents, args.items, skip_rows)
-            operation = partial(
-                _load_fixture,
-                path,
-                args.respondents,
-                args.items,
-                skip_rows,
-            )
-            seconds, peak_mib = _benchmark(operation, args.repeats)
-            print(f"{name}: median={seconds:.4f}s peak={peak_mib:.3f} MiB")
+            operation = partial(_load_input, path, ",", skip_rows=skip_rows)
+            measured = measure(operation, args.repeats)
+            matrix, identifiers = measured.result
+            if identifiers is not None or matrix.shape != (args.respondents, args.items):
+                raise RuntimeError("benchmark fixture loaded incorrectly")
+            print(f"{name}: median={measured.median_seconds:.4f}s peak={measured.peak_mib:.3f} MiB")
 
 
 if __name__ == "__main__":
