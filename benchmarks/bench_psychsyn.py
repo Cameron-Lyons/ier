@@ -1,24 +1,26 @@
-"""Benchmark psychometric synonym scoring with concentrated missing responses.
+"""Benchmark psychometric synonym scoring and item-correlation discovery.
 
-Missing responses are confined to one item so correlation discovery still
-selects a dense set of pairs among the remaining items.
+Timing excludes allocation tracing; peak allocation is measured separately.
 
 Usage:
     uv run python benchmarks/bench_psychsyn.py
     uv run python benchmarks/bench_psychsyn.py --respondents 16000 --items 50
+    uv run python benchmarks/bench_psychsyn.py --structure independent --missing-rate 0
+    uv run python benchmarks/bench_psychsyn.py --missing-mode scattered --order F
 """
 
 from __future__ import annotations
 
 import argparse
 import gc
+import platform
 import statistics
 import time
 import tracemalloc
 
 import numpy as np
 
-from ier import psychsyn
+from ier.psychsyn import psychsyn, psychsyn_critval
 
 
 def main() -> None:
@@ -27,6 +29,10 @@ def main() -> None:
     parser.add_argument("--items", type=int, default=40)
     parser.add_argument("--critval", type=float, default=0.6)
     parser.add_argument("--missing-rate", type=float, default=0.05)
+    parser.add_argument("--missing-mode", choices=("item", "scattered"), default="item")
+    parser.add_argument("--structure", choices=("correlated", "independent"), default="correlated")
+    parser.add_argument("--order", choices=("C", "F"), default="C")
+    parser.add_argument("--operation", choices=("psychsyn", "psychsyn_critval"), default="psychsyn")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
@@ -43,40 +49,59 @@ def main() -> None:
         parser.error("critval must be between 0 and 1")
 
     rng = np.random.default_rng(args.seed)
-    latent = rng.normal(size=(args.respondents, 1))
-    data = latent + rng.normal(scale=0.1, size=(args.respondents, args.items))
-    missing_count = round(args.respondents * args.missing_rate)
-    if missing_count:
-        missing_rows = rng.choice(args.respondents, size=missing_count, replace=False)
-        data[missing_rows, 0] = np.nan
+    data = rng.normal(size=(args.respondents, args.items))
+    if args.structure == "correlated":
+        data *= 0.1
+        data += rng.normal(size=(args.respondents, 1))
+    if args.missing_mode == "item":
+        missing_count = round(args.respondents * args.missing_rate)
+        if missing_count:
+            missing_rows = rng.choice(args.respondents, size=missing_count, replace=False)
+            data[missing_rows, 0] = np.nan
+    else:
+        data[rng.random(data.shape) < args.missing_rate] = np.nan
+    data = np.array(data, order=args.order)
+
+    def operation() -> object:
+        if args.operation == "psychsyn_critval":
+            return psychsyn_critval(data, min_correlation=args.critval)
+        return psychsyn(data, critval=args.critval, diag=True)
 
     for _ in range(args.warmup):
-        psychsyn(data, critval=args.critval)
+        operation()
 
     timings: list[float] = []
-    peaks: list[int] = []
-    result: np.ndarray | None = None
-    diagnostic: np.ndarray | None = None
     for _ in range(args.repeats):
         gc.collect()
-        tracemalloc.start()
         started = time.perf_counter()
-        result, diagnostic = psychsyn(data, critval=args.critval, diag=True)
+        operation()
         timings.append(time.perf_counter() - started)
-        peaks.append(tracemalloc.get_traced_memory()[1])
+
+    gc.collect()
+    tracemalloc.start()
+    try:
+        operation()
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
         tracemalloc.stop()
 
-    assert result is not None and diagnostic is not None
-    if not np.isfinite(result).all():
-        raise RuntimeError("benchmark produced non-finite psychometric synonym scores")
+    if args.operation == "psychsyn":
+        scores, diagnostic = psychsyn(data, critval=args.critval, diag=True)
+        selected_pairs = int(diagnostic.max(initial=0))
+        if not np.isfinite(scores[diagnostic > 0]).all() or np.isinf(scores).any():
+            raise RuntimeError("benchmark produced non-finite psychometric synonym scores")
+    else:
+        selected_pairs = len(psychsyn_critval(data, min_correlation=args.critval))
 
+    print(f"Python {platform.python_version()} / NumPy {np.__version__}")
     print(
-        f"shape={data.shape} selected_pairs={int(diagnostic.max(initial=0))} "
-        f"missing_rate={args.missing_rate} repeats={args.repeats} warmup={args.warmup}"
+        f"shape={data.shape} selected_pairs={selected_pairs} structure={args.structure} "
+        f"missing_rate={args.missing_rate} missing_mode={args.missing_mode} order={args.order} "
+        f"repeats={args.repeats} warmup={args.warmup} seed={args.seed}"
     )
     print(
-        f"psychsyn: median={statistics.median(timings):.4f}s "
-        f"peak={statistics.median(peaks) / 1024 / 1024:.1f} MiB"
+        f"{args.operation}: median={statistics.median(timings):.4f}s "
+        f"peak={peak / 1024 / 1024:.1f} MiB"
     )
 
 

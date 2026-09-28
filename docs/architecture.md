@@ -263,6 +263,13 @@ Psychometric synonym and antonym scoring reuse the same row-correlation kernel
 in bounded respondent batches. Missing responses therefore do not trigger a
 complete respondent-by-pair contribution matrix, and seeded resampling is also
 reduced in bounded chunks.
+Item correlations for synonym, antonym, and cutoff discovery share a centered
+cross-product reduction over bounded row blocks. Items with unavailable means
+are excluded from multiplication and restored as undefined correlations; this
+preserves column-wise missing-value propagation rather than introducing
+pairwise deletion. Constant items and samples with fewer than two respondents
+also have undefined correlations. Centering no longer copies the full response
+matrix, while the item-by-item output still needs quadratic space in item count.
 Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
 reducer. Pair selection, optional reverse scoring, and missing-aware means stay
 within the common element budget instead of materializing complete pair matrices.
