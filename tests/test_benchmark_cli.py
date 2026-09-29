@@ -56,6 +56,8 @@ _CASES = [
     ),
     ("flagging", ["--respondents", "64", "--repeats", "1", "--warmup", "0"]),
     ("guttman", _MATRIX),
+    ("guttman", [*_MATRIX, "--structure", "continuous", "--items", "769", "--order", "F"]),
+    ("guttman", [*_MATRIX, "--missing-rate", "1"]),
     ("lz", _MATRIX),
     ("mahad", _MATRIX),
     ("mahad", [*_MATRIX, "--operation", "qq", "--items", "1"]),

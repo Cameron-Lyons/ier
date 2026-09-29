@@ -66,6 +66,7 @@ Optional benchmarks:
 uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_detection.py
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0.1
+uv run python benchmarks/bench_guttman.py --respondents 1000 --items 1000 --structure continuous
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
 uv run python benchmarks/bench_response_checks.py --checks 40
@@ -89,6 +90,13 @@ and disposal of previous results stay outside the timing window. Callers retain
 the last timed result for correctness checks. Paired measurements alternate
 operation order. Allocation tracing is stopped even when a measured call fails;
 already-active tracing is rejected to avoid reporting distorted timings.
+
+The Guttman benchmark accepts `--structure continuous` to exercise scoring with
+many distinct values, `--order F` for column-contiguous responses, and
+`--missing-rate 1` for entirely missing inputs. Its correctness checks compare
+sampled respondents with the direct pair-count definition under the full sample's
+item-difficulty ordering. Wide high-cardinality inputs use bounded sorted runs;
+smaller widths and small categorical scales retain their existing counters.
 
 Use the same Python, NumPy, BLAS thread count, and benchmark arguments for
 before/after comparisons. Older benchmark results that included tracing in the
