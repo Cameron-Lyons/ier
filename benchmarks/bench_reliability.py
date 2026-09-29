@@ -3,6 +3,7 @@
 Usage:
     uv run python benchmarks/bench_reliability.py
     uv run python benchmarks/bench_reliability.py --respondents 200000 --splits 50
+    uv run python benchmarks/bench_reliability.py --order F --missing-rate 0
 """
 
 from __future__ import annotations
@@ -15,29 +16,16 @@ from _measurement import measure
 from ier import individual_reliability
 
 
-def _measure(
-    data: np.ndarray,
-    *,
-    splits: int,
-    split_seed: int,
-    repeats: int,
-) -> tuple[float, float]:
-    measurement = measure(
-        lambda: individual_reliability(data, n_splits=splits, random_seed=split_seed),
-        repeats,
-    )
-    result = measurement.result
-    if not np.isfinite(result).any():
-        raise RuntimeError("benchmark produced no finite scores")
-    return measurement.median_seconds, measurement.peak_mib
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--respondents", type=int, default=100_000)
     parser.add_argument("--items", type=int, default=80)
     parser.add_argument("--categories", type=int, default=5)
     parser.add_argument("--missing-rate", type=float, default=0.1)
+    parser.add_argument("--order", choices=("C", "F"), default="C")
+    parser.add_argument(
+        "--structure", choices=("categorical", "constant", "near-constant"), default="categorical"
+    )
     parser.add_argument("--splits", type=int, default=20)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
@@ -66,8 +54,15 @@ def main() -> None:
         args.categories + 1,
         size=(args.respondents, args.items),
     ).astype(float)
+    if args.structure == "constant":
+        data.fill(1.1)
+    elif args.structure == "near-constant":
+        data *= np.spacing(1.1)
+        data += 1.1
     if args.missing_rate:
         data[rng.random(data.shape) < args.missing_rate] = np.nan
+    if args.order == "F":
+        data = np.asfortranarray(data)
 
     for _ in range(args.warmup):
         individual_reliability(
@@ -76,18 +71,24 @@ def main() -> None:
             random_seed=args.split_seed,
         )
 
-    seconds, peak = _measure(
-        data,
-        splits=args.splits,
-        split_seed=args.split_seed,
-        repeats=args.repeats,
+    measurement = measure(
+        lambda: individual_reliability(data, n_splits=args.splits, random_seed=args.split_seed),
+        args.repeats,
+    )
+    result = measurement.result
+    if result.shape != (args.respondents,) or np.isinf(result).any() or np.any(result > 1):
+        raise RuntimeError("benchmark produced invalid reliability scores")
+    if args.structure == "constant" and not np.isnan(result).all():
+        raise RuntimeError("benchmark assigned reliability to constant responses")
+    print(
+        f"shape={data.shape} order={args.order} categories={args.categories} splits={args.splits} "
+        f"structure={args.structure} missing_rate={args.missing_rate} repeats={args.repeats} "
+        f"warmup={args.warmup} available_scores={np.count_nonzero(np.isfinite(result))}"
     )
     print(
-        f"shape={data.shape} categories={args.categories} splits={args.splits} "
-        f"missing_rate={args.missing_rate} repeats={args.repeats} "
-        f"warmup={args.warmup}"
+        f"individual_reliability: median={measurement.median_seconds:.4f}s "
+        f"peak={measurement.peak_mib:.1f} MiB"
     )
-    print(f"individual_reliability: median={seconds:.4f}s peak={peak:.1f} MiB")
 
 
 if __name__ == "__main__":

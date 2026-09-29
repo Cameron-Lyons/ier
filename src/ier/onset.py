@@ -12,12 +12,16 @@ References:
   Psychological Methods, 17(3), 437-455.
 """
 
+from operator import index
+
 import numpy as np
 
 from ier._row_statistics import row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
 _SHAO_ZHANG_CRITICAL_VALUE = 1.358
+_MIN_VARIANCE = 1e-10
+_SAFE_RESPONSE_MAGNITUDE = 0.25 * np.sqrt(np.finfo(float).max * _MIN_VARIANCE)
 
 
 def onset(
@@ -35,16 +39,20 @@ def onset(
 
     Parameters:
     - x: A matrix of data where rows are individuals and columns are item responses.
-    - window_size: Size of the sliding window for running IRV (default 10).
-    - min_items: Minimum number of items required for onset detection (default 20).
-    - na_rm: If True, handles missing values.
+    - window_size: Integer sliding-window size for running IRV (default 10).
+    - min_items: Integer minimum number of observed responses (default 20).
+    - na_rm: If True, removes missing responses while preserving sequence order.
+             If False, missing responses raise ValueError.
 
     Returns:
     - A numpy array of onset item indices per respondent. NaN if no changepoint
-      is detected or if the respondent has fewer than min_items valid responses.
+      is detected, the respondent has fewer than min_items valid responses, or
+      fewer than three running windows are available. Positions are zero-based
+      within the observed response sequence when missing responses are removed.
+      Rows containing infinite responses remain unavailable.
 
     Raises:
-    - ValueError: If window_size < 2 or min_items < window_size.
+    - ValueError: If sizes are not integers, window_size < 2, or min_items < window_size.
 
     Example:
         >>> import numpy as np
@@ -56,68 +64,100 @@ def onset(
     """
     x_array = validate_matrix_input(x, check_type=False)
 
+    window_size = _validate_item_count(window_size, name="window_size")
+    min_items = _validate_item_count(min_items, name="min_items")
     if window_size < 2:
         raise ValueError("window_size must be at least 2")
 
     if min_items < window_size:
         raise ValueError("min_items must be at least as large as window_size")
 
-    n_rows, n_items = x_array.shape
-    has_missing = any(
-        np.isnan(x_array[start:stop]).any() for start, stop in row_slices(n_rows, n_items)
-    )
-    if not na_rm and has_missing:
-        raise ValueError("data contains missing values. Set na_rm=True to handle them")
-
-    result = np.full(n_rows, np.nan)
-    if n_items < min_items:
+    required = max(min_items, window_size + 2)
+    result = np.full(len(x_array), np.nan)
+    if na_rm and x_array.shape[1] < required:
         return result
 
-    if not has_missing:
-        return _onset_complete(x_array, window_size)
-
-    return _onset_missing(x_array, window_size, min_items)
-
-
-def _onset_missing(
-    x: np.ndarray,
-    window_size: int,
-    min_items: int,
-) -> np.ndarray:
-    """Compress and score missing-response rows in bounded equal-length groups."""
-    n_rows, n_items = x.shape
-    result = np.full(n_rows, np.nan)
-
-    for start, stop in row_slices(n_rows, n_items):
-        block = x[start:stop]
+    for start, stop in row_slices(*x_array.shape):
+        block = x_array[start:stop]
         valid = ~np.isnan(block)
-        valid_counts = np.asarray(np.sum(valid, axis=1, dtype=np.intp))
-        eligible_counts = np.unique(valid_counts[valid_counts >= min_items])
-
-        for raw_count in eligible_counts:
-            valid_count = int(raw_count)
-            local_rows = np.flatnonzero(valid_counts == valid_count)
-            selected = block[local_rows]
-            compressed = selected[valid[local_rows]].reshape(len(local_rows), valid_count)
-            result[start + local_rows] = _onset_complete(compressed, window_size)
-
+        complete = bool(np.all(valid))
+        if not na_rm and not complete:
+            raise ValueError("data contains missing values. Set na_rm=True to handle them")
+        if block.shape[1] < required:
+            continue
+        largest = np.fmax.reduce(block, axis=None)
+        smallest = np.fmin.reduce(block, axis=None)
+        eligible = (
+            ~np.isinf(block).any(axis=1)
+            if np.isinf(largest) or np.isinf(smallest)
+            else np.ones(len(block), dtype=bool)
+        )
+        safe = _SAFE_RESPONSE_MAGNITUDE / block.shape[1]
+        check_overflow = bool(largest > safe or smallest < -safe)
+        if complete:
+            if np.all(eligible):
+                result[start:stop] = _bounded_onsets(
+                    block, window_size, check_overflow=check_overflow
+                )
+            elif np.any(eligible):
+                result[start:stop][eligible] = _bounded_onsets(
+                    block[eligible], window_size, check_overflow=check_overflow
+                )
+        else:
+            counts = valid.sum(axis=1, dtype=np.intp)
+            eligible &= counts >= required
+            for raw_count in np.unique(counts[eligible]):
+                matching = (counts == raw_count) & eligible
+                selected = block[matching]
+                packed = selected[valid[matching]].reshape(len(selected), int(raw_count))
+                result[start:stop][matching] = _bounded_onsets(
+                    packed, window_size, check_overflow=check_overflow
+                )
     return result
 
 
-def _onset_complete(x: np.ndarray, window_size: int) -> np.ndarray:
-    """Detect onset for complete rows in bounded vectorized batches."""
-    n_rows, n_items = x.shape
-    n_windows = n_items - window_size + 1
-    result = np.full(n_rows, np.nan)
-    if n_windows < 3:
-        return result
+def _validate_item_count(value: int, *, name: str) -> int:
+    """Normalize Python/NumPy integers before size comparisons and negative slices."""
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(f"{name} must be an integer")
+    try:
+        return index(value)
+    except TypeError as error:
+        raise ValueError(f"{name} must be an integer") from error
 
-    for start, stop in row_slices(n_rows, n_items):
-        running_irv = _running_inconsistency_complete(x[start:stop], window_size)
-        changepoints = _shao_zhang_changepoints(running_irv)
-        result[start:stop] = changepoints + window_size - 1
 
+def _bounded_onsets(x: np.ndarray, window_size: int, *, check_overflow: bool) -> np.ndarray:
+    """Bound the multiple rolling and cumulative-sum workspaces per respondent."""
+    result = np.empty(len(x))
+    for start, stop in row_slices(len(x), 4 * x.shape[1]):
+        result[start:stop] = _complete_onsets(
+            x[start:stop], window_size, check_overflow=check_overflow
+        )
     return result
+
+
+def _complete_onsets(x: np.ndarray, window_size: int, *, check_overflow: bool) -> np.ndarray:
+    """Score finite rows, rescaling only those with unstable rolling moments."""
+    if not check_overflow:
+        running_irv = _running_inconsistency_complete(x, window_size)
+        return _shao_zhang_changepoints(running_irv) + window_size - 1
+    with np.errstate(over="ignore", invalid="ignore"):
+        running_irv = _running_inconsistency_complete(x, window_size)
+    largest = np.max(running_irv, axis=1)
+    safe = 2 * _SAFE_RESPONSE_MAGNITUDE / running_irv.shape[1]
+    unstable = ~np.isfinite(largest) | (largest > safe)
+    if not np.any(unstable):
+        return _shao_zhang_changepoints(running_irv) + window_size - 1
+
+    result = np.full(len(x), np.nan)
+    if not np.all(unstable):
+        result[~unstable] = _shao_zhang_changepoints(running_irv[~unstable])
+    scaled = np.asarray(x[unstable], dtype=float)
+    _, exponents = np.frexp(np.max(np.abs(scaled), axis=1))
+    np.ldexp(scaled, -exponents[:, None], out=scaled)
+    running_irv = _running_inconsistency_complete(scaled, window_size)
+    result[unstable] = _shao_zhang_changepoints(running_irv, log_scale=exponents * np.log(2.0))
+    return result + window_size - 1
 
 
 def onset_flag(
@@ -178,40 +218,59 @@ def _running_inconsistency_complete(x: np.ndarray, window_size: int) -> np.ndarr
     return squared_deviations
 
 
-def _shao_zhang_changepoints(series: np.ndarray) -> np.ndarray:
+def _shao_zhang_changepoints(
+    series: np.ndarray, *, log_scale: np.ndarray | None = None
+) -> np.ndarray:
     """Apply the changepoint test, consuming its internal series workspace."""
     n_rows, n_observations = series.shape
     result = np.full(n_rows, np.nan)
     if n_observations < 3:
         return result
 
+    # Translation preserves the statistic while removing cancellation from a
+    # common baseline, including exactly constant running-variability series.
+    series -= series[:, :1]
     prefix_sum = np.cumsum(series, axis=1)
     np.square(series, out=series)
     prefix_square_sum = np.cumsum(series, axis=1)
 
     trim = max(1, n_observations // 10)
     candidate_positions = np.arange(trim, n_observations - trim)
-    if len(candidate_positions) == 0:
-        return result
-
     prefix_counts = candidate_positions.astype(float)
     prefix_values = prefix_sum[:, candidate_positions - 1]
     variances = prefix_square_sum[:, candidate_positions - 1]
     np.square(prefix_values, out=prefix_values)
     prefix_values /= prefix_counts
     variances -= prefix_values
-    np.maximum(variances, 1e-10, out=variances)
+    if log_scale is None:
+        np.maximum(variances, _MIN_VARIANCE, out=variances)
+    else:
+        # Preserve the absolute variance floor in the original response units.
+        # Logarithms retain candidate ordering even when ratios exceed float range.
+        np.maximum(variances, 0.0, out=variances)
+        with np.errstate(divide="ignore"):
+            np.log(variances, out=variances)
+        np.maximum(variances, np.log(_MIN_VARIANCE) - 2 * log_scale[:, None], out=variances)
 
     centered_candidates = prefix_sum[:, candidate_positions]
     prefix_values[:] = prefix_sum[:, -1, np.newaxis]
     prefix_values *= candidate_positions + 1
     prefix_values /= n_observations
     centered_candidates -= prefix_values
-    np.square(centered_candidates, out=centered_candidates)
-    centered_candidates /= variances
+    if log_scale is None:
+        np.square(centered_candidates, out=centered_candidates)
+        centered_candidates /= variances
+        threshold = _SHAO_ZHANG_CRITICAL_VALUE
+    else:
+        np.abs(centered_candidates, out=centered_candidates)
+        with np.errstate(divide="ignore"):
+            np.log(centered_candidates, out=centered_candidates)
+        centered_candidates *= 2
+        centered_candidates -= variances
+        threshold = np.log(_SHAO_ZHANG_CRITICAL_VALUE)
 
     offsets = np.argmax(centered_candidates, axis=1)
     max_stats = np.take_along_axis(centered_candidates, offsets[:, None], axis=1)[:, 0]
-    detected = max_stats > _SHAO_ZHANG_CRITICAL_VALUE
+    detected = max_stats > threshold
     result[detected] = (trim + offsets[detected]).astype(float)
     return result

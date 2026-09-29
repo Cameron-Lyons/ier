@@ -13,12 +13,15 @@ References:
   https://pmc.ncbi.nlm.nih.gov/articles/PMC2736523/
 """
 
+import math
+from decimal import Decimal, localcontext
+
 import numpy as np
 
 from ier._flagging import threshold_flags
 from ier._pair_statistics import validate_paired_item_indices
 from ier._row_statistics import row_mean, row_slices
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, resolve_scale_bounds, validate_matrix_input
 
 
 def acquiescence(
@@ -52,7 +55,8 @@ def acquiescence(
     Returns:
     - A numpy array of acquiescence scores in [0, 1] for each individual.
       Values near 0.5 indicate no acquiescence bias, values near 1.0 indicate
-      strong agreement bias.
+      strong agreement bias. Unavailable respondent means remain ``NaN``,
+      including when equal scale bounds give observed respondents a score of 0.5.
 
     Raises:
     - ValueError: If inputs are invalid, paired lists differ in length, or item
@@ -83,34 +87,111 @@ def acquiescence(
             right_name="negative_items",
         )
 
-    if scale_min is None:
-        scale_min = float(np.nanmin(x_array))
-    if scale_max is None:
-        scale_max = float(np.nanmax(x_array))
-
+    bounds = resolve_scale_bounds(x_array, scale_min=scale_min, scale_max=scale_max)
+    if bounds is None:
+        return np.full(len(x_array), np.nan)
+    scale_min, scale_max = bounds
     scale_range = scale_max - scale_min
-    if scale_range < 0:
-        raise ValueError("scale_max must be greater than scale_min")
-    if scale_range == 0:
-        return np.full(x_array.shape[0], 0.5)
+    normalize_first = (
+        scale_range != 0
+        and math.isfinite(scale_min)
+        and math.isfinite(scale_max)
+        and (
+            not math.isfinite(scale_range)
+            or scale_range < np.finfo(float).tiny
+            or abs(scale_min) * math.sqrt(np.finfo(float).eps) > scale_range
+        )
+    )
 
     if positive_indices is not None and negative_indices is not None:
         n_pairs = len(positive_indices)
+        paired_indices = np.concatenate((positive_indices, negative_indices))
         raw_scores = np.empty(len(x_array))
-        for start, stop in row_slices(len(x_array), n_pairs):
-            positive = np.asarray(x_array[start:stop, positive_indices], dtype=float)
-            negative = np.asarray(
-                x_array[start:stop, negative_indices],
-                dtype=float,
+        for start, stop in row_slices(len(x_array), 2 * n_pairs):
+            values = x_array[start:stop, paired_indices]
+            if not normalize_first:
+                left = np.asarray(values[:, :n_pairs], dtype=float)
+                right = np.asarray(values[:, n_pairs:], dtype=float)
+                with np.errstate(over="raise", invalid="ignore", under="ignore"):
+                    try:
+                        np.add(left, right, out=left)
+                    except FloatingPointError:
+                        # Restore values before averaging the complete endpoints.
+                        values = x_array[start:stop, paired_indices]
+                    else:
+                        left *= 0.5
+                        raw_scores[start:stop] = row_mean(left, ignore_nan=na_rm)
+                        continue
+            if na_rm:
+                missing = np.isnan(values[:, :n_pairs]) | np.isnan(values[:, n_pairs:])
+                if np.any(missing):
+                    np.copyto(values[:, :n_pairs], np.nan, where=missing)
+                    np.copyto(values[:, n_pairs:], np.nan, where=missing)
+            # Average both endpoints directly; individual pair sums may overflow.
+            raw_scores[start:stop] = (
+                _normalized_row_mean(values, scale_min, scale_max, ignore_nan=na_rm)
+                if normalize_first
+                else row_mean(values, ignore_nan=na_rm)
             )
-            np.add(positive, negative, out=positive)
-            positive *= 0.5
-            raw_scores[start:stop] = row_mean(positive, ignore_nan=na_rm)
+    elif normalize_first:
+        raw_scores = np.empty(len(x_array))
+        for start, stop in row_slices(len(x_array), x_array.shape[1]):
+            raw_scores[start:stop] = _normalized_row_mean(
+                x_array[start:stop], scale_min, scale_max, ignore_nan=na_rm
+            )
     else:
         raw_scores = row_mean(x_array, ignore_nan=na_rm)
 
-    normalized: np.ndarray = np.clip((raw_scores - scale_min) / scale_range, 0.0, 1.0)
-    return normalized
+    if scale_range == 0:
+        return np.where(np.isnan(raw_scores), np.nan, 0.5)
+
+    if not normalize_first:
+        with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+            raw_scores -= scale_min
+            raw_scores /= scale_range
+    np.clip(raw_scores, 0.0, 1.0, out=raw_scores)
+    return raw_scores
+
+
+def _normalized_row_mean(
+    values: np.ndarray, lower: float, upper: float, *, ignore_nan: bool
+) -> np.ndarray:
+    """Move exceptional scales to response proportions before reducing a block."""
+    width = upper - lower
+    with np.errstate(over="ignore", invalid="ignore", under="ignore"):
+        if math.isinf(width) and math.isfinite(lower) and math.isfinite(upper):
+            offsets = np.asarray(values, dtype=float) * 0.5 - lower * 0.5
+            width = upper * 0.5 - lower * 0.5
+        elif values.dtype.kind in "iu":
+            # Subtract the exact endpoint before converting adjacent large integers.
+            origin = int(lower) if float(lower).is_integer() else lower
+            offsets = np.asarray(values.astype(object) - origin, dtype=float)
+        else:
+            offsets = np.asarray(values, dtype=float) - lower
+        offsets /= width
+    means = row_mean(offsets, ignore_nan=ignore_nan)
+    overflowed = np.any(np.isinf(offsets) & np.isfinite(values), axis=1)
+    if np.any(overflowed):
+        # Explicit very narrow bounds can make finite out-of-range responses
+        # unrepresentable as proportions, even when their normalized mean is small.
+        with localcontext() as context:
+            context.prec = 800
+            lo, hi = Decimal(lower), Decimal(upper)
+            for row in np.flatnonzero(overflowed):
+                observed = values[row]
+                if ignore_nan:
+                    observed = observed[~np.isnan(observed)]
+                if not len(observed) or not np.isfinite(observed).all():
+                    continue
+                exact = [
+                    Decimal(int(value))
+                    if values.dtype.kind in "iu"
+                    else Decimal.from_float(float(value))
+                    for value in observed
+                ]
+                mean = (sum(exact, start=Decimal(0)) / len(exact) - lo) / (hi - lo)
+                means[row] = float(min(Decimal(1), max(Decimal(0), mean)))
+    return means
 
 
 def acquiescence_flag(

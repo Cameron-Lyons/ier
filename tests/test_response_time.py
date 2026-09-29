@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 from ier.response_time import (
     _em_gaussian_mixture,
@@ -14,6 +15,30 @@ from ier.response_time import (
     response_time_mixture,
     response_time_score_flags,
 )
+
+
+@pytest.mark.parametrize(
+    "components",
+    [2.0, 2.5, np.float32(2), np.nan, np.inf, "2", None, True, np.bool_(True)],
+)
+def test_component_count_requires_an_integer(components: object) -> None:
+    with pytest.raises(ValueError, match="n_components.*integer.*at least 2"):
+        response_time_mixture([[1, 2], [3, 4]], n_components=components)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("components", [0, 1, -1])
+def test_component_count_requires_at_least_two(components: int) -> None:
+    with pytest.raises(ValueError, match="n_components must be at least 2"):
+        response_time_mixture([[1, 2], [3, 4]], n_components=components)
+
+
+@pytest.mark.parametrize("components", [np.int32(2), np.int64(2), np.uint64(2)])
+def test_numpy_integer_component_counts(components: int) -> None:
+    times = [[1, 2], [2, 3], [5, 6], [7, 8]]
+    np.testing.assert_array_equal(
+        response_time_mixture(times, n_components=components, random_seed=42),
+        response_time_mixture(times, n_components=2, random_seed=42),
+    )
 
 
 class TestResponseTime(unittest.TestCase):
@@ -257,7 +282,7 @@ class TestResponseTimeMixture(unittest.TestCase):
             data,
             weights,
             means,
-            variances,
+            np.sqrt(variances),
             responsibilities,
             scratch,
         )
@@ -277,7 +302,7 @@ class TestResponseTimeMixture(unittest.TestCase):
             data,
             weights,
             means,
-            variances,
+            np.sqrt(variances),
             responsibilities,
             scratch,
         )

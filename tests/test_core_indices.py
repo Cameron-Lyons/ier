@@ -20,7 +20,6 @@ from ier.longstring import (
 )
 from ier.mahad import _compute_mahalanobis_distance, mahad, mahad_summary
 from ier.psychsyn import (
-    _compute_complete_person_scores,
     _compute_person_scores,
     _resample_missing_correlations,
     compute_person_correlations,
@@ -692,7 +691,9 @@ class TestPsychometricFunctions(unittest.TestCase):
         expected_diag = np.sum(~np.isnan(person_corrs), axis=1)
 
         with patch("ier.psychsyn._PSYCHSYN_BATCH_ELEMENTS", 760):
-            scores, diag = _compute_complete_person_scores(data, item_pairs)
+            scores, diag = _compute_person_scores(
+                data, item_pairs, resample_na=False, rng=np.random.default_rng(42)
+            )
             public_scores, public_diag = psychsyn(data, critval=0.8, diag=True)
 
         np.testing.assert_allclose(scores, expected_scores, rtol=0.0, atol=2e-15)
@@ -702,7 +703,7 @@ class TestPsychometricFunctions(unittest.TestCase):
 
     def test_missing_psychsyn_batches_match_expanded_formula(self) -> None:
         """Missing and seeded-resampling paths preserve the expanded formula."""
-        from ier._correlation import row_correlations
+        from ier._correlation import selected_row_correlations
 
         rng = np.random.default_rng(20260802)
         latent = rng.normal(size=(71, 1))
@@ -736,7 +737,9 @@ class TestPsychometricFunctions(unittest.TestCase):
                 "ier.psychsyn.compute_person_correlations",
                 side_effect=AssertionError("expanded pair contributions were constructed"),
             ),
-            patch("ier.psychsyn.row_correlations", wraps=row_correlations) as contracted,
+            patch(
+                "ier.psychsyn.selected_row_correlations", wraps=selected_row_correlations
+            ) as contracted,
         ):
             scores, diag = _compute_person_scores(
                 data,

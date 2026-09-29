@@ -16,10 +16,10 @@ import numpy as np
 from ier._flagging import threshold_flags
 from ier._pair_statistics import (
     paired_mean_absolute_difference,
-    resolve_scale_bounds,
+    validate_item_pairs,
     validate_paired_item_indices,
 )
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, resolve_scale_bounds, validate_matrix_input
 
 
 def mad(
@@ -75,19 +75,19 @@ def mad(
     if item_pairs is not None:
         if positive_items is not None or negative_items is not None:
             raise ValueError("cannot specify both item_pairs and positive/negative_items")
-        positive_items = [p[0] for p in item_pairs]
-        negative_items = [p[1] for p in item_pairs]
-
-    if positive_items is None or negative_items is None:
-        raise ValueError("must specify either item_pairs or both positive_items and negative_items")
-
-    positive_indices, negative_indices = validate_paired_item_indices(
-        positive_items,
-        negative_items,
-        n_cols,
-        left_name="positive_items",
-        right_name="negative_items",
-    )
+        positive_indices, negative_indices = validate_item_pairs(item_pairs, n_cols)
+    else:
+        if positive_items is None or negative_items is None:
+            raise ValueError(
+                "must specify either item_pairs or both positive_items and negative_items"
+            )
+        positive_indices, negative_indices = validate_paired_item_indices(
+            positive_items,
+            negative_items,
+            n_cols,
+            left_name="positive_items",
+            right_name="negative_items",
+        )
 
     bounds = resolve_scale_bounds(
         x_array,
@@ -96,13 +96,11 @@ def mad(
     )
     if bounds is None:
         return np.full(len(x_array), np.nan)
-    resolved_min, resolved_max = bounds
-
     return paired_mean_absolute_difference(
         x_array,
         positive_indices,
         negative_indices,
-        right_reflection=resolved_min + resolved_max,
+        right_bounds=bounds,
         ignore_nan=na_rm,
     )
 

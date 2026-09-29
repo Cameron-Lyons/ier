@@ -1,5 +1,6 @@
 """Shared input validation utilities for careless detection functions."""
 
+import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, Protocol, TypeAlias
 
@@ -14,6 +15,33 @@ class SupportsArray(Protocol):
 
 
 MatrixLike: TypeAlias = Sequence[Sequence[float | int]] | np.ndarray | SupportsArray | ArrayLike
+
+
+def resolve_scale_bounds(
+    x: np.ndarray,
+    *,
+    scale_min: float | None,
+    scale_max: float | None,
+) -> tuple[float, float] | None:
+    """Resolve ordered endpoints, returning None when an endpoint is unavailable."""
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="All-NaN slice encountered", category=RuntimeWarning
+        )
+        resolved_min = np.nanmin(x) if scale_min is None else scale_min
+        resolved_max = np.nanmax(x) if scale_max is None else scale_max
+
+    # Keep exact integer endpoints while avoiding fixed-width scalar arithmetic.
+    if isinstance(resolved_min, np.generic):
+        resolved_min = resolved_min.item()
+    if isinstance(resolved_max, np.generic):
+        resolved_max = resolved_max.item()
+
+    if np.isnan(resolved_min) or np.isnan(resolved_max):
+        return None
+    if resolved_max < resolved_min:
+        raise ValueError("scale_max must be greater than or equal to scale_min")
+    return resolved_min, resolved_max
 
 
 def validate_item_indices(item_indices: Sequence[int], n_columns: int) -> np.ndarray:

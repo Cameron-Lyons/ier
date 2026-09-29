@@ -69,6 +69,11 @@ OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
 uv run python benchmarks/bench_response_checks.py --checks 40
+uv run python benchmarks/bench_response_time.py --operation median --order F
+uv run python benchmarks/bench_row_reductions.py --order F --missing-rate 0.1
+uv run python benchmarks/bench_pair_differences.py --scale 2.5e307 --offset 2.5e307
+uv run python benchmarks/bench_evenodd.py --factors 1 --factor-items 80 --missing-rate 0.1
+uv run python benchmarks/bench_reliability.py --order F --missing-rate 0
 uv run python benchmarks/bench_lz.py --missing-rate 0.1
 uv run python benchmarks/bench_lz.py --operation discrimination --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_mahad.py --na-rm --missing-row-rate 0.1
@@ -112,10 +117,53 @@ For Mahalanobis scoring, use `--na-rm` to measure complete-case handling on
 complete data, `--missing-row-rate`
 to mark a fraction of rows as incomplete, and `--order F` to compare layouts.
 Missing rows automatically enable complete-case handling.
-The psychometric synonym benchmark measures scoring or item discovery with
-`--operation psychsyn_critval`. Use `--structure independent` for sparse pair
+Use `--operation qq --items 2` to include theoretical chi-square quantiles and
+observed-distance sorting; `--items 1` exercises the normal-distribution special case.
+The psychometric synonym benchmark measures scoring, item discovery with
+`--operation psychsyn_critval`, or the shared item-correlation kernel with
+`--operation correlations`. Use `--structure independent` for sparse pair
 selection, `--missing-mode scattered` to spread omissions across items, and
 `--order F` for column-contiguous responses.
+
+The even–odd benchmark accepts `--factor-items` and `--factors` to compare narrow
+and wide factor definitions, and `--order F` for column-contiguous inputs. Its
+correctness check accounts for respondents without enough complete item pairs,
+including fully missing data.
+The reliability benchmark also supports `--order F`, reports the number of
+available scores, and accepts legitimately undefined split-half corrections.
+The predefined-pair benchmark accepts `--order F`, `--missing-rate 1`, and
+`--scale` / `--offset` to transform its five response categories. It checks score
+availability against complete item pairs. Use `--scale 2.5e307 --offset 2.5e307`
+to exercise reverse-scoring bounds whose sum overflows, or
+`--scale 1e-15 --offset 1.1` for nearly constant responses.
+Use `bench_row_reductions.py --irv-splits 10` to include section-averaged IRV.
+Add `--dtype float32` to exercise single-precision inputs and `--strict` to
+propagate missing responses in IRV and acquiescence.
+Its correctness checks preserve unavailable scores, including entirely missing
+respondents and respondents with an entirely missing IRV section.
+Both row-reduction and reliability benchmarks accept `--structure constant` or
+`--structure near-constant` to exercise decimal-valued profiles and rounding
+repairs. Constant-profile checks require exactly zero variability and unavailable
+split-half reliability.
+For integer row reductions, use `--dtype int64 --missing-rate 0`, with
+`--integer-offset 1152921504606846976` to test adjacent large values. Unsigned
+64-bit responses are supported as well. Integer runs use the categorical
+structure, check exact midpoint and endpoint proportions, and reject response
+bounds outside the chosen dtype.
+The pair-difference benchmark accepts the same integer dtype, missing-rate, and
+integer-offset options for MAD, semantic consistency, and balanced acquiescence.
+The psychometric benchmark also accepts these options. It quantizes its generated
+responses before applying the exact integer offset; combine them with
+`--operation correlations` to isolate item discovery.
+The onset benchmark also accepts `--order F` and `--missing-rate 1`. Its checks
+verify that detected positions are integer offsets within sufficiently long
+observed response sequences; absent detections remain valid benchmark outcomes.
+The response-time benchmark supports `--operation median` and `--order F`.
+It verifies score availability, accepts `--missing-rate 1` for median-only runs,
+and requires enough usable medians when benchmarking the mixture. Single-item
+timing runs omit the consistency metric, which requires at least two items.
+Use `--no-log-transform --scale 1e300` to exercise extreme raw-time mixture fits,
+and `--structure constant` or `--structure near-constant` for degenerate samples.
 
 Verify release artifacts after packaging changes:
 

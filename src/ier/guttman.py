@@ -9,7 +9,7 @@ import warnings
 
 import numpy as np
 
-from ier._column_statistics import column_mean
+from ier._column_statistics import column_mean_order
 from ier._row_statistics import row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -52,8 +52,7 @@ def guttman(
     n_persons = x_array.shape[0]
     n_items = x_array.shape[1]
 
-    item_difficulty = column_mean(x_array, ignore_nan=na_rm)
-    difficulty_order = np.argsort(item_difficulty)
+    difficulty_order = column_mean_order(x_array, ignore_nan=na_rm)
     categories = _small_categorical_values(x_array)
     errors, valid_counts = _count_guttman_errors(
         x_array,
@@ -81,24 +80,31 @@ def guttman(
 
 def _small_categorical_values(x: np.ndarray) -> np.ndarray | None:
     """Return up to 64 ordered categories using only bounded scan workspaces."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        minimum = float(np.nanmin(x))
-        maximum = float(np.nanmax(x))
-    if np.isnan(minimum) or np.isnan(maximum):
-        return np.array([], dtype=float)
+    if x.dtype.kind in "iu":
+        lower, upper = int(np.min(x)), int(np.max(x))
+        if upper - lower < _MAX_CATEGORIES:
+            return np.arange(upper - lower + 1, dtype=x.dtype) + lower
+        category_dtype = x.dtype
+    else:
+        category_dtype = np.dtype(float)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            minimum = float(np.nanmin(x))
+            maximum = float(np.nanmax(x))
+        if np.isnan(minimum) or np.isnan(maximum):
+            return np.array([], dtype=float)
 
-    span = maximum - minimum
-    if span < _MAX_CATEGORIES:
-        for start, stop in row_slices(len(x), x.shape[1]):
-            block = x[start:stop]
-            values = block[~np.isnan(block)]
-            if np.any(values != np.floor(values)):
-                break
-        else:
-            return minimum + np.arange(int(span) + 1, dtype=float)
+        span = maximum - minimum
+        if span < _MAX_CATEGORIES:
+            for start, stop in row_slices(len(x), x.shape[1]):
+                block = x[start:stop]
+                values = block[~np.isnan(block)]
+                if np.any(values != np.floor(values)):
+                    break
+            else:
+                return minimum + np.arange(int(span) + 1, dtype=float)
 
-    categories = np.array([], dtype=float)
+    categories = np.array([], dtype=category_dtype)
     for start, stop in row_slices(len(x), x.shape[1]):
         block = x[start:stop]
         values = block[~np.isnan(block)]
