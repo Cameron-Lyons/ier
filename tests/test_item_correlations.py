@@ -124,3 +124,117 @@ def test_undefined_discovery_returns_no_pairs_without_warnings(data: list[list[f
     assert np.isnan(scores).all()
     np.testing.assert_array_equal(counts, np.zeros(len(data)))
     assert psychsyn_critval(data) == []
+
+
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+@pytest.mark.parametrize("complex_values", [False, True])
+@pytest.mark.parametrize("unavailable", ["none", "missing", "infinite", "constant"])
+def test_extreme_item_scales_preserve_correlations(
+    layout: str, complex_values: bool, unavailable: str
+) -> None:
+    base = np.array([[1, 2, 4, -2, 3], [2, 4, 3, 1, 1], [4, 3, 1, -4, 4], [3, 1, 2, 3, 2]]) / 4
+    if complex_values:
+        base = base + 1j * base[::-1, ::-1]
+    data = np.empty(base.shape, dtype=base.dtype)
+    exponents = [660, -660, 1023, -1070, 0]
+    data.real = np.ldexp(base.real, exponents)
+    if complex_values:
+        data.imag = np.ldexp(base.imag, exponents)
+    if unavailable == "missing":
+        data[-1, -1] = base[-1, -1] = np.nan
+    elif unavailable == "infinite":
+        data[-1, -1] = base[-1, -1] = np.inf
+    elif unavailable == "constant":
+        data[:, -1] = base[:, -1] = 1.1
+    with np.errstate(invalid="ignore", divide="ignore"):
+        expected = np.corrcoef(base, rowvar=False)
+    if layout == "strided":
+        data = data[::-1, ::-1]
+        expected = expected[::-1, ::-1]
+    else:
+        data = np.array(data, order=layout)
+    original = data.copy()
+    data.flags.writeable = False
+    with (
+        patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 11),
+        patch("ier._column_statistics.np.asarray", wraps=np.asarray) as buffers,
+    ):
+        actual = column_correlations(data)
+    np.testing.assert_allclose(actual, expected, rtol=1e-13, atol=1e-14)
+    assert all(call.args[0].size <= 11 for call in buffers.call_args_list)
+    np.testing.assert_array_equal(data, original)
+
+
+@pytest.mark.parametrize("offset", [1.1, 1e9, 1e100, 1e-100, 1e308])
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+def test_nearly_constant_items_preserve_representable_variation(offset: float, layout: str) -> None:
+    steps = np.random.default_rng(45).integers(0, 9, size=(67, 6))
+    steps[:, 0] = 3
+    data = offset + steps * np.spacing(offset)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        expected = np.corrcoef(steps, rowvar=False)
+    if layout == "strided":
+        data = data[::-1, ::-1]
+        expected = expected[::-1, ::-1]
+    else:
+        data = np.array(data, order=layout)
+    original = data.copy()
+    data.flags.writeable = False
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 37):
+        actual = column_correlations(data)
+    np.testing.assert_allclose(actual, expected, rtol=1e-13, atol=1e-14)
+    np.testing.assert_array_equal(data, original)
+
+
+@pytest.mark.parametrize("layout", ["C", "F"])
+def test_constant_decimal_items_do_not_create_discovery_pairs(layout: str) -> None:
+    data = np.array(
+        np.c_[np.full(10_000, 1.1), np.arange(10_000), np.arange(10_000) * 2], order=layout
+    )
+    correlations = column_correlations(data)
+    assert np.isnan(correlations[0]).all()
+    assert np.isnan(correlations[:, 0]).all()
+    np.testing.assert_allclose(correlations[1:, 1:], 1.0)
+    pairs = psychsyn_critval(data, min_correlation=0.0)
+    assert [(left, right) for left, right, _ in pairs] == [(1, 2)]
+
+
+@pytest.mark.parametrize("dtype", [np.int64, np.uint64])
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+def test_integer_item_correlations_preserve_each_columns_baseline(dtype: type, layout: str) -> None:
+    base = np.random.default_rng(72).integers(0, 16, size=(67, 6))
+    base[:, 0] = 3
+    offsets = (
+        [0, 2**60, 2**63 - 32, -(2**63), -(2**60), 2**60]
+        if dtype == np.int64
+        else [0, 2**60, 2**64 - 32, 2**63, 2**63 + 20, 2**60]
+    )
+    data = base.astype(dtype) + np.array(offsets, dtype=dtype)
+    if layout == "strided":
+        data, base = data[::-1, ::-1], base[::-1, ::-1]
+    else:
+        data = np.array(data, order=layout)
+    original = data.copy()
+    data.flags.writeable = False
+    with np.errstate(invalid="ignore", divide="ignore"):
+        expected = np.corrcoef(base, rowvar=False)
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 19):
+        actual = column_correlations(data)
+    np.testing.assert_allclose(actual, expected, rtol=1e-13, atol=1e-14)
+    np.testing.assert_array_equal(data, original)
+
+
+@pytest.mark.parametrize("anto", [False, True])
+@pytest.mark.parametrize("offset", [2**60, -(2**60)])
+def test_integer_item_discovery_and_scores_are_translation_invariant(
+    anto: bool, offset: int
+) -> None:
+    rng = np.random.default_rng(412)
+    base = rng.integers(0, 11, (73, 1)) + rng.integers(0, 4, (73, 7))
+    base[:, 1::2] = 20 - base[:, 1::2]
+    data = base + offset
+    scorer = psychant if anto else psychsyn
+    np.testing.assert_allclose(scorer(data), scorer(base), rtol=1e-13, atol=1e-14)
+    np.testing.assert_allclose(
+        psychsyn_critval(data, anto=anto), psychsyn_critval(base, anto=anto), rtol=1e-13, atol=1e-14
+    )

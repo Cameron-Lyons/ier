@@ -9,16 +9,30 @@ This module provides functions for detecting careless responding patterns by ana
 individuals respond to psychometrically similar (synonym) or opposite (antonym) items.
 """
 
+from numbers import Real
 from typing import Any, Literal, overload
 
 import numpy as np
 
 from ier._column_statistics import column_correlations
-from ier._correlation import row_correlations
+from ier._correlation import selected_row_correlations
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
 
 _PSYCHSYN_BATCH_ELEMENTS = 262_144
+
+
+def _validate_correlation_cutoff(value: object, *, name: str) -> float:
+    """Validate finite real cutoffs while permitting values beyond the correlation range."""
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(f"{name} must be a finite number")
+    try:
+        cutoff = float(value)
+    except OverflowError as error:
+        raise ValueError(f"{name} must be a finite number") from error
+    if not np.isfinite(cutoff):
+        raise ValueError(f"{name} must be a finite number")
+    return cutoff
 
 
 def get_highly_correlated_pairs(
@@ -38,6 +52,7 @@ def get_highly_correlated_pairs(
     row_indices, column_indices = np.tril_indices(item_correlations.shape[0], k=-1)
     pair_correlations = item_correlations[row_indices, column_indices]
     selected = pair_correlations <= critval if anto else pair_correlations >= critval
+    selected &= np.isfinite(pair_correlations)
     return np.stack((row_indices[selected], column_indices[selected]), axis=1)
 
 
@@ -129,15 +144,19 @@ def psychsyn(
     - x: A matrix of data where rows are individuals and columns are their item responses.
           Can be a 2D list or numpy array.
     - critval: Minimum magnitude of correlation for items to be considered synonyms/antonyms.
-               Default is 0.60 for synonyms, typically -0.60 for antonyms.
+               Must be a finite real number. Default is 0.60 for synonyms,
+               typically -0.60 for antonyms.
     - anto: Boolean indicating whether to compute antonym scores
             (highly negatively correlated items).
     - diag: Boolean to optionally return the number of item pairs available for each observation.
+            A single available pair still cannot provide a respondent correlation.
     - resample_na: Boolean to indicate resampling when encountering NA for a respondent.
     - random_seed: Optional seed for random number generation when resample_na=True.
 
     Returns:
-    - A numpy array of psychometric synonym/antonym scores, or
+    - A numpy array of psychometric synonym/antonym scores. Fewer than two selected
+      pairs produce unavailable (``NaN``) scores. Undefined item correlations do
+      not qualify as pairs, including when critval=0.
     - A tuple of (scores, diagnostic_values) if diag=True.
 
     Raises:
@@ -156,8 +175,7 @@ def psychsyn(
 
     x_array = validate_matrix_input(x, min_columns=2)
 
-    if not isinstance(critval, (int, float)):
-        raise ValueError("critval must be a number")
+    critval = _validate_correlation_cutoff(critval, name="critval")
 
     if anto and critval > 0:
         raise ValueError("critval should be negative for antonym analysis")
@@ -168,8 +186,6 @@ def psychsyn(
     rng = np.random.default_rng(random_seed)
 
     item_correlations = column_correlations(x_array)
-
-    item_correlations[np.isnan(item_correlations)] = 0
 
     item_pairs = get_highly_correlated_pairs(item_correlations, critval, anto)
 
@@ -190,34 +206,12 @@ def psychsyn(
         rng=rng,
     )
 
-    if np.any(np.isnan(scores)) and len(item_pairs) > 0:
-        scores = np.nan_to_num(scores, nan=0.0)
-
     if _return_item_info:
         return (scores, diag_values, item_pairs)
     if diag:
         return (scores, diag_values)
     result: np.ndarray = scores
     return result
-
-
-def _compute_complete_person_scores(
-    x: np.ndarray,
-    item_pairs: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Score finite responses in bounded respondent batches."""
-    scores = np.empty(len(x))
-    n_pairs = len(item_pairs)
-    batch_rows = max(1, _PSYCHSYN_BATCH_ELEMENTS // n_pairs)
-
-    for start in range(0, len(x), batch_rows):
-        stop = min(start + batch_rows, len(x))
-        response_i = x[start:stop, item_pairs[:, 0]]
-        response_j = x[start:stop, item_pairs[:, 1]]
-        scores[start:stop] = row_correlations(response_i, response_j)
-
-    diag_values = np.full(len(x), n_pairs, dtype=int)
-    return scores, diag_values
 
 
 def _compute_person_scores(
@@ -228,29 +222,37 @@ def _compute_person_scores(
     rng: np.random.Generator,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Score selected pairs in bounded batches, including missing-response inputs."""
-    if np.isfinite(x).all():
-        return _compute_complete_person_scores(x, item_pairs)
-
     n_rows = len(x)
     n_pairs = len(item_pairs)
-    batch_rows = max(1, _PSYCHSYN_BATCH_ELEMENTS // n_pairs)
     scores = np.full(n_rows, np.nan)
     diag_values = np.zeros(n_rows, dtype=int)
+    if n_pairs == 0:
+        return scores, diag_values
+
+    # Bound both the selected pairs and any row selection from the original matrix.
+    batch_rows = max(1, _PSYCHSYN_BATCH_ELEMENTS // max(x.shape[1], 2 * n_pairs, 16))
+    selected_items = np.unique(item_pairs)
+    left_indices, right_indices = item_pairs[:, 0], item_pairs[:, 1]
 
     for start in range(0, n_rows, batch_rows):
         stop = min(start + batch_rows, n_rows)
-        response_i = x[start:stop, item_pairs[:, 0]]
-        response_j = x[start:stop, item_pairs[:, 1]]
-        finite_rows = np.isfinite(response_i).all(axis=1)
-        finite_rows &= np.isfinite(response_j).all(axis=1)
-
-        batch_scores = row_correlations(response_i, response_j)
-        batch_scores[~finite_rows] = np.nan
-        scores[start:stop] = batch_scores
+        block = x[start:stop]
+        finite_rows = np.isfinite(block[:, selected_items]).all(axis=1)
         diag_values[start:stop] = finite_rows * n_pairs
+        if n_pairs < 2 or not np.any(finite_rows):
+            continue
+        complete = block if np.all(finite_rows) else block[finite_rows]
+        batch_scores = scores[start:stop]
+        batch_scores[finite_rows] = selected_row_correlations(
+            complete,
+            left_indices,
+            right_indices,
+            has_missing=False,
+            zero_variance=0.0,
+        )
 
     missing_rows = np.isnan(scores)
-    if not resample_na or not np.any(missing_rows):
+    if n_pairs < 2 or not resample_na or not np.any(missing_rows):
         return scores, diag_values
 
     overall_mean = 0.0 if np.all(missing_rows) else float(np.abs(np.mean(scores[~missing_rows])))
@@ -330,7 +332,7 @@ def psychsyn_critval(
     Parameters:
     - x: A matrix of data where rows are individuals and columns are their item responses.
     - anto: Boolean indicating whether to order correlations by largest negative values.
-    - min_correlation: Minimum correlation magnitude to include in results.
+    - min_correlation: Finite, nonnegative correlation magnitude to include in results.
 
     Returns:
     - A list of tuples containing (item_i, item_j, correlation), ordered by magnitude.
@@ -343,6 +345,10 @@ def psychsyn_critval(
     """
 
     x_array = validate_matrix_input(x, min_columns=2)
+
+    min_correlation = _validate_correlation_cutoff(min_correlation, name="min_correlation")
+    if min_correlation < 0:
+        raise ValueError("min_correlation must be nonnegative")
 
     item_correlations = column_correlations(x_array)
     n_items = item_correlations.shape[0]

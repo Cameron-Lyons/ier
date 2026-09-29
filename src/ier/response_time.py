@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import math
 import warnings
+from decimal import Decimal, localcontext
+from operator import index
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
 _LOG_TWO_PI = math.log(2.0 * math.pi)
 _MIN_COMPONENT_MASS = 1e-10
 _MIN_VARIANCE = 1e-10
+_MIN_DEVIATION = math.sqrt(_MIN_VARIANCE)
 
 
 def response_time(
@@ -200,14 +203,16 @@ def response_time_mixture(
     Parameters:
     - times: A matrix of response times where rows are individuals and columns
              are items.
-    - n_components: Number of mixture components (default 2).
+    - n_components: Integer number of mixture components, at least 2 (default 2).
     - log_transform: If True (default), log-transform median times before fitting.
     - random_seed: Optional seed for reproducibility of EM initialization.
 
     Returns:
     - A numpy array of posterior probabilities of belonging to the fast component,
       one per respondent. Higher values indicate greater likelihood of careless
-      (fast) responding.
+      (fast) responding. Equal usable medians return ``1 / n_components``;
+      the data cannot distinguish a fast group in that case. Nonpositive or
+      nonfinite medians remain unavailable (``NaN``).
 
     Raises:
     - ValueError: If n_components < 2 or data is insufficient.
@@ -216,6 +221,12 @@ def response_time_mixture(
         >>> times = [[5.0, 6.0, 4.0], [0.5, 0.6, 0.4], [4.5, 5.5, 5.0]]
         >>> probs = response_time_mixture(times, random_seed=42)
     """
+    if isinstance(n_components, (bool, np.bool_)):
+        raise ValueError("n_components must be an integer of at least 2")
+    try:
+        n_components = index(n_components)
+    except TypeError as error:
+        raise ValueError("n_components must be an integer of at least 2") from error
     if n_components < 2:
         raise ValueError("n_components must be at least 2")
 
@@ -224,16 +235,16 @@ def response_time_mixture(
     medians = row_median(times_array, ignore_nan=True)
 
     valid_mask = np.isfinite(medians) & (medians > 0)
-    if np.sum(valid_mask) < n_components:
+    n_valid = int(np.count_nonzero(valid_mask))
+    if n_valid < n_components:
         raise ValueError(
-            f"insufficient valid observations ({int(np.sum(valid_mask))}) "
-            f"for {n_components} components"
+            f"insufficient valid observations ({n_valid}) for {n_components} components"
         )
 
-    data = medians[valid_mask].copy()
+    data = medians[valid_mask]
 
     if log_transform:
-        data = np.log(data)
+        np.log(data, out=data)
 
     rng = np.random.default_rng(random_seed)
 
@@ -254,64 +265,115 @@ def _em_gaussian_mixture(
 ) -> np.ndarray:
     """Fit k-component Gaussian mixture via EM; return posterior P(fast component)."""
     n = len(data)
+    lower, upper = float(np.min(data)), float(np.max(data))
+    if lower == upper:
+        return np.full(n, 1.0 / k)
+
+    magnitude = max(abs(lower), abs(upper))
+    exponent = 0
+    if magnitude > math.sqrt(np.finfo(float).max / n) / 4:
+        _, exponent = math.frexp(magnitude)
+        with np.errstate(under="ignore"):
+            data = np.ldexp(data, -exponent)
+        lower, upper = float(np.min(data)), float(np.max(data))
+        magnitude = max(abs(lower), abs(upper))
+    if upper - lower < magnitude * math.sqrt(np.finfo(float).eps):
+        # Preserve small differences from a large common timing baseline.
+        data = data - data[0]
+    minimum_deviation = math.ldexp(_MIN_DEVIATION, -exponent)
+    jitter = math.ldexp(0.01, -exponent)
 
     sorted_data = np.sort(data)
     split_points = np.array_split(sorted_data, k)
     means = np.array([np.mean(s) for s in split_points])
-    variances = np.full(k, np.var(data) / k)
-    variances = np.maximum(variances, _MIN_VARIANCE)
+    del sorted_data, split_points
+    _, spread = row_mean_std(data[None, :], ignore_nan=False)
+    deviations = np.full(k, max(float(spread[0]) / math.sqrt(k), minimum_deviation))
     weights = np.full(k, 1.0 / k)
 
-    means += rng.normal(0, 0.01, size=k)
+    means += rng.normal(0, min(jitter, float(spread[0])), size=k)
 
-    resp = np.empty((n, k))
+    # Component updates traverse columns; contiguous columns also speed row sums.
+    resp = np.empty((n, k), order="F")
     scratch = np.empty(n)
     prev_ll = -np.inf
 
     for _ in range(max_iter):
-        ll = _mixture_expectation(data, weights, means, variances, resp, scratch)
+        ll = _mixture_expectation(data, weights, means, deviations, resp, scratch)
 
         for j in range(k):
             nj = resp[:, j].sum()
             if nj < _MIN_COMPONENT_MASS:
+                weights[j] = 0.0
                 continue
             weights[j] = nj / n
             means[j] = (resp[:, j] @ data) / nj
-            np.subtract(data, means[j], out=scratch)
-            np.square(scratch, out=scratch)
-            variances[j] = (resp[:, j] @ scratch) / nj
-            variances[j] = max(variances[j], _MIN_VARIANCE)
+            deviations[j] = max(
+                _weighted_deviation(data, means[j], resp[:, j], nj, scratch), minimum_deviation
+            )
+        weights /= weights.sum()
 
         if abs(ll - prev_ll) < tol:
             break
         prev_ll = ll
 
-    _mixture_expectation(data, weights, means, variances, resp, scratch)
+    _mixture_expectation(data, weights, means, deviations, resp, scratch)
 
-    fast_component = int(np.argmin(means))
-    result: np.ndarray = resp[:, fast_component]
+    fast_component = int(np.argmin(np.where(weights > 0, means, np.inf)))
+    # Retain only the returned probabilities, not every component's workspace.
+    result: np.ndarray = resp[:, fast_component].copy()
     return result
+
+
+def _weighted_deviation(
+    data: np.ndarray, mean: float, weights: np.ndarray, mass: float, scratch: np.ndarray
+) -> float:
+    """Reduce weighted residuals, rescaling only when their squares lose range."""
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        np.subtract(data, mean, out=scratch)
+        np.square(scratch, out=scratch)
+        variance = float(weights @ scratch) / mass
+        if variance >= np.finfo(float).tiny and math.isfinite(variance):
+            return math.sqrt(variance)
+        np.subtract(data, mean, out=scratch)
+        scratch *= np.sqrt(weights)
+        scale = float(np.max(np.abs(scratch)))
+        if scale == 0:
+            return 0.0
+        scratch /= scale
+        return scale * math.sqrt(float(scratch @ scratch) / mass)
 
 
 def _mixture_expectation(
     data: np.ndarray,
     weights: np.ndarray,
     means: np.ndarray,
-    variances: np.ndarray,
+    deviations: np.ndarray,
     responsibilities: np.ndarray,
     scratch: np.ndarray,
 ) -> float:
-    """Fill normalized responsibilities and return their log-likelihood."""
-    for component in range(len(weights)):
-        np.subtract(data, means[component], out=scratch)
-        np.square(scratch, out=scratch)
-        np.multiply(scratch, -0.5 / variances[component], out=scratch)
-        np.exp(scratch, out=scratch)
-        scale = weights[component] / math.sqrt(2.0 * math.pi * variances[component])
-        np.multiply(scratch, scale, out=responsibilities[:, component])
+    """Fill responsibilities using standard deviations to preserve extreme scales."""
+    # Very narrow components can amplify an underflowed exponential into a
+    # meaningful density. Combine their exponent and normalization in log space.
+    log_only = np.any(deviations < weights * (np.finfo(float).eps / math.sqrt(2.0 * math.pi)))
+    if log_only:
+        row_sums = np.zeros(len(data))
+    else:
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            for component in range(len(weights)):
+                if weights[component] == 0:
+                    responsibilities[:, component] = 0.0
+                    continue
+                np.subtract(data, means[component], out=scratch)
+                scratch /= deviations[component]
+                np.square(scratch, out=scratch)
+                scratch *= -0.5
+                np.exp(scratch, out=scratch)
+                scale = (weights[component] / deviations[component]) / math.sqrt(2.0 * math.pi)
+                np.multiply(scratch, scale, out=responsibilities[:, component])
 
-    row_sums = np.sum(responsibilities, axis=1)
-    regular = np.isfinite(row_sums) & (row_sums > 0.0)
+            row_sums = np.sum(responsibilities, axis=1)
+    regular = np.isfinite(row_sums) & (row_sums >= np.finfo(float).tiny)
     if np.all(regular):
         log_likelihood = float(np.sum(np.log(row_sums)))
         responsibilities /= row_sums[:, None]
@@ -327,21 +389,62 @@ def _mixture_expectation(
 
     underflow = ~regular
     underflow_data = data[underflow]
-    log_joint = np.empty((len(underflow_data), len(weights)))
-    for component in range(len(weights)):
-        component_values = log_joint[:, component]
-        np.subtract(underflow_data, means[component], out=component_values)
-        np.square(component_values, out=component_values)
-        np.multiply(component_values, -0.5 / variances[component], out=component_values)
-        component_values += math.log(weights[component]) - 0.5 * (
-            _LOG_TWO_PI + math.log(variances[component])
-        )
+    log_joint = np.empty((len(underflow_data), len(weights)), order="F")
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        for component in range(len(weights)):
+            component_values = log_joint[:, component]
+            if weights[component] == 0:
+                component_values.fill(-np.inf)
+                continue
+            np.subtract(underflow_data, means[component], out=component_values)
+            component_values /= deviations[component]
+            np.square(component_values, out=component_values)
+            component_values *= -0.5
+            component_values += (
+                math.log(weights[component]) - 0.5 * _LOG_TWO_PI - math.log(deviations[component])
+            )
 
     row_maximum = np.max(log_joint, axis=1)
-    log_joint -= row_maximum[:, None]
-    np.exp(log_joint, out=log_joint)
+    extreme = ~np.isfinite(row_maximum)
+    close_densities = np.count_nonzero(log_joint >= row_maximum[:, None] - 32.0, axis=1) > 1
+    extreme |= (row_maximum < -1024.0) & close_densities
+    if np.any(extreme):
+        # Huge or nearly tied log densities can lose their differences even
+        # before overflow. Resolve only those exceptional rows in high precision.
+        for row in np.flatnonzero(extreme):
+            log_joint[row], row_maximum[row] = _extreme_log_joint(
+                float(underflow_data[row]), weights, means, deviations
+            )
+        # The helper already removes the common log density for extreme rows.
+        log_joint[~extreme] -= row_maximum[~extreme, None]
+    else:
+        log_joint -= row_maximum[:, None]
+    with np.errstate(under="ignore"):
+        np.exp(log_joint, out=log_joint)
     normalizers = np.sum(log_joint, axis=1)
     log_joint /= normalizers[:, None]
     responsibilities[underflow] = log_joint
-    log_likelihood += float(np.sum(row_maximum + np.log(normalizers)))
+    with np.errstate(over="ignore"):
+        log_likelihood += float(np.sum(row_maximum + np.log(normalizers)))
     return log_likelihood
+
+
+def _extreme_log_joint(
+    value: float, weights: np.ndarray, means: np.ndarray, deviations: np.ndarray
+) -> tuple[np.ndarray, float]:
+    """Resolve unrepresentable Gaussian exponents only for exceptional observations."""
+    with localcontext() as context:
+        context.prec = 800
+        observation = Decimal.from_float(value)
+        joint = []
+        for weight, mean, deviation in zip(weights, means, deviations, strict=True):
+            if weight == 0:
+                joint.append(Decimal("-Infinity"))
+                continue
+            distance = (observation - Decimal.from_float(float(mean))) / Decimal.from_float(
+                float(deviation)
+            )
+            log_scale = math.log(weight) - math.log(deviation) - 0.5 * _LOG_TWO_PI
+            joint.append(Decimal.from_float(log_scale) - distance * distance / 2)
+        maximum = max(joint)
+        return np.array([float(value - maximum) for value in joint]), float(maximum)

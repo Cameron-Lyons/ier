@@ -1,12 +1,30 @@
 """Bounded reductions for predefined item pairs."""
 
-import warnings
+import math
 from collections.abc import Sequence
+from fractions import Fraction
 from operator import index
 
 import numpy as np
 
-from ier._row_statistics import row_mean, row_slices
+from ier._row_statistics import _integer_reduction_parameters, row_mean, row_slices
+
+
+def validate_item_pairs(
+    item_pairs: Sequence[tuple[int, int]], n_columns: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Validate explicit pairs without truncating entries or coercing item indices."""
+    if len(item_pairs) == 0:
+        raise ValueError("item_pairs cannot be empty")
+    try:
+        left, right = zip(*item_pairs, strict=True)
+    except (TypeError, ValueError) as error:
+        raise ValueError(
+            "each item pair must contain exactly two integer column indices"
+        ) from error
+    return validate_paired_item_indices(
+        left, right, n_columns, left_name="item_pairs", right_name="item_pairs"
+    )
 
 
 def validate_paired_item_indices(
@@ -48,43 +66,157 @@ def paired_mean_absolute_difference(
     left_indices: np.ndarray,
     right_indices: np.ndarray,
     *,
-    right_reflection: float | None,
+    right_bounds: tuple[float, float] | None,
     ignore_nan: bool,
+    normalizers: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Reduce absolute differences for aligned column pairs in row batches."""
+    """Reduce paired differences, optionally dividing before restoring extreme units."""
     if len(left_indices) != len(right_indices):
         raise ValueError("paired index arrays must contain the same number of items")
     n_pairs = len(left_indices)
     if n_pairs == 0:
         raise ValueError("paired index arrays cannot be empty")
     scores = np.empty(len(x))
+    reflection = None
+    integer_pairs = x.dtype.kind in "iu"
+    exact_reflection = None
+    centered_reflection = False
+    if right_bounds is not None:
+        reflection = right_bounds[0] + right_bounds[1]
+        centered_reflection = (
+            not math.isfinite(reflection)
+            or abs(reflection) * math.sqrt(np.finfo(float).eps) > right_bounds[1] - right_bounds[0]
+        )
+        integer_pairs &= all(math.isfinite(value) for value in right_bounds)
+        if integer_pairs:
+            exact_reflection = Fraction(right_bounds[0]) + Fraction(right_bounds[1])
 
     for start, stop in row_slices(len(x), n_pairs):
-        left = np.asarray(x[start:stop, left_indices], dtype=float)
-        right = np.asarray(x[start:stop, right_indices], dtype=float)
-        if right_reflection is not None:
-            np.subtract(right_reflection, right, out=right)
-        np.subtract(left, right, out=left)
+        divisors = None if normalizers is None else normalizers[start:stop]
+        left_values = x[start:stop, left_indices]
+        right_values = x[start:stop, right_indices]
+        if integer_pairs:
+            large_left, _ = _integer_reduction_parameters(left_values)
+            large_right, _ = _integer_reduction_parameters(right_values)
+            if large_left is not None or large_right is not None:
+                scores[start:stop] = _integer_pair_means(
+                    left_values, right_values, exact_reflection, divisors
+                )
+                del left_values, right_values
+                continue
+            if exact_reflection is None or (
+                exact_reflection.denominator == 1 and abs(exact_reflection.numerator) <= 2**53
+            ):
+                # Ordinary categories and bounds fit signed arithmetic exactly.
+                left = np.asarray(left_values, dtype=np.int64)
+                right = np.asarray(right_values, dtype=np.int64)
+                if exact_reflection is None:
+                    left -= right
+                else:
+                    left += right
+                    left -= exact_reflection.numerator
+                np.abs(left, out=left)
+                block_scores = row_mean(left, ignore_nan=False)
+                if divisors is not None:
+                    with np.errstate(
+                        over="ignore", invalid="ignore", divide="ignore", under="ignore"
+                    ):
+                        block_scores /= divisors
+                scores[start:stop] = block_scores
+                del left, right, left_values, right_values
+                continue
+        left = np.asarray(left_values, dtype=float)
+        right = np.asarray(right_values, dtype=float)
+        del left_values, right_values
+        with np.errstate(over="raise", invalid="ignore", under="ignore"):
+            try:
+                if centered_reflection and right_bounds is not None:
+                    np.subtract(left, right_bounds[0], out=left)
+                    np.subtract(right, right_bounds[1], out=right)
+                    np.add(left, right, out=left)
+                else:
+                    if reflection is not None:
+                        np.subtract(reflection, right, out=right)
+                    np.subtract(left, right, out=left)
+            except FloatingPointError:
+                scores[start:stop] = _rescaled_pair_difference(
+                    x[start:stop], left_indices, right_indices, right_bounds, ignore_nan, divisors
+                )
+                del left, right
+                continue
         np.abs(left, out=left)
-        scores[start:stop] = row_mean(left, ignore_nan=ignore_nan)
+        block_scores = row_mean(left, ignore_nan=ignore_nan)
+        if divisors is not None:
+            with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
+                block_scores /= divisors
+        scores[start:stop] = block_scores
+        del left, right
 
     return scores
 
 
-def resolve_scale_bounds(
-    x: np.ndarray,
-    *,
-    scale_min: float | None,
-    scale_max: float | None,
-) -> tuple[float, float] | None:
-    """Resolve observed scale endpoints without a flattened data copy."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        resolved_min = float(np.nanmin(x)) if scale_min is None else float(scale_min)
-        resolved_max = float(np.nanmax(x)) if scale_max is None else float(scale_max)
+def _integer_pair_means(
+    left_values: np.ndarray,
+    right_values: np.ndarray,
+    reflection: Fraction | None,
+    normalizers: np.ndarray | None,
+) -> np.ndarray:
+    """Subtract large integers before rounding, including fractional scale bounds."""
+    left = left_values.astype(object)
+    right = right_values.astype(object)
+    denominator = 1
+    if reflection is None:
+        left -= right
+    else:
+        denominator = reflection.denominator
+        left += right
+        left *= denominator
+        left -= reflection.numerator
+    np.abs(left, out=left)
+    totals = np.sum(left, axis=1)
+    means = np.empty(len(left))
+    for row, total in enumerate(totals):
+        value = Fraction(total, denominator * left.shape[1])
+        if normalizers is not None:
+            value /= Fraction(float(normalizers[row]))
+        try:
+            means[row] = float(value)
+        except OverflowError:
+            means[row] = np.inf
+    return means
 
-    if np.isnan(resolved_min) or np.isnan(resolved_max):
-        return None
-    if resolved_max < resolved_min:
-        raise ValueError("scale_max must be greater than or equal to scale_min")
-    return resolved_min, resolved_max
+
+def _rescaled_pair_difference(
+    x: np.ndarray,
+    left_indices: np.ndarray,
+    right_indices: np.ndarray,
+    bounds: tuple[float, float] | None,
+    ignore_nan: bool,
+    normalizers: np.ndarray | None,
+) -> np.ndarray:
+    """Recover overflowing differences in a common power-of-two coordinate system."""
+    left = np.asarray(x[:, left_indices], dtype=float)
+    right = np.asarray(x[:, right_indices], dtype=float)
+    magnitudes = np.maximum(
+        np.max(np.abs(left), axis=1, where=np.isfinite(left), initial=0),
+        np.max(np.abs(right), axis=1, where=np.isfinite(right), initial=0),
+    )
+    if bounds is not None:
+        magnitudes = np.maximum(magnitudes, max(abs(bounds[0]), abs(bounds[1])))
+    _, exponents = np.frexp(magnitudes)
+    with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
+        np.ldexp(left, -exponents[:, None], out=left)
+        np.ldexp(right, -exponents[:, None], out=right)
+        if bounds is None:
+            left -= right
+        else:
+            left -= np.ldexp(bounds[0], -exponents)[:, None]
+            right -= np.ldexp(bounds[1], -exponents)[:, None]
+            left += right
+        np.abs(left, out=left)
+        means = row_mean(left, ignore_nan=ignore_nan)
+        if normalizers is None:
+            np.ldexp(means, exponents, out=means)
+        else:
+            means /= np.ldexp(normalizers, -exponents)
+    return means

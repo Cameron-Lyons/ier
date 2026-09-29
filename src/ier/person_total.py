@@ -47,10 +47,12 @@ def person_total(
     n_rows, n_items = x_array.shape
     batch_rows = max(1, _PERSON_TOTAL_BATCH_ELEMENTS // n_items)
 
-    if not na_rm and np.isnan(x_array).any():
-        return np.full(n_rows, np.nan)
+    if not na_rm and x_array.dtype.kind not in "iub":
+        for start in range(0, n_rows, batch_rows):
+            if np.isnan(x_array[start : start + batch_rows]).any():
+                return np.full(n_rows, np.nan)
 
-    item_means = column_mean(x_array, ignore_nan=na_rm)
+    item_means = column_mean(x_array, ignore_nan=na_rm, center_integers=True)
     correlations = np.empty(n_rows)
     for start in range(0, n_rows, batch_rows):
         stop = min(start + batch_rows, n_rows)

@@ -17,12 +17,17 @@ def calculate_summary_stats(
     - suffix: Optional suffix for dictionary keys (e.g., "_score" -> "mean_score")
 
     Returns:
-    - Dictionary with mean, std, min, max, median statistics
+    - Dictionary with mean, std, min, max, median statistics. Empty or entirely
+      missing inputs have unavailable (NaN) statistics.
     """
+    available = ~np.isnan(values)
+    observed = values if np.all(available) else values[available]
+    if observed.size == 0:
+        return {f"{name}{suffix}": float("nan") for name in ("mean", "std", "min", "max", "median")}
     return {
-        f"mean{suffix}": float(np.nanmean(values)),
-        f"std{suffix}": float(np.nanstd(values)),
-        f"min{suffix}": float(np.nanmin(values)),
-        f"max{suffix}": float(np.nanmax(values)),
-        f"median{suffix}": float(np.nanmedian(values)),
+        f"mean{suffix}": float(np.mean(observed)),
+        f"std{suffix}": float(np.std(observed)),
+        f"min{suffix}": float(np.min(observed)),
+        f"max{suffix}": float(np.max(observed)),
+        f"median{suffix}": float(np.median(observed)),
     }

@@ -438,7 +438,7 @@ class TestIndividualReliability(unittest.TestCase):
 
     def test_scoring_batches_rows_without_changing_seeded_results(self) -> None:
         """Forced tiny workspaces preserve missing-data scores and input values."""
-        from ier.reliability import _paired_split_correlations
+        from ier._correlation import _row_correlations_block
 
         rng = np.random.default_rng(20260803)
         data = rng.integers(1, 6, size=(53, 12)).astype(float)
@@ -449,8 +449,8 @@ class TestIndividualReliability(unittest.TestCase):
         with (
             patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 18),
             patch(
-                "ier.reliability._paired_split_correlations",
-                wraps=_paired_split_correlations,
+                "ier._correlation._row_correlations_block",
+                wraps=_row_correlations_block,
             ) as correlations,
         ):
             result = individual_reliability(data, n_splits=7, random_seed=17)
@@ -462,7 +462,8 @@ class TestIndividualReliability(unittest.TestCase):
                 for call in correlations.call_args_list
             )
         )
-        np.testing.assert_array_equal(result, expected)
+        # One-row blocks can change NumPy's reduction order at the last few bits.
+        np.testing.assert_allclose(result, expected, rtol=0.0, atol=1e-14)
         np.testing.assert_array_equal(data, original)
 
     def test_n_splits_must_be_a_positive_integer(self) -> None:
@@ -1243,7 +1244,7 @@ class TestOnset(unittest.TestCase):
 
     def test_missing_rows_are_grouped_in_bounded_batches(self) -> None:
         """Compressed groups preserve the scalar definition and input values."""
-        from ier.onset import _onset_complete
+        from ier.onset import _complete_onsets
 
         rng = np.random.default_rng(20260803)
         data = rng.integers(1, 6, size=(503, 40)).astype(float)
@@ -1260,7 +1261,7 @@ class TestOnset(unittest.TestCase):
 
         with (
             patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 120),
-            patch("ier.onset._onset_complete", wraps=_onset_complete) as grouped,
+            patch("ier.onset._complete_onsets", wraps=_complete_onsets) as grouped,
         ):
             result = onset(data, window_size=7, min_items=20)
 

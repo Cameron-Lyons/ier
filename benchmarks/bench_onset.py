@@ -1,9 +1,10 @@
-"""Benchmark bounded carelessness-onset scoring on complete responses.
+"""Benchmark bounded carelessness-onset scoring on complete and missing responses.
 
 Usage:
     uv run python benchmarks/bench_onset.py
     uv run python benchmarks/bench_onset.py --respondents 200000 --items 100
     uv run python benchmarks/bench_onset.py --respondents 10000 --missing-rate 0.1
+    uv run python benchmarks/bench_onset.py --order F --missing-rate 1
 """
 
 from __future__ import annotations
@@ -27,7 +28,15 @@ def _measure(
         lambda: onset(data, window_size=window_size, min_items=min_items), repeats
     )
     result = measurement.result
-    if not (np.isfinite(result) | np.isnan(result)).all():
+    detected = np.isfinite(result)
+    observed = np.count_nonzero(~np.isnan(data), axis=1)
+    if (
+        np.isinf(result).any()
+        or np.any(observed[detected] < max(min_items, window_size + 2))
+        or np.any(result[detected] < window_size)
+        or np.any(result[detected] >= observed[detected])
+        or np.any(result[detected] != np.floor(result[detected]))
+    ):
         raise RuntimeError("benchmark produced invalid onset scores")
     return measurement.median_seconds, measurement.peak_mib
 
@@ -40,6 +49,7 @@ def main() -> None:
     parser.add_argument("--window-size", type=int, default=10)
     parser.add_argument("--min-items", type=int, default=20)
     parser.add_argument("--missing-rate", type=float, default=0.0)
+    parser.add_argument("--order", choices=("C", "F"), default="C")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=20260803)
@@ -51,17 +61,16 @@ def main() -> None:
         or args.categories < 2
         or args.window_size < 2
         or args.min_items < args.window_size
-        or args.min_items > args.items
         or args.repeats < 1
         or args.warmup < 0
     ):
         parser.error(
             "respondents, items, and repeats must be positive, categories and "
-            "window-size at least 2, min-items between window-size and items, "
+            "window-size at least 2, min-items at least window-size, "
             "and warmup nonnegative"
         )
-    if not 0.0 <= args.missing_rate < 1.0:
-        parser.error("missing-rate must be at least 0 and less than 1")
+    if not 0.0 <= args.missing_rate <= 1.0:
+        parser.error("missing-rate must be between 0 and 1")
 
     rng = np.random.default_rng(args.seed)
     data = rng.integers(
@@ -71,6 +80,8 @@ def main() -> None:
     ).astype(float)
     if args.missing_rate:
         data[rng.random(data.shape) < args.missing_rate] = np.nan
+    if args.order == "F":
+        data = np.asfortranarray(data)
 
     for _ in range(args.warmup):
         onset(
@@ -88,7 +99,7 @@ def main() -> None:
     print(
         f"shape={data.shape} categories={args.categories} "
         f"window_size={args.window_size} min_items={args.min_items} "
-        f"missing_rate={args.missing_rate} repeats={args.repeats} "
+        f"missing_rate={args.missing_rate} order={args.order} repeats={args.repeats} "
         f"warmup={args.warmup}"
     )
     print(f"onset: median={seconds:.4f}s peak={peak:.1f} MiB")

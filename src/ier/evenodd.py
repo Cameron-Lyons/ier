@@ -79,7 +79,9 @@ def evenodd(
     """
     factor_sizes = _validate_factors(factors)
 
-    x_array = validate_matrix_input(x, allow_1d=True, dtype=float, check_type=False)
+    x_array = validate_matrix_input(x, allow_1d=True, check_type=False)
+    if x_array.dtype.kind not in "biuf":
+        x_array = np.asarray(x_array, dtype=float)
     num_individuals = x_array.shape[0]
 
     expected_cols = sum(factor_sizes)

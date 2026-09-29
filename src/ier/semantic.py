@@ -8,9 +8,9 @@ are predefined based on item content (e.g., "I am happy" vs "I am sad").
 import numpy as np
 
 from ier._flagging import threshold_flags
-from ier._pair_statistics import paired_mean_absolute_difference, resolve_scale_bounds
-from ier._row_statistics import row_std
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._pair_statistics import paired_mean_absolute_difference, validate_item_pairs
+from ier._row_statistics import row_slices, row_std
+from ier._validation import MatrixLike, resolve_scale_bounds, validate_matrix_input
 
 
 def semantic_syn(
@@ -44,7 +44,8 @@ def semantic_syn(
       Higher values indicate greater consistency for both synonyms and antonyms.
 
     Raises:
-    - ValueError: If inputs are invalid or item_pairs is empty
+    - ValueError: If item_pairs is empty, a pair does not contain two distinct
+                  integer column indices, or an index is outside the matrix bounds.
 
     Example:
         >>> data = [[1, 2, 5, 4], [1, 1, 5, 5], [3, 1, 3, 5]]
@@ -52,19 +53,10 @@ def semantic_syn(
         >>> scores = semantic_syn(data, pairs)
     """
     x_array = validate_matrix_input(x, min_columns=2)
-    n_items = x_array.shape[1]
-
-    if not item_pairs:
-        raise ValueError("item_pairs cannot be empty")
-
-    for i, j in item_pairs:
-        if i < 0 or i >= n_items or j < 0 or j >= n_items:
-            raise ValueError(f"item pair ({i}, {j}) contains invalid indices")
-        if i == j:
-            raise ValueError(f"item pair ({i}, {j}) contains duplicate indices")
-
-    pairs_array = np.asarray(item_pairs, dtype=np.intp)
-    reflection: float | None = None
+    left_indices, right_indices = validate_item_pairs(item_pairs, x_array.shape[1])
+    if np.any(left_indices == right_indices):
+        raise ValueError("item pairs cannot contain duplicate indices within a pair")
+    bounds: tuple[float, float] | None = None
 
     if anto:
         bounds = resolve_scale_bounds(
@@ -74,30 +66,30 @@ def semantic_syn(
         )
         if bounds is None:
             return np.full(x_array.shape[0], np.nan, dtype=float)
-        resolved_min, resolved_max = bounds
-        reflection = resolved_min + resolved_max
 
-    pair_mean_diffs = paired_mean_absolute_difference(
-        x_array,
-        pairs_array[:, 0],
-        pairs_array[:, 1],
-        right_reflection=reflection,
-        ignore_nan=True,
-    )
-    row_deviations = row_std(x_array, ignore_nan=True)
     scores = np.full(x_array.shape[0], np.nan, dtype=float)
+    for start, stop in row_slices(len(x_array), max(x_array.shape[1], len(left_indices))):
+        block = x_array[start:stop]
+        row_deviations = row_std(block, ignore_nan=True)
+        differences = paired_mean_absolute_difference(
+            block,
+            left_indices,
+            right_indices,
+            right_bounds=bounds,
+            ignore_nan=True,
+            normalizers=np.where(row_deviations > 0, row_deviations, 1.0),
+        )
+        block_scores = scores[start:stop]
+        valid_rows = ~np.isnan(differences)
+        nonzero_std = valid_rows & (row_deviations > 0)
+        block_scores[nonzero_std] = 1 - differences[nonzero_std]
 
-    valid_rows = ~np.isnan(pair_mean_diffs)
-    nonzero_std = valid_rows & (row_deviations > 0)
-    with np.errstate(invalid="ignore", divide="ignore"):
-        scores[nonzero_std] = 1 - pair_mean_diffs[nonzero_std] / row_deviations[nonzero_std]
+        zero_std = valid_rows & (row_deviations == 0)
+        if np.any(zero_std):
+            block_scores[zero_std] = np.where(np.isclose(differences[zero_std], 0.0), 1.0, -1.0)
 
-    zero_std = valid_rows & (row_deviations == 0)
-    if np.any(zero_std):
-        scores[zero_std] = np.where(np.isclose(pair_mean_diffs[zero_std], 0.0), 1.0, -1.0)
-
-    result: np.ndarray = np.clip(scores, -1, 1)
-    return result
+    np.clip(scores, -1, 1, out=scores)
+    return scores
 
 
 def semantic_ant(

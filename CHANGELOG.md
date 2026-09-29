@@ -17,6 +17,163 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.16] - 2026-09-28
+
+### Changed
+
+- Response-style and paired-item scoring share scale-bound resolution while
+  preserving integer endpoints. Combined response-pattern summaries reuse
+  observed-response counts in bounded batches instead of scanning the matrix
+  separately for each proportion.
+- The row-reduction benchmark supports column-contiguous input layouts.
+- Shared row correlations now bound their centering and missing-value workspaces.
+  Four-item even–odd factors use the relative order of each pair directly,
+  avoiding unnecessary centering and variance reductions.
+- Explicit semantic and MAD item-pair definitions share structural and integer
+  validation. The even–odd benchmark covers array layouts and validates score
+  availability for missing responses.
+- Individual reliability now reuses the stable row-correlation kernel and owned
+  selection buffers, with missing-value detection shared across splits in each
+  respondent block. Its benchmark covers array layouts and unavailable scores.
+- Psychometric synonym and antonym scoring share one bounded respondent path,
+  checking only selected items and reusing owned correlation buffers. Shared
+  summary statistics filter missing scores once across all reductions.
+- Split IRV reduces equally sized sections together in bounded respondent blocks
+  instead of retaining all section score vectors. Row standard deviations no
+  longer allocate an unused full-length mean vector. The row-reduction benchmark
+  supports split IRV and verifies score availability, including all-missing data.
+- Onset detection shares per-block missing-response and eligibility checks,
+  avoiding a separate full-input scan. Its rolling batches account for multiple
+  workspaces, and its benchmark covers array layouts and unavailable detections.
+- Chi-square quantiles use direct special cases for one or two degrees of
+  freedom, including a NumPy array path for two-degree Q-Q quantiles. Array
+  inputs are validated once, and the Mahalanobis benchmark now includes Q-Q data.
+- Shared row means and deviations reuse their reductions under both missing-value
+  policies, with complete blocks avoiding masked sums and blocks with mostly
+  unavailable means skipping their centering work. The row-reduction benchmark
+  now supports single-precision inputs and strict missing-value propagation.
+- Row medians use bounded sorting and partition buffers instead of masked-array
+  reductions. Response-time mixtures reuse selected medians for log transformation,
+  and their benchmark can isolate median scoring, cover array layouts, and verify
+  unavailable scores, including single-item and entirely missing timing data.
+- Item means skip masked reductions for complete blocks, and item correlations
+  normalize cross-products directly. Exceptional mean and correlation calculations
+  share bounded column scaling; the psychometric benchmark now isolates item
+  correlations and checks their availability.
+- Row-reduction and reliability benchmarks cover constant decimal responses and
+  nearly constant profiles, including their expected zero-variance behavior.
+  Reliability excludes constant respondent profiles once per block instead of
+  repeating their reductions for every split.
+- Response-time mixture fitting stores component workspaces in contiguous columns
+  and retains only the returned probability vector. Its benchmark covers raw
+  timing units, large scales, and constant or nearly constant samples.
+- Balanced acquiescence selects paired responses together in bounded blocks.
+  Semantic consistency batches response deviations with pair scoring, reducing
+  temporary allocations. The pair benchmark covers array layouts, shifted and
+  scaled responses, and entirely missing data.
+- Integer response-style proportions skip missing-value scans, and zero-tolerance
+  midpoint scoring uses one equality comparison. Ordinary integer row means use
+  exact native totals when their range permits. The row-reduction benchmark now
+  covers signed and unsigned integer inputs with configurable offsets.
+- Predefined pair reductions use native integer differences for ordinary
+  categories and release each block's selections before allocating the next.
+  The pair benchmark also supports signed and unsigned integer offsets.
+- Even–odd scoring retains integer responses instead of converting the complete
+  matrix to float before selecting factor items.
+- Item means use native integer totals when safe and bounded exact totals for
+  exceptional values. Guttman recognizes contiguous integer categories directly,
+  and strict person-total missing checks stay within respondent batches. The
+  psychometric benchmark covers integer responses and large offsets.
+
+### Fixed
+
+- Inferring response-style scale bounds from entirely missing data now returns
+  unavailable scores without warnings. Constant-scale acquiescence preserves
+  missing respondent means and incomplete-pair policies instead of assigning
+  every respondent a score of 0.5.
+- Extreme and midpoint scoring reject inverted scale bounds; midpoint tolerance
+  must be finite and nonnegative. Midpoint calculation avoids overflowing when
+  adding large integer or floating-point scale endpoints.
+- Row correlations no longer lose finite correlations when norm products
+  overflow or underflow. Exceptional rows are rescaled before centering,
+  single-precision inputs use double-precision accumulation, and infinite
+  observations remain unavailable unless excluded by a missing pair.
+- Semantic consistency rejects fractional and Boolean item indices instead of
+  silently coercing them. MAD rejects malformed pairs instead of ignoring extra
+  entries or failing with an indexing error.
+- Individual reliability preserves finite correlations at very large or small
+  response scales and uses double-precision accumulation for single-precision
+  inputs. Undefined Spearman–Brown corrections return `NaN` rather than infinity,
+  preventing downstream screening and composite failures. Positive NumPy integer
+  split counts are accepted, and the documented score range now reflects the
+  correction's possible values below -1.
+- Undefined item correlations no longer become psychometric synonym or antonym
+  pairs at a zero cutoff. A single selected pair leaves respondent scores `NaN`
+  while retaining its diagnostic count, so screening and composites preserve
+  score availability. Cutoffs reject nonfinite and nonnumeric values.
+- Empty and entirely missing score summaries return `NaN` statistics without
+  reduction warnings or errors, including psychometric and Markov summaries.
+- IRV rejects fractional and Boolean split counts and split points with clear
+  validation errors. NumPy integer values remain supported. Counts exceeding the
+  item count no longer allocate empty sections, even for extremely large counts.
+  Docstring examples now show population standard deviations and split means.
+- Onset detection rejects fractional, Boolean, and nonfinite size parameters;
+  unsigned NumPy sizes are normalized before slicing. Infinite responses leave
+  their rows unavailable. Very large finite responses use bounded rescaling and
+  logarithmic comparisons without changing the absolute variance floor, and
+  centering changepoint series avoids false detections from a constant baseline.
+- Very small chi-square lower-tail probabilities no longer stop at an arbitrary
+  probability or normal-float floor. Logarithmic inversion fixes incorrect values
+  and nonconvergence, and representable subnormal quantiles are retained. Scalar
+  and array helpers consistently reject invalid degree counts, including empty
+  array calls, and gamma helpers reject NaN arguments before iteration.
+- Row means and population deviations rescale exceptional finite values to avoid
+  overflowing means and overflowing or underflowing variances. Strict reductions
+  now use double precision for single-precision input, fixing inaccurate means
+  and deviations. This applies to IRV, response-pattern summaries, and timing
+  summaries; split IRV also avoids overflowing its mean of section deviations.
+- Finite row medians no longer overflow when averaging large central values.
+  Single-precision central pairs are averaged in double precision, 64-bit integer
+  pairs retain exact arithmetic before final rounding, and subnormal medians are
+  preserved. Response-time mixtures reject noninteger component counts with a
+  clear validation error while continuing to accept NumPy integer scalars.
+- Item means no longer overflow for large finite values, and strict means promote
+  single-precision inputs before accumulation. Person-total profiles and Guttman
+  item ordering retain those finite means. Item correlations preserve extreme
+  scales and nearly constant variation; constant decimal-valued items no longer
+  acquire fabricated correlations or discovery pairs. Nonfinite observations
+  continue to invalidate their items, including on the rescaled path.
+- Constant decimal-valued respondent profiles have exactly zero variability and
+  retain each correlation index's zero-variance policy. Nearly constant rows use
+  shifted, power-of-two-scaled deviations to preserve their representable
+  variation. Rows with exactly two observed pairs correlate by direction alone,
+  avoiding rounded near-perfect correlations and unstable reliability corrections.
+- Response-time mixtures preserve finite probabilities for extreme positive
+  timings, including raw-time fits without a log transformation. Power-of-two
+  scaling and standard-deviation parameters preserve the original variance floor;
+  exceptional Gaussian tails retain their relative densities in high precision.
+  Constant medians return equal component probabilities, initialization respects
+  small timing spreads, and abandoned components cannot be selected as fast.
+- Acquiescence preserves normalized means across overflowing finite scale widths,
+  subnormal ranges, and closely spaced large integer responses. Balanced scoring
+  avoids overflowing pair sums. MAD and semantic consistency center exceptional
+  reverse-scoring bounds and rescale overflowing pair differences; semantic
+  normalization can retain finite ratios even when the raw mean exceeds float range.
+- Midpoint scoring preserves adjacent large integer categories and subnormal
+  constant scales. Endpoint and midpoint comparisons no longer round explicit
+  bounds to a lower-precision response dtype or match out-of-range integer bounds.
+  Combined response-pattern summaries share these comparisons.
+- Integer row means preserve cancellation through exact totals, and row deviations
+  shift before floating-point conversion to retain small differences on large
+  baselines. Large integer pair differences and row correlations likewise preserve
+  their observed variation, fixing misleading MAD, semantic consistency, even–odd,
+  and split-half reliability scores.
+- Item discovery no longer loses correlations between adjacent large integer
+  responses. Person-total scoring centers exact item totals before conversion,
+  preserving differences between nearly identical item means. Guttman keeps
+  integer categories and exact item rankings, including widely separated scales
+  with closely spaced item difficulties.
+
 ## [1.7.15] - 2026-09-28
 
 ### Changed

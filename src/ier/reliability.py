@@ -5,8 +5,11 @@ This method estimates the reliability/consistency of each individual's
 responses using split-half or bootstrap approaches.
 """
 
+from operator import index
+
 import numpy as np
 
+from ier._correlation import selected_row_correlations
 from ier._row_statistics import row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -29,9 +32,10 @@ def individual_reliability(
     - random_seed: Optional seed for an isolated reproducible random stream.
 
     Returns:
-    - A numpy array of reliability estimates for each individual.
-      Values range from -1 to 1, with higher values indicating more
-      consistent responding.
+    - A numpy array of Spearman–Brown corrected mean split correlations.
+      Higher values indicate more consistent responding. Finite values are
+      at most 1 and can be below -1. Respondents without valid splits or with
+      a mean split correlation of -1 receive ``NaN``.
 
     Raises:
     - ValueError: If inputs are invalid or too few items
@@ -45,14 +49,17 @@ def individual_reliability(
     n_persons = x_array.shape[0]
     n_items = x_array.shape[1]
 
-    if isinstance(n_splits, bool) or not isinstance(n_splits, int) or n_splits < 1:
+    if isinstance(n_splits, (bool, np.bool_)):
+        raise ValueError("n_splits must be a positive integer")
+    try:
+        n_splits = index(n_splits)
+    except TypeError as error:
+        raise ValueError("n_splits must be a positive integer") from error
+    if n_splits < 1:
         raise ValueError("n_splits must be a positive integer")
 
     random_state = np.random.RandomState(random_seed) if random_seed is not None else None
     half = n_items // 2
-    has_missing = any(
-        np.isnan(x_array[start:stop]).any() for start, stop in row_slices(n_persons, n_items)
-    )
     splits: list[tuple[np.ndarray, np.ndarray]] = []
 
     for _ in range(n_splits):
@@ -65,14 +72,41 @@ def individual_reliability(
 
     correlation_sum = np.zeros(n_persons)
     valid_split_counts = np.zeros(n_persons, dtype=np.intp)
-    for start, stop in row_slices(n_persons, half):
+    # Account for both selected halves and the shared correlation workspaces.
+    for start, stop in row_slices(n_persons, max(2 * half, 16)):
         block = x_array[start:stop]
+        missing = np.isnan(block)
+        has_missing = bool(missing.any())
+        if has_missing:
+            first = np.argmax(~missing, axis=1)
+            anchors = block[np.arange(len(block)), first, None]
+            constant = np.all((block == anchors) | missing, axis=1)
+        else:
+            constant = np.all(block == block[:, :1], axis=1)
+        positions: slice | np.ndarray = slice(start, stop)
+        if np.any(constant):
+            active = np.flatnonzero(~constant)
+            if not len(active):
+                continue
+            block = block[active]
+            has_missing = bool(missing[active].any())
+            positions = start + active
+        del missing
+        block_sum = correlation_sum[positions]
+        block_counts = valid_split_counts[positions]
         for first_half, second_half in splits:
-            half1 = block[:, first_half]
-            half2 = block[:, second_half]
-            split_corr, usable = _paired_split_correlations(half1, half2, has_missing)
-            correlation_sum[start:stop] += split_corr
-            valid_split_counts[start:stop] += usable
+            split_corr = selected_row_correlations(
+                block,
+                first_half,
+                second_half,
+                zero_variance=np.nan,
+                has_missing=has_missing,
+            )
+            usable = ~np.isnan(split_corr)
+            np.add(block_sum, split_corr, out=block_sum, where=usable)
+            block_counts += usable
+        correlation_sum[positions] = block_sum
+        valid_split_counts[positions] = block_counts
 
     reliability = np.divide(
         correlation_sum,
@@ -81,62 +115,13 @@ def individual_reliability(
         where=valid_split_counts > 0,
     )
 
-    with np.errstate(divide="ignore", invalid="ignore"):
-        result: np.ndarray = (2 * reliability) / (1 + reliability)
-
-    return result
-
-
-def _paired_split_correlations(
-    half1: np.ndarray,
-    half2: np.ndarray,
-    has_missing: bool,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Return valid row correlations for one paired random split."""
-    enough_values: np.ndarray | None = None
-    if has_missing:
-        valid = ~np.isnan(half1) & ~np.isnan(half2)
-        valid_counts = valid.sum(axis=1)
-        nonempty = valid_counts > 0
-        mean1 = np.divide(
-            np.sum(half1, axis=1, where=valid),
-            valid_counts,
-            out=np.zeros(len(half1)),
-            where=nonempty,
-        )[:, None]
-        mean2 = np.divide(
-            np.sum(half2, axis=1, where=valid),
-            valid_counts,
-            out=np.zeros(len(half2)),
-            where=nonempty,
-        )[:, None]
-        centered1 = np.where(valid, half1 - mean1, 0.0)
-        centered2 = np.where(valid, half2 - mean2, 0.0)
-        enough_values = valid_counts >= 2
-    elif np.issubdtype(half1.dtype, np.floating):
-        half1 -= np.mean(half1, axis=1, keepdims=True)
-        half2 -= np.mean(half2, axis=1, keepdims=True)
-        centered1 = half1
-        centered2 = half2
-    else:
-        centered1 = half1 - np.mean(half1, axis=1, keepdims=True)
-        centered2 = half2 - np.mean(half2, axis=1, keepdims=True)
-
-    covariance = np.einsum("ij,ij->i", centered1, centered2)
-    sum_squares1 = np.einsum("ij,ij->i", centered1, centered1)
-    sum_squares2 = np.einsum("ij,ij->i", centered2, centered2)
-    denominator = np.sqrt(sum_squares1 * sum_squares2)
-    usable = denominator > 0
-    if enough_values is not None:
-        usable &= enough_values
-
-    correlations = np.divide(
-        covariance,
-        denominator,
-        out=np.zeros(len(half1)),
-        where=usable,
+    result: np.ndarray = np.divide(
+        2 * reliability,
+        1 + reliability,
+        out=np.full(n_persons, np.nan),
+        where=reliability > -1,
     )
-    return correlations, usable
+    return result
 
 
 def individual_reliability_flag(
