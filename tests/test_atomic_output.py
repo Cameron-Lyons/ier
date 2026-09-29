@@ -136,7 +136,10 @@ def test_special_file_is_streamed_without_replacement(tmp_path: Path) -> None:
     before = Path(os.devnull).stat()
     _write_output("discard this output", link)
     assert link.is_symlink()
-    assert Path(os.devnull).stat() == before
+    after = Path(os.devnull).stat()
+    # Device timestamps can advance on writes, including on macOS.
+    assert os.path.samestat(before, after)
+    assert after.st_mode == before.st_mode
     assert list(tmp_path.iterdir()) == [link]
 
 
