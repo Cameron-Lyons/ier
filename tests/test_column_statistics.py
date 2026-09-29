@@ -16,7 +16,11 @@ from ier.person_total import person_total
 @pytest.mark.parametrize("layout", ["C", "F", "strided"])
 def test_column_means_match_numpy(ignore_nan: bool, dtype: type, layout: str) -> None:
     rng = np.random.default_rng(723)
-    data = rng.normal(size=(157, 31)).astype(dtype)
+    if np.issubdtype(dtype, np.integer):
+        lower = 0 if np.issubdtype(dtype, np.unsignedinteger) else -8
+        data = rng.integers(lower, 8, size=(157, 31), dtype=dtype)
+    else:
+        data = rng.normal(size=(157, 31)).astype(dtype)
     if np.issubdtype(dtype, np.floating):
         data[rng.random(data.shape) < 0.2] = np.nan
     data = data[::-2, ::2] if layout == "strided" else np.array(data, order=layout)
