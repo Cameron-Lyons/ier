@@ -12,6 +12,7 @@ For a comprehensive methods review, see
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
 - Validated, pickle-free score and response-time archive persistence
+- Atomic result-file replacement across text, CSV, JSON, and NPZ output
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
 - Opt-in fixed or sample-percentile composite flags in every CLI output format
@@ -256,6 +257,11 @@ output path for standard output. Files ending in `.gz`, `.bz2`, or `.xz` are rea
 and written transparently using the Python standard library. CSV rows and JSON
 respondent arrays are written in bounded chunks, so output allocation stays
 bounded for plain, compressed, and standard-output destinations.
+
+Regular output files are replaced atomically only after serialization and
+compression finish. Handled write failures preserve previous results and remove
+staged output. Existing file permission bits and symbolic links are retained;
+standard output, pipes, and device destinations continue streaming directly.
 
 When a requested screen or composite index soft-fails, every CLI format emits a
 concise warning on standard error. Text output also lists the failure, JSON

@@ -17,6 +17,15 @@ arrays or pickling. For text formats, `.gz`, `.bz2`, and `.xz` suffixes select
 gzip, bzip2, and XZ compression from the Python standard library. XZ output uses
 its fast low-memory preset to limit compression workspace.
 
+Regular output files in every format are completed in a temporary directory
+beside their destination, then replaced atomically. Serialization failures,
+compression-finalization failures, and handled interruptions leave previous
+results intact and clean up staged output. Successful writes retain existing
+permission bits and update symbolic-link targets without replacing the links.
+For compressed output through a symbolic link, the requested path's suffix
+selects the compressor. Standard output, named pipes, and device paths stream
+directly and can contain partial output after a failure.
+
 Screen and composite commands report soft per-index failures on standard error
 without mixing warnings into standard output. Their JSON results retain an
 `errors` object, while NPZ archives use aligned `error_names` and
@@ -37,10 +46,7 @@ ier response-time timings.csv --format npz --output timing.npz
 NPZ output requires `--output` with a `.npz` suffix. It cannot target standard
 output or an additional compression layer; the NPZ container is already a ZIP
 archive.
-Every writer completes the archive in a temporary directory beside the target
-before an atomic replacement. Handled write failures leave existing content
-intact and clean up partial output; successful replacement retains existing
-permission bits.
+Archives use the same atomic file replacement as the text formats.
 Load every archive with pickling disabled:
 
 ```python

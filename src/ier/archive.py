@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from contextlib import suppress
 from pathlib import Path
-from stat import S_IMODE
-from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, cast
 from zipfile import ZIP_STORED, ZipFile
 
 import numpy as np
 
+from ier._atomic_output import atomic_output_path
 from ier._registry import composite_index_names, validate_index_names
 from ier._validation import validate_score_array, validate_score_vectors
 
@@ -107,20 +105,8 @@ def _write_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
     if any(value.dtype.hasobject for value in payload.values()):
         raise ValueError("NPZ archive cannot contain object arrays")
 
-    destination = path.resolve(strict=False) if path.is_symlink() else path
-    existing_mode: int | None = None
-    with suppress(FileNotFoundError):
-        existing_mode = S_IMODE(destination.stat().st_mode)
-
-    with TemporaryDirectory(
-        prefix=f".{destination.name}.",
-        dir=destination.parent,
-    ) as directory:
-        staged_path = Path(directory) / destination.name
+    with atomic_output_path(path) as staged_path:
         _stream_npz_archive(staged_path, payload)
-        if existing_mode is not None:
-            staged_path.chmod(existing_mode)
-        staged_path.replace(destination)
 
 
 def _require_member(archive: NpzFile, name: str) -> np.ndarray:
