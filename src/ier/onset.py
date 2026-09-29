@@ -16,7 +16,7 @@ from operator import index
 
 import numpy as np
 
-from ier._row_statistics import row_slices
+from ier._row_statistics import _integer_offsets, _integer_reduction_parameters, row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
 _SHAO_ZHANG_CRITICAL_VALUE = 1.358
@@ -79,6 +79,10 @@ def onset(
 
     for start, stop in row_slices(*x_array.shape):
         block = x_array[start:stop]
+        if block.dtype.kind in "iub":
+            if block.shape[1] >= required:
+                result[start:stop] = _bounded_onsets(block, window_size, check_overflow=False)
+            continue
         valid = ~np.isnan(block)
         complete = bool(np.all(valid))
         if not na_rm and not complete:
@@ -193,14 +197,32 @@ def onset_flag(
 
 def _running_inconsistency_complete(x: np.ndarray, window_size: int) -> np.ndarray:
     """Compute complete-row window deviations in bounded rolling workspaces."""
-    centered = x.astype(float, copy=True)
+    large, _ = _integer_reduction_parameters(x)
+    centered = _integer_offsets(x) if large is not None else x.astype(float, copy=True)
     centered -= centered[:, :1]
-    prefix_sum = np.cumsum(centered, axis=1)
-    window_means = prefix_sum[:, window_size - 1 :].copy()
-    if window_means.shape[1] > 1:
-        window_means[:, 1:] -= prefix_sum[:, :-window_size]
+
+    # Integer-valued responses permit exact cumulative moments when every sum,
+    # square, and product stays within float64's exact integer range. This avoids
+    # cancellation even in constant windows and eliminates the window-size loop.
+    if window_size >= 16:
+        limit = np.floor(np.sqrt(2**52 / (x.shape[1] * window_size)))
+        if (
+            np.max(centered) <= limit
+            and np.min(centered) >= -limit
+            and (x.dtype.kind in "iub" or np.all(centered == np.trunc(centered)))
+        ):
+            totals = _window_sums(centered, window_size)
+            np.square(centered, out=centered)
+            variances = _window_sums(centered, window_size)
+            variances *= window_size
+            np.square(totals, out=totals)
+            variances -= totals
+            variances /= window_size * window_size
+            np.sqrt(variances, out=variances)
+            return variances
+
+    window_means = _window_sums(centered, window_size)
     window_means /= window_size
-    del prefix_sum
 
     squared_deviations = np.zeros(window_means.shape)
     scratch = np.empty(window_means.shape)
@@ -216,6 +238,15 @@ def _running_inconsistency_complete(x: np.ndarray, window_size: int) -> np.ndarr
     squared_deviations /= window_size
     np.sqrt(squared_deviations, out=squared_deviations)
     return squared_deviations
+
+
+def _window_sums(x: np.ndarray, window_size: int) -> np.ndarray:
+    """Reduce complete rolling windows using one cumulative-sum workspace."""
+    prefix = np.cumsum(x, axis=1)
+    totals = prefix[:, window_size - 1 :].copy()
+    if totals.shape[1] > 1:
+        totals[:, 1:] -= prefix[:, :-window_size]
+    return totals
 
 
 def _shao_zhang_changepoints(

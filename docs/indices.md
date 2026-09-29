@@ -69,7 +69,9 @@ integer scalars, with `window_size >= 2` and `min_items >= window_size`. It retu
 available, or a row contains an infinite response. With `na_rm=True`, missing
 responses are removed in sequence order and returned positions are zero-based
 within that observed sequence. `na_rm=False` rejects missing responses, including
-in rows too short for detection.
+in rows too short for detection. Large signed and unsigned integer responses
+retain their adjacent differences instead of rounding to identical values
+before variability is measured.
 
 `individual_reliability(..., random_seed=...)` uses an isolated reproducible
 random stream. It does not reset or advance NumPy's process-wide random state.

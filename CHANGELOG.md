@@ -17,6 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.18] - 2026-09-29
+
+### Fixed
+
+- Carelessness-onset detection preserves differences between adjacent large
+  integer responses by shifting before conversion to floating point. Signed and
+  unsigned 64-bit response scales retain their detected positions.
+
+### Changed
+
+- Wide onset windows use cumulative moments for integer-valued responses when
+  the complete calculation fits within exact floating-point integer arithmetic.
+  This avoids a separate deviation pass for each position in the window while
+  preserving constant-window variability. Other inputs retain the stable direct
+  calculation, and integer matrices skip missing-value and infinity scans.
+- The onset benchmark covers integer dtypes and offsets, continuous responses,
+  and translation-invariance checks for sampled integer respondents.
+
 ## [1.7.17] - 2026-09-29
 
 ### Changed

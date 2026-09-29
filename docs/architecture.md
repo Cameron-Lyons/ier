@@ -367,7 +367,13 @@ to double precision. Unsigned differences preserve the full signed and unsigned
 64-bit range; missing partners are excluded when choosing that minimum. Even–odd
 scoring retains the original integer matrix until its bounded correlation work.
 Complete-response onset detection derives stable sliding-window variability
-from rolling means and bounded deviation buffers. Its changepoint test retains
+from rolling means and bounded deviation buffers. Windows of at least 16 items
+use cumulative first and second moments for integer-valued responses only when
+all sums, squares, and products remain exact in double precision. The variance
+numerator is formed before division, preserving constant-window variability
+without cancellation. Other values retain the direct deviation calculation.
+Large integer responses shift before floating-point conversion, and integer
+blocks skip missing-value and infinity scans. Its changepoint test retains
 only prefix and candidate-position workspaces instead of complete centered and
 test-statistic matrices. Missing-response blocks compress rows into equal
 retained-length groups and reuse the same bounded complete-response kernel.
