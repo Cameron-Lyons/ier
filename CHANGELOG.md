@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.7.16] - 2026-09-28
 
+### Fixed
+
+- Guttman category discovery and comparisons preserve large floating-point
+  responses across NumPy versions, preventing duplicated response matches and
+  normalized scores above one.
+
 ### Changed
 
 - Response-style and paired-item scoring share scale-bound resolution while
