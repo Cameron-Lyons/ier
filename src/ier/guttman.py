@@ -95,7 +95,8 @@ def _small_categorical_values(x: np.ndarray) -> np.ndarray | None:
             return np.array([], dtype=float)
 
         span = maximum - minimum
-        if span < _MAX_CATEGORIES:
+        # Every consecutive integer must remain distinct in the float64 grid.
+        if span < _MAX_CATEGORIES and max(abs(minimum), abs(maximum)) <= 2**53:
             for start, stop in row_slices(len(x), x.shape[1]):
                 block = x[start:stop]
                 values = block[~np.isnan(block)]
@@ -158,12 +159,14 @@ def _count_categorical_errors(
     lower_categories = np.zeros(x_sorted.shape, dtype=bool)
 
     for category in range(1, len(categories)):
-        lower_categories |= x_sorted == categories[category - 1]
+        # Array operands keep NumPy 1.x from rounding a float64 category to
+        # the response dtype before comparing float16/float32 observations.
+        lower_categories |= x_sorted == categories[category - 1 : category]
         prior_lower = np.cumsum(lower_categories, axis=1, dtype=np.int32)
         errors += np.einsum(
             "ij,ij->i",
             prior_lower,
-            x_sorted == categories[category],
+            x_sorted == categories[category : category + 1],
             dtype=np.int64,
         )
 
