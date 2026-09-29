@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Literal, TextIO
 
 import numpy as np
 
+from ier._atomic_output import atomic_output_path
 from ier._cli_composite import (
     validate_composite_components,
     validate_composite_flags,
@@ -45,11 +46,11 @@ def _write_output(text: str, path: Path | None) -> None:
 
 @contextmanager
 def _output_stream(path: Path | None) -> Iterator[TextIO]:
-    """Yield a text output stream without closing standard output."""
+    """Stage result files for atomic replacement, or stream to standard output."""
     if path is None or path == Path("-"):
         yield sys.stdout
         return
-    with _open_text_path(path, "w") as handle:
+    with atomic_output_path(path) as staged_path, _open_text_path(staged_path, "w") as handle:
         yield handle
 
 

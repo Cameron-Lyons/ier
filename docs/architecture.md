@@ -71,7 +71,10 @@ The command-line path is split by responsibility:
 - `_cli_output.py` renders text plus bounded strict JSON and CSV results.
 - `_cli_npz.py` assembles complete command result payloads and delegates the
   low-level typed, pickle-free NumPy writer.
-- `archive.py` owns atomic same-directory staging, the shared stream writer, and
+- `_atomic_output.py` stages regular result files for replacement after every
+  stream closes, sharing permission and symbolic-link handling between text and
+  archive writers. Special-file destinations retain direct streaming.
+- `archive.py` owns the shared archive stream writer and
   public validated save/load boundaries for reusable registered score vectors
   and response-time results.
 

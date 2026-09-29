@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.19] - 2026-09-29
+
+### Fixed
+
+- CLI text, CSV, and JSON result files now use atomic replacement, including
+  gzip, bzip2, and XZ output. Failed serialization, compression finalization,
+  and handled interruptions preserve previous results and remove staged files.
+
+### Changed
+
+- Text and NPZ writers share the file replacement boundary, retaining existing
+  permission bits and symbolic links. Compression follows the requested output
+  suffix, and standard output, pipes, and device paths continue streaming directly.
+
 ## [1.7.18] - 2026-09-29
 
 ### Fixed
