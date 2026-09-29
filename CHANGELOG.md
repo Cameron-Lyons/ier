@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.17] - 2026-09-29
+
+### Changed
+
+- Wide Guttman scoring with many distinct responses counts increasing pairs
+  across sorted runs in bounded respondent batches, avoiding quadratic pair
+  scans. Ties, missing-response policies, and large integer values retain their
+  exact counts; narrower matrices and small categorical scales keep their
+  existing counters.
+- The Guttman benchmark now covers continuous responses, column-contiguous
+  arrays, and entirely missing data, with direct pair-count correctness checks.
+
 ## [1.7.16] - 2026-09-28
 
 ### Fixed

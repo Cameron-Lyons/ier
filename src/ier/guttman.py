@@ -127,7 +127,11 @@ def _count_guttman_errors(
 ) -> tuple[np.ndarray, np.ndarray | None]:
     """Count increasing response pairs in bounded row batches."""
     n_people, n_items = x.shape
-    batch_rows = max(1, _GUTTMAN_BATCH_CELLS // n_items)
+    use_merges = categories is None and n_items >= 768 and x.dtype.kind in "iuf"
+    # Merge levels retain sorted values, permutations and counting workspaces.
+    # Include power-of-two padding in the budget, even just above a boundary.
+    cells_per_row = 8 * (1 << (n_items - 1).bit_length()) if use_merges else n_items
+    batch_rows = max(1, _GUTTMAN_BATCH_CELLS // cells_per_row)
     errors = np.zeros(n_people, dtype=np.int64)
     valid_counts = np.empty(n_people) if count_valid else None
 
@@ -136,7 +140,9 @@ def _count_guttman_errors(
         block = x[start:stop, difficulty_order]
         if valid_counts is not None:
             valid_counts[start:stop] = np.count_nonzero(~np.isnan(block), axis=1)
-        if categories is None:
+        if use_merges:
+            errors[start:stop] = _count_merge_errors(block)
+        elif categories is None:
             errors[start:stop] = _count_pairwise_errors(block)
         else:
             errors[start:stop] = _count_categorical_errors(block, categories)
@@ -178,6 +184,43 @@ def _count_pairwise_errors(x_sorted: np.ndarray) -> np.ndarray:
             axis=1,
         )
 
+    return errors
+
+
+def _count_merge_errors(x_sorted: np.ndarray) -> np.ndarray:
+    """Count increasing pairs across sorted runs, keeping ties and NaNs excluded.
+
+    Small runs use direct comparisons. Each subsequent level counts only pairs
+    crossing its two halves, then retains their sorted merge for the next level.
+    """
+    n_people, n_items = x_sorted.shape
+    width = 1 << (n_items - 1).bit_length()
+    integer = x_sorted.dtype.kind in "iu"
+    minimum = np.iinfo(x_sorted.dtype).min if integer else -np.inf
+    values = np.full((n_people, width), minimum, dtype=x_sorted.dtype)
+    values[:, :n_items] = x_sorted
+    # Trailing minimum values cannot create an increasing pair, so padding
+    # needs no mask and never changes the input dtype or large integer values.
+    half = min(width, 32)
+    runs = values.reshape(-1, half)
+    errors: np.ndarray = _count_pairwise_errors(runs).reshape(n_people, -1).sum(axis=1)
+    runs.sort(axis=1, kind="stable")
+    del runs
+
+    while half < width:
+        groups = values.reshape(n_people, -1, 2, half)
+        # Put the right half first so stable sorting places right-hand ties
+        # before left-hand ties. Only strictly smaller left values move a
+        # right value beyond its original position within that sorted half.
+        swapped = groups[:, :, ::-1, :].reshape(n_people, -1, 2 * half)
+        order = np.argsort(swapped, axis=-1, kind="stable")
+        values = np.take_along_axis(swapped, order, axis=-1)
+        right = order < half
+        if not integer:
+            right &= ~np.isnan(values)
+        errors += np.sum(np.arange(2 * half) - order, axis=(1, 2), where=right)
+        del groups, swapped, order, right
+        half *= 2
     return errors
 
 
