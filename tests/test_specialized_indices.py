@@ -245,6 +245,14 @@ class TestGuttman(unittest.TestCase):
                 self.assertGreaterEqual(r, 0)
                 self.assertLessEqual(r, 1)
 
+    def test_large_float_categories_do_not_duplicate_response_matches(self) -> None:
+        """Dense category discovery and comparisons preserve representable values."""
+        for dtype, offset in [(np.float16, 10_000), (np.float32, 1e8), (np.float64, 1e16)]:
+            with self.subTest(dtype=dtype):
+                data = np.array([[offset, offset], [offset + 8, offset]], dtype=dtype)
+                np.testing.assert_array_equal(guttman(data), [0.0, 1.0])
+                np.testing.assert_array_equal(guttman(data, normalize=False), [0.0, 1.0])
+
     def test_missing_values_exclude_only_unavailable_pairs(self) -> None:
         """Test missing responses leave all remaining ordered pairs available."""
         data = [[1, np.nan, 3, 2], [3, 2, np.nan, 1]]
