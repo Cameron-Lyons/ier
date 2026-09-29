@@ -163,7 +163,12 @@ integer-offset options for MAD, semantic consistency, and balanced acquiescence.
 The psychometric benchmark also accepts these options. It quantizes its generated
 responses before applying the exact integer offset; combine them with
 `--operation correlations` to isolate item discovery.
-The onset benchmark also accepts `--order F` and `--missing-rate 1`. Its checks
+The onset benchmark also accepts `--order F` and `--missing-rate 1`. Compare
+larger windows with `--items 200 --window-size 50 --min-items 50`, and use
+`--structure continuous` to exercise noncategorical responses. Integer runs use
+`--dtype int64` or `--dtype uint64`, optionally with `--integer-offset`, and
+require complete categorical data. Sampled integer scores are checked against
+the original categories before applying that offset. Its checks
 verify that detected positions are integer offsets within sufficiently long
 observed response sequences; absent detections remain valid benchmark outcomes.
 The response-time benchmark supports `--operation median` and `--order F`.

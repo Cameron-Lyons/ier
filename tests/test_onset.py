@@ -14,7 +14,11 @@ def _decimal_onset(row: np.ndarray, window: int) -> float:
     """Evaluate the established statistic using high-precision scalar arithmetic."""
     with localcontext() as context:
         context.prec = 800
-        values = [Decimal.from_float(float(value)) for value in row if not np.isnan(value)]
+        values = [
+            Decimal(int(value)) if row.dtype.kind in "iu" else Decimal.from_float(float(value))
+            for value in row
+            if not np.isnan(value)
+        ]
         series = []
         for start in range(len(values) - window + 1):
             subset = values[start : start + window]
@@ -32,6 +36,88 @@ def _decimal_onset(row: np.ndarray, window: int) -> float:
         ]
         best = max(range(len(statistics)), key=statistics.__getitem__)
         return float(trim + best + window - 1) if statistics[best] > Decimal("1.358") else np.nan
+
+
+@pytest.mark.parametrize("window", [5, 32])
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+@pytest.mark.parametrize(
+    ("dtype", "offset"),
+    [
+        ("int64", 2**60),
+        ("int64", -(2**63)),
+        ("int64", 2**63 - 6),
+        ("uint64", 2**64 - 6),
+    ],
+)
+def test_large_integer_responses_preserve_onsets(
+    window: int, layout: str, dtype: str, offset: int
+) -> None:
+    data = np.random.default_rng(3).integers(0, 5, size=(3, 61)).astype(dtype)
+    data += offset
+    data = data[:, ::-1] if layout == "strided" else np.array(data, order=layout)
+    original = data.copy()
+    expected = [_decimal_onset(row, window) for row in data]
+    data.flags.writeable = False
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 400):
+        np.testing.assert_array_equal(onset(data, window_size=window, min_items=window), expected)
+        np.testing.assert_array_equal(
+            onset_flag(data, window_size=window, min_items=window), ~np.isnan(expected)
+        )
+    np.testing.assert_array_equal(data, original)
+
+
+@pytest.mark.parametrize("window", [16, 32, 59])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int64, np.uint64, np.bool_])
+def test_categorical_rolling_deviations_match_exact_window_moments(
+    window: int, dtype: type
+) -> None:
+    from ier.onset import _running_inconsistency_complete
+
+    data = np.random.default_rng(15).integers(0, 5, size=(4, 61)).astype(dtype)
+    data[1, :32] = 1
+    data[2] = 0
+    data[3] *= 100_000 if dtype != np.bool_ else True
+    data.flags.writeable = False
+    expected = []
+    for row in data:
+        deviations = []
+        for start in range(len(row) - window + 1):
+            values = [int(value) for value in row[start : start + window]]
+            variance = (window * sum(value * value for value in values) - sum(values) ** 2) / (
+                window * window
+            )
+            deviations.append(np.sqrt(variance))
+        expected.append(deviations)
+    np.testing.assert_array_equal(_running_inconsistency_complete(data, window), expected)
+
+
+@pytest.mark.parametrize("window", [16, 32])
+@pytest.mark.parametrize("step", [1, 7])
+def test_repeated_window_variability_has_no_onset(window: int, step: int) -> None:
+    data = np.tile(np.arange(window) * step, (3, 4)).astype(float)
+    assert np.isnan(onset(data, window_size=window, min_items=window)).all()
+
+
+@pytest.mark.parametrize("missing", [False, True])
+@pytest.mark.parametrize("structure", ["categorical", "continuous", "large", "fractional"])
+def test_wide_windows_match_high_precision_reference(missing: bool, structure: str) -> None:
+    rng = np.random.default_rng(37)
+    data = rng.integers(1, 6, size=(4, 71)).astype(float)
+    if structure == "continuous":
+        data = rng.uniform(-3.5, 7.25, size=data.shape)
+    elif structure == "large":
+        data[1] *= 2**30
+        data[2] *= 1e200
+    elif structure == "fractional":
+        data *= 0.1
+        data += 1.1
+    data[3] = data[3, 0]
+    if missing:
+        data[:, [3, 17, 26, 45]] = np.nan
+    expected = [_decimal_onset(row, 32) for row in data]
+    np.testing.assert_array_equal(onset(data, window_size=32, min_items=32), expected)
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 200):
+        np.testing.assert_array_equal(onset(data, window_size=32, min_items=32), expected)
 
 
 @pytest.mark.parametrize("exponent", [490, 700, 1023])
