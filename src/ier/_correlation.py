@@ -81,7 +81,9 @@ def _row_correlations_block(
         return _two_pair_correlations(left_values, right_values, zero_variance=zero_variance)
     n_rows = len(left_values)
     if has_missing is None:
-        has_missing = bool(np.isnan(left_values).any() or np.isnan(right_values).any())
+        # Broadcast profiles contain the same observations in every row.
+        right_sample = right_values[:1] if right_values.strides[0] == 0 else right_values
+        has_missing = bool(np.isnan(left_values).any() or np.isnan(right_sample).any())
 
     integer_sum_left = integer_sum_right = False
     if rescale:
@@ -99,6 +101,12 @@ def _row_correlations_block(
                 zero_variance=zero_variance,
                 has_missing=has_missing,
             )
+
+    original_right = right_values
+    if not has_missing and right_values.strides[0] == 0 and restore is None and rescale:
+        # A complete common profile needs only one mean, centered vector, and
+        # norm. Covariance and normalization broadcast it across respondents.
+        right_values = right_values[:1]
 
     left_dtype = (
         (np.uint64 if left_values.dtype.kind == "u" else np.int64) if integer_sum_left else float
@@ -187,11 +195,11 @@ def _row_correlations_block(
             unstable[two_pairs] = False
         if np.any(unstable):
             if restore is None:
-                original_left, original_right = left_values[unstable], right_values[unstable]
+                original_left, exceptional_right = left_values[unstable], original_right[unstable]
             else:
-                original_left, original_right = restore(unstable)
+                original_left, exceptional_right = restore(unstable)
             correlations[unstable] = _rescaled_correlations(
-                original_left, original_right, zero_variance=zero_variance
+                original_left, exceptional_right, zero_variance=zero_variance
             )
     np.clip(correlations, -1.0, 1.0, out=correlations)
     if enough_values is not None:
