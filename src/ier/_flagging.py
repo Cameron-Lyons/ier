@@ -1,8 +1,57 @@
 """Shared helpers for percentile/threshold-based flagging."""
 
+import math
+from fractions import Fraction
 from typing import Literal
 
 import numpy as np
+
+_MIN_NORMAL = np.finfo(float).tiny
+
+
+def _percentile_threshold(scores: np.ndarray, percentile: float) -> float:
+    """Select a linear sample percentile in one owned observation buffer."""
+    if scores.size == 0:
+        return 0.0
+    if percentile in (0.0, 100.0):
+        endpoint = float(
+            np.fmin.reduce(scores, axis=None)
+            if percentile == 0.0
+            else np.fmax.reduce(scores, axis=None)
+        )
+        return 0.0 if math.isnan(endpoint) else endpoint
+
+    missing = np.isnan(scores)
+    n_missing = int(np.count_nonzero(missing))
+    if n_missing == scores.size:
+        return 0.0
+    if n_missing:
+        np.logical_not(missing, out=missing)
+        observed: np.ndarray = scores[missing]
+        del missing
+    else:
+        del missing
+        observed = scores.flatten()
+    position = (observed.size - 1) * (percentile / 100.0)
+    lower_index = math.floor(position)
+    fraction = position - lower_index
+    if fraction == 0.0:
+        observed.partition(lower_index)
+        return float(observed[lower_index])
+
+    observed.partition((lower_index, lower_index + 1))
+    lower, upper = observed[lower_index : lower_index + 2]
+    if observed.dtype.kind in "iu":
+        # Preserve integer differences and round only the interpolated cutoff.
+        return float(Fraction(int(lower)) + (int(upper) - int(lower)) * Fraction(fraction))
+    left, right = float(lower), float(upper)
+    difference = right - left
+    if not math.isfinite(difference) or 0 < difference < _MIN_NORMAL:
+        # Exact scalar arithmetic repairs overflowing spans and subnormal ties.
+        return float(Fraction(left) + (Fraction(right) - Fraction(left)) * Fraction(fraction))
+    return (
+        right - difference * (1.0 - fraction) if fraction >= 0.5 else left + difference * fraction
+    )
 
 
 def validate_percentile(percentile: float) -> float:
@@ -44,9 +93,7 @@ def resolve_threshold(
     if validated_threshold is not None:
         return validated_threshold
 
-    if np.isnan(scores).all():
-        return 0.0
-    return float(np.nanpercentile(scores, validated_percentile))
+    return _percentile_threshold(scores, validated_percentile)
 
 
 def threshold_flags(
@@ -60,7 +107,21 @@ def threshold_flags(
     if inclusive is None:
         inclusive = threshold is not None
     cutoff = resolve_threshold(scores, threshold, percentile)
+    comparison_cutoff: float | np.ndarray = cutoff
+    if scores.dtype.kind in "iu":
+        # Compare integers to an exact integer boundary instead of rounding scores.
+        round_up = inclusive if direction == "high" else not inclusive
+        boundary = math.ceil(cutoff) if round_up else math.floor(cutoff)
+        limits = np.iinfo(scores.dtype)
+        if boundary < int(limits.min):
+            return np.full(scores.shape, direction == "high", dtype=bool)
+        if boundary > int(limits.max):
+            return np.full(scores.shape, direction == "low", dtype=bool)
+        comparison_cutoff = np.array([boundary], dtype=scores.dtype)
+    elif scores.dtype.kind == "f" and scores.dtype.itemsize < 8:
+        # A vector cutoff promotes float32 comparisons consistently in NumPy 1/2.
+        comparison_cutoff = np.array([cutoff])
 
     if direction == "high":
-        return scores >= cutoff if inclusive else scores > cutoff
-    return scores <= cutoff if inclusive else scores < cutoff
+        return scores >= comparison_cutoff if inclusive else scores > comparison_cutoff
+    return scores <= comparison_cutoff if inclusive else scores < comparison_cutoff

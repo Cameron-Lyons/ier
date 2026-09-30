@@ -65,6 +65,7 @@ Optional benchmarks:
 ```bash
 uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_detection.py
+uv run python benchmarks/bench_flagging.py --structure opposite --scale 1.7976931348623157e308 --respondents 2 --missing-rate 0 --percentile 50
 uv run python benchmarks/bench_orchestration.py --structure constant
 uv run python benchmarks/bench_orchestration.py --structure near-constant --weighted
 uv run python benchmarks/bench_orchestration.py --scale 1e300
@@ -99,6 +100,11 @@ and coverage, and sampled weighted reductions after measurement. It accepts
 `--structure`, `--scale`, and `--offset` to exercise decimal constants, nearby
 scores, and extreme finite units, as well as `--missing-rate 1` for unavailable
 components. `--warmup` defaults to one untimed composite and screening call.
+
+The flagging benchmark validates fixed and percentile flags against a sorted
+Decimal reference outside measurement. It supports constant, nearly constant,
+and opposite-sign profiles through `--structure`, finite transformations through
+`--scale` and `--offset`, and entirely missing scores through `--missing-rate 1`.
 
 The Guttman benchmark accepts `--structure continuous` to exercise scoring with
 many distinct values, `--order F` for column-contiguous responses, and

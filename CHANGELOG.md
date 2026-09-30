@@ -17,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.23] - 2026-09-29
+
+### Fixed
+
+- Sample percentile thresholds retain finite linear interpolation between
+  opposite extreme scores and correctly round subnormal ties. Integer endpoint
+  differences remain exact, and float32 endpoints interpolate in double precision.
+  Fixed-cutoff equality, sample-relative tie exclusion, and missing-score policies
+  remain unchanged.
+- Threshold flags compare large integers and single-precision scores against the
+  reported cutoff without first rounding the scores or cutoff to a coarser dtype.
+
+### Changed
+
+- Percentile selection partitions one owned observation buffer instead of
+  copying through a missing-aware percentile reduction. Endpoint percentiles
+  reduce directly without copying the score vector.
+- The flagging benchmark checks flags against an independent sorted Decimal
+  reference and covers constant, nearly constant, extreme, and all-missing scores.
+
 ## [1.7.22] - 2026-09-29
 
 ### Fixed
