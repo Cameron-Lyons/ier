@@ -190,9 +190,7 @@ def _subtract_reflected(
         not remainder
         and reflection.is_integer()
         and abs(reflection) <= 2**51
-        and not np.any(right > 2**51)
-        and not np.any(right < -(2**51))
-        and np.all((right == np.rint(right)) | np.isnan(right))
+        and _integral_reflection_is_exact(right, reflection)
     ):
         # Small integral responses and reflection subtract exactly in float64.
         np.subtract(reflection, right, out=right)
@@ -231,6 +229,19 @@ def _subtract_reflected(
     error *= 8 * np.finfo(float).eps
     repair: np.ndarray = np.any((np.abs(left) <= error) & (error > 0), axis=1)
     return repair
+
+
+def _integral_reflection_is_exact(right: np.ndarray, reflection: float) -> bool:
+    """Prove ordinary integer responses compactly, retaining the wide-value fallback."""
+    minimum = np.fmin.reduce(right, axis=None)
+    maximum = np.fmax.reduce(right, axis=None)
+    if maximum > 2**51 or minimum < -(2**51):
+        return False
+    if abs(reflection) <= 2**31 and not (maximum >= 2**31 or minimum < -(2**31)):
+        # The probe is used only for equality: invalid casts never enter arithmetic.
+        with np.errstate(invalid="ignore"):
+            return bool(np.all((right == right.astype(np.int32)) | np.isnan(right)))
+    return bool(np.all((right == np.rint(right)) | np.isnan(right)))
 
 
 def _reflection_parameters(bounds: tuple[float, float]) -> tuple[float, float, Fraction | None]:
