@@ -162,6 +162,11 @@ _CASES = [
     ("pair_differences", [*_MATRIX, "--scale", "2.5e307", "--offset", "2.5e307"]),
     ("pair_differences", [*_MATRIX, "--scale", "1e-15", "--offset", "1.1", "--order", "F"]),
     ("person_total", _MATRIX),
+    ("person_total", [*_MATRIX, "--order", "F"]),
+    ("person_total", [*_MATRIX, "--missing-rate", "0.1"]),
+    ("person_total", [*_MATRIX, "--missing-rate", "1", "--order", "F"]),
+    ("person_total", [*_MATRIX, "--strict"]),
+    ("person_total", [*_MATRIX, "--missing-rate", "0.1", "--strict"]),
     ("psychsyn", _MATRIX),
     (
         "psychsyn",
