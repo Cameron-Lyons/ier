@@ -68,6 +68,8 @@ _validation / _flagging    ← shared input checks and threshold helpers
   paired observations use their relative order directly; longer vectors use
   centered reductions with separate norm divisions and rescaling for extreme
   magnitudes. Missing pairs and zero-variance policies remain distinct.
+  Complete person-total batches reuse a single centered item-mean profile and
+  its norm instead of allocating the same profile for every respondent.
 - **Reusable decisions.** `screen_scores()` reapplies direction-aware flagging,
   completeness, consensus, and summaries to retained registered score vectors.
   `composite_scores()` reuses raw composite-enabled vectors for alternative

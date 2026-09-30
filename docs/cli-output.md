@@ -17,6 +17,13 @@ arrays or pickling. For text formats, `.gz`, `.bz2`, and `.xz` suffixes select
 gzip, bzip2, and XZ compression from the Python standard library. XZ output uses
 its fast low-memory preset to limit compression workspace.
 
+Text previews honor `--top N` (default 10). Small previews select respondents
+in bounded batches instead of sorting every result. Screening ranks higher
+flag counts first, composite output ranks higher scores first, and response-time
+output follows its suspicious tail. Equal ranking values retain original input
+row order, including ties at the preview boundary. Composite and timing previews
+omit non-finite scores. Use `--top 0` for summary metadata without respondent rows.
+
 Regular output files in every format are completed in a temporary directory
 beside their destination, then replaced atomically. Serialization failures,
 compression-finalization failures, and handled interruptions leave previous
