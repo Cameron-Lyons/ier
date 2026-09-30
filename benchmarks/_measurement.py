@@ -42,9 +42,10 @@ def measure_many(
 ) -> dict[str, Measurement[T]]:
     """Measure operations in alternating order, then trace each separately.
 
-    Garbage collection and destruction of previous results happen outside the
-    timing window. Results remain available for caller-owned correctness checks.
-    Existing allocation tracing is rejected without changing its state.
+    Intermediate results are released outside the timer; the final repetition's
+    results remain available for caller-owned correctness checks. Allocation
+    samples stay alive until tracing stops. Existing allocation tracing is
+    rejected without changing its state.
     """
     if repeats < 1:
         raise ValueError("repeats must be positive")
@@ -58,20 +59,23 @@ def measure_many(
     results: dict[str, T] = {}
     for repeat in range(repeats):
         for name in labels if repeat % 2 == 0 else reversed(labels):
-            results.pop(name, None)
             gc.collect()
             started = time.perf_counter()
-            results[name] = operations[name]()
+            result = operations[name]()
             timings[name].append(time.perf_counter() - started)
+            if repeat == repeats - 1:
+                results[name] = result
+            del result
 
     measurements = {}
     for name in labels:
         gc.collect()
         tracemalloc.start()
         try:
-            operations[name]()
+            allocation_result = operations[name]()
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
+        del allocation_result
         measurements[name] = Measurement(tuple(timings[name]), peak / 1024**2, results[name])
     return measurements
