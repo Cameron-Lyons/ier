@@ -114,6 +114,12 @@ Weights are applied after direction correction and optional standardization:
 - `max` takes the maximum weighted directed score.
 
 Multiplying every weight by the same constant leaves weighted means unchanged.
+Mean reductions normalize safe common weight scales before multiplication.
+Extreme weight ratios, overflowing totals, and lost tiny products use separately
+scaled numerator and denominator reductions in bounded batches. Severe
+cancellation and subnormal rounding receive exact scalar repairs; this extra
+work can cost more for numerically degenerate samples. A mean with one computed
+component returns its directed score because its positive weight cancels.
 `composite_summary()` includes the full resolved weight mapping, including
 default weight 1 values.
 

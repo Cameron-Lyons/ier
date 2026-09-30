@@ -90,7 +90,7 @@ def _check_results(
                     if args.method == "mean"
                     else max(weighted_values)
                 )
-    np.testing.assert_allclose(composite_result[sampled], expected, rtol=1e-13, atol=1e-13)
+    np.testing.assert_allclose(composite_result[sampled], expected, rtol=1e-13, atol=0)
 
 
 def main() -> None:
@@ -106,6 +106,7 @@ def main() -> None:
     )
     parser.add_argument("--scale", type=float, default=1.0)
     parser.add_argument("--offset", type=float, default=0.0)
+    parser.add_argument("--weight-scale", type=float, default=1.0)
     parser.add_argument("--method", choices=["mean", "sum", "max"], default="mean")
     parser.add_argument("--no-standardize", action="store_false", dest="standardize")
     parser.add_argument(
@@ -127,6 +128,8 @@ def main() -> None:
         parser.error("warmup must be nonnegative")
     if not np.isfinite(args.scale) or args.scale <= 0 or not np.isfinite(args.offset):
         parser.error("scale must be positive and finite; offset must be finite")
+    if not np.isfinite(args.weight_scale) or args.weight_scale <= 0:
+        parser.error("weight-scale must be positive and finite")
     if not 0.0 <= args.missing_rate <= 1.0:
         parser.error("missing-rate must be between 0 and 1")
     if args.min_valid_indices is not None and not 1 <= args.min_valid_indices <= args.indices:
@@ -152,10 +155,17 @@ def main() -> None:
         scores[name] = values
         flags[name] = (rng.random(args.respondents) < 0.05) & ~np.isnan(values)
     weights = (
-        {name: 0.5 + index / max(args.indices - 1, 1) for index, name in enumerate(scores)}
-        if args.weighted
+        {
+            name: (0.5 + index / max(args.indices - 1, 1)) * args.weight_scale
+            for index, name in enumerate(scores)
+        }
+        if args.weighted or args.weight_scale != 1.0
         else None
     )
+    if weights is not None and any(
+        not np.isfinite(value) or value <= 0 for value in weights.values()
+    ):
+        parser.error("weight-scale must produce positive finite weights")
 
     for _ in range(args.warmup):
         _combine_scores(
@@ -197,6 +207,7 @@ def main() -> None:
         f"method={args.method} standardize={args.standardize} weighted={args.weighted} "
         f"min_valid_indices={args.min_valid_indices} structure={args.structure} "
         f"scale={args.scale} offset={args.offset} warmup={args.warmup}"
+        f" weight_scale={args.weight_scale}"
     )
     print(
         f"composite: median={composite_measurement.median_seconds:.4f}s "

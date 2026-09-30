@@ -14,11 +14,11 @@ References:
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 
+from ier._composite_reductions import combine_mean_scores, standardize_index_scores
 from ier._flagging import threshold_flags
 from ier._registry import (
     INDEX_REGISTRY,
@@ -102,38 +102,8 @@ def _validate_standardize(standardize: bool) -> bool:
 
 
 def _standardize_index_scores(scores: np.ndarray) -> np.ndarray:
-    """Standardize finite observations in stable coordinates without mutating inputs."""
-    valid_mask = ~np.isnan(scores)
-    n_valid = int(np.count_nonzero(valid_mask))
-    if n_valid <= 1:
-        return scores
-
-    complete = n_valid == len(scores)
-    observed = (
-        np.array(scores, dtype=float, copy=True)
-        if complete
-        else np.asarray(scores[valid_mask], dtype=float)
-    )
-    lower, upper = float(np.min(observed)), float(np.max(observed))
-    if lower == upper:
-        observed.fill(0.0)
-    else:
-        _, exponent = math.frexp(max(abs(lower), abs(upper)))
-        with np.errstate(under="ignore"):
-            np.ldexp(observed, -exponent, out=observed)
-        # Nearby same-sign observations can share a large common baseline.
-        # Shift it before accumulating the mean to retain their small differences.
-        if (lower > 0 and lower >= upper / 2) or (upper < 0 and upper <= lower / 2):
-            observed -= observed[0]
-        observed -= np.mean(observed)
-        deviation = math.sqrt(float(np.einsum("i,i->", observed, observed)) / n_valid)
-        observed /= deviation
-
-    if complete:
-        return observed
-    standardized = np.full(len(scores), np.nan)
-    standardized[valid_mask] = observed
-    return standardized
+    """Apply shared stable component calibration without mutating inputs."""
+    return standardize_index_scores(scores)
 
 
 def _combine_scores(
@@ -159,26 +129,15 @@ def _combine_scores(
             raise ValueError("valid_counts_out must be a respondent-length integer array")
         valid_counts_out.fill(0)
 
-    needs_separate_counts = min_valid_indices is not None and not (
-        method == "mean" and weights is None
-    )
-    tracked_counts = valid_counts_out
-    if tracked_counts is None and needs_separate_counts:
-        tracked_counts = np.zeros(n_respondents, dtype=np.int_)
-
-    if method == "max":
-        combined = np.full(n_respondents, np.nan)
-        denominators = None
-    else:
-        combined = np.zeros(n_respondents, dtype=float)
-        denominators = (
-            np.zeros(
-                n_respondents,
-                dtype=float if weights is not None else np.int_,
-            )
-            if method == "mean"
-            else None
+    if method == "mean":
+        return combine_mean_scores(
+            index_scores, standardize, weights, min_valid_indices, valid_counts_out, multipliers
         )
+
+    tracked_counts = valid_counts_out
+    if tracked_counts is None and min_valid_indices is not None:
+        tracked_counts = np.zeros(n_respondents, dtype=np.int_)
+    combined = np.full(n_respondents, np.nan) if method == "max" else np.zeros(n_respondents)
 
     for name, scores in index_scores.items():
         values = _standardize_index_scores(scores) if standardize else scores
@@ -201,25 +160,10 @@ def _combine_scores(
             continue
 
         np.add(combined, weighted_values, out=combined, where=valid_mask)
-        if denominators is not None:
-            if weights is None:
-                denominators += valid_mask
-            else:
-                np.add(denominators, weight, out=denominators, where=valid_mask)
-
-    if method == "mean":
-        assert denominators is not None
-        np.divide(combined, denominators, out=combined, where=denominators > 0)
-        combined[denominators == 0] = np.nan
 
     if min_valid_indices is not None:
-        available_counts = (
-            denominators
-            if method == "mean" and weights is None and valid_counts_out is None
-            else tracked_counts
-        )
-        assert available_counts is not None
-        combined[available_counts < min_valid_indices] = np.nan
+        assert tracked_counts is not None
+        combined[tracked_counts < min_valid_indices] = np.nan
 
     return combined
 
