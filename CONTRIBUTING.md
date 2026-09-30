@@ -65,6 +65,7 @@ Optional benchmarks:
 ```bash
 uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_detection.py
+uv run python benchmarks/bench_cli_output.py --format text --respondents 1000000 --top 10
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0.1
 uv run python benchmarks/bench_guttman.py --respondents 1000 --items 1000 --structure continuous
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
