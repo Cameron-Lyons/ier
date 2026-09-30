@@ -53,6 +53,11 @@ _validation / _flagging    ← shared input checks and threshold helpers
   repair without another complete respondent-by-index matrix. Single-component
   reductions own their output buffer, and means omit the cancelling weight.
   Unweighted mean summaries reuse coverage counts as their denominator.
+  Ordinary component calibration also returns its availability mask, using a
+  scalar complete-coverage marker to enable unmasked accumulation and scalar
+  count increments. Sum presence vectors are released once a complete component
+  supplies every respondent. Cancellation checks use boolean comparisons rather
+  than a full absolute-value float buffer.
 - **Score statistics.** Shared summaries reuse stable row means, deviations, and
   medians on observed score vectors. Screening and composite summaries reuse
   complete vectors directly. Composite standardization owns a scaled observation

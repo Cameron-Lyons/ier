@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.26] - 2026-09-30
+
+### Changed
+
+- Composite reductions reuse component calibration's availability checks.
+  Complete components use unmasked accumulation and scalar coverage increments;
+  raw maximum reductions without coverage controls omit unused availability checks.
+- Composite cancellation checks use boolean comparisons instead of allocating
+  an absolute-value float buffer. Sums retain a presence vector only while every
+  processed component has missing observations.
+- Added score, coverage, component-order, and input-ownership checks for mixed
+  complete and missing components, including unavailable component calibrations.
+
 ## [1.7.25] - 2026-09-30
 
 ### Fixed
