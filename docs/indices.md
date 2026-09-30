@@ -161,6 +161,9 @@ Pair scoring avoids overflowing reverse-score endpoint sums and intermediate
 differences for large finite responses. Semantic consistency can retain a finite
 normalized score even when the unnormalized mean difference exceeds float range.
 Large integer pairs preserve differences before floating-point conversion.
+Floating pairs preserve the rounding residual of reverse scoring, so swapping
+pair endpoints does not erase a small difference. Semantic normalization happens
+before exceptionally small means receive their final rounding.
 
 `missing_rate` is opt-in because planned skip logic and matrix preprocessing can
 create legitimate omissions. Use `IndexOptions.missing_item_indices` to restrict

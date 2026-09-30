@@ -257,6 +257,24 @@ _CASES = [
         ],
     ),
     ("pair_differences", [*_MATRIX, "--scale", "1e-15", "--offset", "1.1", "--order", "F"]),
+    (
+        "pair_differences",
+        [*_MATRIX, "--structure", "reflected-residual", "--scale", "1e16"],
+    ),
+    (
+        "pair_differences",
+        [
+            *_MATRIX,
+            "--structure",
+            "reflected-residual",
+            "--scale",
+            str(sys.float_info.max),
+            "--order",
+            "F",
+            "--missing-rate",
+            "0.5",
+        ],
+    ),
     ("person_total", _MATRIX),
     ("psychsyn", _MATRIX),
     (

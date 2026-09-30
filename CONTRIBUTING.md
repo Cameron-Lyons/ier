@@ -84,6 +84,7 @@ uv run python benchmarks/bench_response_time.py --operation median --order F
 uv run python benchmarks/bench_row_reductions.py --order F --missing-rate 0.1
 uv run python benchmarks/bench_pair_differences.py --scale 2.5e307 --offset 2.5e307
 uv run python benchmarks/bench_pair_differences.py --structure mixed-scale --scale 1.7976931348623157e308 --respondents 1000
+uv run python benchmarks/bench_pair_differences.py --structure reflected-residual --scale 1e16
 uv run python benchmarks/bench_evenodd.py --factors 1 --factor-items 80 --missing-rate 0.1
 uv run python benchmarks/bench_reliability.py --order F --missing-rate 0
 uv run python benchmarks/bench_lz.py --missing-rate 0.1
@@ -123,6 +124,9 @@ scores with exact Fraction sums and Decimal deviations outside measurement.
 `--structure mixed-scale` uses symmetric bounds and inserts extreme marker rows
 among small signed responses. It requires float64 inputs and zero offset;
 unrepresentable MAD totals retain infinity and are checked against the reference.
+`--structure reflected-residual` pairs a large scale endpoint with small
+responses, checking residuals that can disappear during reverse scoring. It
+requires float64, zero offset, and scale at least `2**53`.
 
 The flagging benchmark validates fixed and percentile flags against a sorted
 Decimal reference outside measurement. It supports constant, nearly constant,
