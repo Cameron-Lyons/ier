@@ -73,6 +73,16 @@ def _prepare_scores(
         calibration = _Calibration(0, 0.0, 0.0, 0.0)
         observed.fill(0.0)
         bound = 0.0
+    elif not math.isfinite(lower) or not math.isfinite(upper):
+        # Mixed finite/infinite observations cannot supply a finite calibration.
+        calibration = _Calibration(0, 0.0, math.nan, 1.0)
+        prepared = observed if complete else np.empty(len(scores))
+        prepared.fill(np.nan)
+        if available is None:
+            available = np.zeros(len(scores), dtype=bool)
+        else:
+            available.fill(False)
+        return prepared, calibration, 0.0, available
     else:
         _, exponent = math.frexp(max(abs(lower), abs(upper)))
         with np.errstate(under="ignore"):
@@ -137,21 +147,42 @@ class _ScoreComponent:
 def _exact_mean(components: list[_ScoreComponent], row: int) -> float:
     numerator = Fraction(0)
     denominator = Fraction(0)
+    positive_infinite = negative_infinite = False
     for component in components:
         value = component.scalar(row)
         if math.isnan(value):
             continue
+        if math.isinf(value):
+            positive_infinite |= value > 0
+            negative_infinite |= value < 0
+            continue
         weight = Fraction(component.weight)
         numerator += Fraction(value) * weight
         denominator += weight
+    if positive_infinite or negative_infinite:
+        if positive_infinite and negative_infinite:
+            return math.nan
+        return math.inf if positive_infinite else -math.inf
     return float(numerator / denominator)
 
 
-def _range_error(method: str, row: int) -> ValueError:
+def _range_error(method: str, row: int, *, infinite_score: bool = False) -> ValueError:
+    reason = (
+        "an index returned an infinite score"
+        if infinite_score
+        else "reduce weights or use method='mean'"
+    )
     return ValueError(
         f"weighted composite {method} is outside the finite float range at respondent index {row}; "
-        "reduce weights or use method='mean'"
+        f"{reason}"
     )
+
+
+def _check_infinite_result(result: np.ndarray, method: Literal["sum", "max"]) -> None:
+    # Ordinary results need only scalar extrema, without a full temporary mask.
+    if math.isinf(float(np.fmin.reduce(result))) or math.isinf(float(np.fmax.reduce(result))):
+        row = int(np.flatnonzero(np.isinf(result))[0])
+        raise _range_error(method, row, infinite_score=True)
 
 
 def _exact_reduction(
@@ -159,11 +190,18 @@ def _exact_reduction(
 ) -> float:
     if method == "mean":
         return _exact_mean(components, row)
-    terms = [
-        Fraction(value) * Fraction(component.weight)
-        for component in components
-        if not math.isnan(value := component.scalar(row))
-    ]
+    terms = []
+    for component in components:
+        value = component.scalar(row)
+        if math.isnan(value):
+            continue
+        if math.isinf(value):
+            if method == "sum" or value > 0:
+                raise _range_error(method, row, infinite_score=True)
+            continue
+        terms.append(Fraction(value) * Fraction(component.weight))
+    if method == "max" and not terms:
+        raise _range_error(method, row, infinite_score=True)
     try:
         return float(sum(terms) if method == "sum" else max(terms))
     except OverflowError as error:
@@ -295,6 +333,45 @@ def _scaled_max_block(
     return result, counts, repair
 
 
+def _reduction_block(
+    components: list[_ScoreComponent],
+    selection: slice | np.ndarray,
+    size: int,
+    method: Literal["mean", "sum", "max"],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Keep infinite inputs out of scaled arithmetic and preserve row repair order."""
+    infinite_rows = None
+    for component in components:
+        infinite = np.isinf(component.values(selection))
+        if np.any(infinite):
+            if infinite_rows is None:
+                infinite_rows = infinite
+            else:
+                infinite_rows |= infinite
+    if infinite_rows is None:
+        return (
+            _scaled_max_block(components, selection, size)
+            if method == "max"
+            else _scaled_linear_block(components, selection, size, method)
+        )
+
+    rows = np.arange(selection.start, selection.stop) if isinstance(selection, slice) else selection
+    finite_rows = ~infinite_rows
+    finite_selection: np.ndarray = rows[finite_rows]
+    result = np.full(size, np.nan)
+    counts = np.zeros(size, dtype=np.int_)
+    for component in components:
+        counts += ~np.isnan(component.values(selection))
+    repair = infinite_rows
+    if len(finite_selection):
+        result[finite_rows], counts[finite_rows], repair[finite_rows] = (
+            _scaled_max_block(components, finite_selection, len(finite_selection))
+            if method == "max"
+            else _scaled_linear_block(components, finite_selection, len(finite_selection), method)
+        )
+    return result, counts, repair
+
+
 def _repair_reductions(
     components: list[_ScoreComponent],
     result: np.ndarray,
@@ -312,11 +389,7 @@ def _repair_reductions(
             if not len(selection):
                 continue
         size = stop - start if isinstance(selection, slice) else len(selection)
-        values, counts, repair = (
-            _scaled_max_block(components, selection, size)
-            if method == "max"
-            else _scaled_linear_block(components, selection, size, method)
-        )
+        values, counts, repair = _reduction_block(components, selection, size, method)
         if min_valid_indices is not None:
             eligible = counts >= min_valid_indices
             repair &= eligible
@@ -342,13 +415,18 @@ def combine_mean_scores(
     """Retain the fast ordinary mean and repair unstable reductions in bounded blocks."""
     if len(scores) == 1:
         name, original = next(iter(scores.items()))
-        values = standardize_index_scores(original) if standardize else original
+        if standardize:
+            values, _, _, available = _prepare_scores(original)
+        else:
+            values, available = original, None
         result = values if values is not original else np.array(values, dtype=float, copy=True)
         multiplier = multipliers.get(name, 1.0) if multipliers is not None else 1.0
         if multiplier != 1.0:
             result *= multiplier
         if valid_counts_out is not None:
-            valid_counts_out[:] = ~np.isnan(original)
+            valid_counts_out[:] = (
+                (1 if available is None else available) if standardize else ~np.isnan(values)
+            )
         if min_valid_indices is not None and min_valid_indices > 1:
             result.fill(np.nan)
         return result
@@ -441,11 +519,18 @@ def _single_weighted_score(
     multipliers: Mapping[str, float] | None,
 ) -> np.ndarray:
     name, original = next(iter(scores.items()))
+    if min_valid_indices is not None and min_valid_indices > 1 and valid_counts_out is None:
+        return np.full(len(original), np.nan)
+    if standardize:
+        values, _, bound, available = _prepare_scores(original)
+    else:
+        values, bound, available = original, math.inf, None
     if valid_counts_out is not None:
-        valid_counts_out[:] = ~np.isnan(original)
+        valid_counts_out[:] = (
+            (1 if available is None else available) if standardize else ~np.isnan(values)
+        )
     if min_valid_indices is not None and min_valid_indices > 1:
         return np.full(len(original), np.nan)
-    values = standardize_index_scores(original) if standardize else original
     result = values if values is not original else np.array(values, dtype=float, copy=True)
     weight = weights.get(name, 1.0) if weights is not None else 1.0
     multiplier = multipliers.get(name, 1.0) if multipliers is not None else 1.0
@@ -455,7 +540,11 @@ def _single_weighted_score(
                 result *= weight * multiplier
         except FloatingPointError as error:
             row = int(np.flatnonzero(np.isinf(result))[0])
-            raise _range_error(method, row) from error
+            raise _range_error(
+                method, row, infinite_score=math.isinf(float(original[row]))
+            ) from error
+    if not math.isfinite(bound):
+        _check_infinite_result(result, method)
     if method == "sum" and min_valid_indices is None:
         result[np.isnan(result)] = 0.0
     return result
@@ -575,4 +664,5 @@ def combine_sum_max_scores(
     if min_valid_indices is not None:
         assert counts is not None
         result[counts < min_valid_indices] = np.nan
+    _check_infinite_result(result, method)
     return result

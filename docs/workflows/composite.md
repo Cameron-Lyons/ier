@@ -131,6 +131,16 @@ discarded safely. These repairs preserve finite final results. If a final sum
 or maximum exceeds the finite float range, the helpers raise `ValueError` with
 the respondent's zero-based index; reduce weights or choose `method="mean"`.
 Respondents below `min_valid_indices` receive `NaN` without a range error.
+The same range errors apply when a computed index has already returned an
+infinite score. Weighting cannot recover its original magnitude. A negative
+infinite candidate can still be discarded by `max` when another component
+provides a finite winner. Raw means retain infinite contributions, with
+opposite infinities producing `NaN`.
+
+A component with mixed finite and infinite observations cannot be standardized;
+its calibrated scores remain unavailable without arithmetic warnings. Coverage
+counts reflect this for both single and multiple components. The existing
+single-observation raw fallback and constant-component behavior still apply.
 
 ## Reusing component scores
 
