@@ -21,6 +21,7 @@ from ier._registry import (
     validate_min_valid_indices,
     validate_worker_count,
 )
+from ier._summary import observed_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input, validate_score_vectors
 from ier.types import IndexThresholdSourceMap, ScreenIndexSummary, ScreenResult
 
@@ -111,32 +112,21 @@ def _reduce_screen_results(
         flag_counts += flag_arr
         valid_mask = ~np.isnan(score_arr)
         valid_index_counts += valid_mask
-        valid = score_arr[valid_mask]
-        n_valid = len(valid)
+        n_valid = int(np.count_nonzero(valid_mask))
+        valid = score_arr if n_valid == n_respondents else score_arr[valid_mask]
         n_flagged = int(np.count_nonzero(flag_arr))
         flag_rate = n_flagged / n_valid if n_valid > 0 else float("nan")
-        if n_valid > 0:
-            summary[name] = {
-                "mean": float(np.mean(valid)),
-                "std": float(np.std(valid)),
-                "min": float(np.min(valid)),
-                "max": float(np.max(valid)),
-                "n_valid": n_valid,
-                "n_unavailable": n_respondents - n_valid,
-                "n_flagged": n_flagged,
-                "flag_rate": flag_rate,
-            }
-        else:
-            summary[name] = {
-                "mean": float("nan"),
-                "std": float("nan"),
-                "min": float("nan"),
-                "max": float("nan"),
-                "n_valid": 0,
-                "n_unavailable": n_respondents,
-                "n_flagged": n_flagged,
-                "flag_rate": flag_rate,
-            }
+        stats = observed_summary_stats(valid)
+        summary[name] = {
+            "mean": stats["mean"],
+            "std": stats["std"],
+            "min": stats["min"],
+            "max": stats["max"],
+            "n_valid": n_valid,
+            "n_unavailable": n_respondents - n_valid,
+            "n_flagged": n_flagged,
+            "flag_rate": flag_rate,
+        }
 
     return flag_counts, valid_index_counts, summary
 

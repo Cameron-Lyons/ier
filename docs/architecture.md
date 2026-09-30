@@ -40,6 +40,11 @@ _validation / _flagging    ← shared input checks and threshold helpers
   use the same bounded approach. Orchestration retains its documented per-index
   result vectors but does not construct another complete respondent-by-index
   matrix for final reductions.
+- **Score statistics.** Shared summaries reuse stable row means, deviations, and
+  medians on observed score vectors. Screening and composite summaries reuse
+  complete vectors directly. Composite standardization owns a scaled observation
+  buffer, shifting nearby values before centering to preserve small differences
+  from a common baseline and leaving caller-owned arrays untouched.
 - **Paired-item validation.** Balanced acquiescence and MAD share one ordered-pair
   boundary for integer conversion, matrix bounds, and equal cardinality. Their
   bounded numeric kernels therefore receive exact pairs and never discard a

@@ -91,6 +91,13 @@ Python or pass `ier composite --no-standardize` when original score units are
 required. Raw-score combinations can be dominated by wider-ranging components,
 so report the setting and justify any weights.
 
+Standardization uses scaled, centered observations so finite large, tiny, and
+nearly constant components retain their differences. A constant component with
+at least two available observations contributes zero. Missing observations stay
+unavailable; components with only one available observation retain the existing
+raw-score fallback. Summary statistics use the same stable reductions as the
+individual scoring helpers.
+
 ## Index weights
 
 All composite helpers accept a partial `weights` mapping. Values must be

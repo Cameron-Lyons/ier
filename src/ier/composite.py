@@ -14,6 +14,7 @@ References:
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
@@ -31,6 +32,7 @@ from ier._registry import (
     validate_worker_count,
 )
 from ier._statistics import logistic_transform
+from ier._summary import observed_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input, validate_score_vectors
 
 if TYPE_CHECKING:
@@ -100,18 +102,37 @@ def _validate_standardize(standardize: bool) -> bool:
 
 
 def _standardize_index_scores(scores: np.ndarray) -> np.ndarray:
-    """Return z-scores while retaining established sparse and constant behavior."""
+    """Standardize finite observations in stable coordinates without mutating inputs."""
     valid_mask = ~np.isnan(scores)
-    if np.sum(valid_mask) <= 1:
+    n_valid = int(np.count_nonzero(valid_mask))
+    if n_valid <= 1:
         return scores
 
-    mean_val = float(np.nanmean(scores))
-    std_val = float(np.nanstd(scores))
-    if std_val > 0:
-        return (scores - mean_val) / std_val
+    complete = n_valid == len(scores)
+    observed = (
+        np.array(scores, dtype=float, copy=True)
+        if complete
+        else np.asarray(scores[valid_mask], dtype=float)
+    )
+    lower, upper = float(np.min(observed)), float(np.max(observed))
+    if lower == upper:
+        observed.fill(0.0)
+    else:
+        _, exponent = math.frexp(max(abs(lower), abs(upper)))
+        with np.errstate(under="ignore"):
+            np.ldexp(observed, -exponent, out=observed)
+        # Nearby same-sign observations can share a large common baseline.
+        # Shift it before accumulating the mean to retain their small differences.
+        if (lower > 0 and lower >= upper / 2) or (upper < 0 and upper <= lower / 2):
+            observed -= observed[0]
+        observed -= np.mean(observed)
+        deviation = math.sqrt(float(np.einsum("i,i->", observed, observed)) / n_valid)
+        observed /= deviation
 
-    standardized = np.zeros_like(scores)
-    standardized[np.isnan(scores)] = np.nan
+    if complete:
+        return observed
+    standardized = np.full(len(scores), np.nan)
+    standardized[valid_mask] = observed
     return standardized
 
 
@@ -471,7 +492,12 @@ def composite_summary(
         multipliers=multipliers,
     )
 
-    valid_composite = combined_scores[~np.isnan(combined_scores)]
+    available = ~np.isnan(combined_scores)
+    n_valid = int(np.count_nonzero(available))
+    valid_composite = (
+        combined_scores if n_valid == len(combined_scores) else combined_scores[available]
+    )
+    stats = observed_summary_stats(valid_composite)
 
     return {
         "composite": combined_scores,
@@ -483,12 +509,12 @@ def composite_summary(
         "weights": resolved_weights,
         "min_valid_indices": min_valid_indices,
         "valid_index_counts": valid_index_counts,
-        "mean": float(np.nanmean(combined_scores)) if len(valid_composite) > 0 else float("nan"),
-        "std": float(np.nanstd(combined_scores)) if len(valid_composite) > 0 else float("nan"),
-        "min": float(np.nanmin(combined_scores)) if len(valid_composite) > 0 else float("nan"),
-        "max": float(np.nanmax(combined_scores)) if len(valid_composite) > 0 else float("nan"),
+        "mean": stats["mean"],
+        "std": stats["std"],
+        "min": stats["min"],
+        "max": stats["max"],
         "n_total": len(combined_scores),
-        "n_valid": int(np.sum(~np.isnan(combined_scores))),
+        "n_valid": n_valid,
     }
 
 

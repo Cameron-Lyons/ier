@@ -65,6 +65,9 @@ Optional benchmarks:
 ```bash
 uv run python benchmarks/bench_screen.py
 uv run python benchmarks/bench_detection.py
+uv run python benchmarks/bench_orchestration.py --structure constant
+uv run python benchmarks/bench_orchestration.py --structure near-constant --weighted
+uv run python benchmarks/bench_orchestration.py --scale 1e300
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0.1
 uv run python benchmarks/bench_guttman.py --respondents 1000 --items 1000 --structure continuous
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
@@ -90,6 +93,12 @@ and disposal of previous results stay outside the timing window. Callers retain
 the last timed result for correctness checks. Paired measurements alternate
 operation order. Allocation tracing is stopped even when a measured call fails;
 already-active tracing is rejected to avoid reporting distorted timings.
+
+The orchestration benchmark checks component calibration, screening summaries
+and coverage, and sampled weighted reductions after measurement. It accepts
+`--structure`, `--scale`, and `--offset` to exercise decimal constants, nearby
+scores, and extreme finite units, as well as `--missing-rate 1` for unavailable
+components. `--warmup` defaults to one untimed composite and screening call.
 
 The Guttman benchmark accepts `--structure continuous` to exercise scoring with
 many distinct values, `--order F` for column-contiguous responses, and
