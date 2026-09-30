@@ -69,6 +69,8 @@ uv run python benchmarks/bench_flagging.py --structure opposite --scale 1.797693
 uv run python benchmarks/bench_orchestration.py --structure constant
 uv run python benchmarks/bench_orchestration.py --structure near-constant --weighted
 uv run python benchmarks/bench_orchestration.py --scale 1e300
+
+uv run python benchmarks/bench_cli_output.py --format text --respondents 1000000 --top 10
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0.1
 uv run python benchmarks/bench_guttman.py --respondents 1000 --items 1000 --structure continuous
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
@@ -136,6 +138,9 @@ inputs, `--categories 5` for polytomous responses instead of binary data, and
 Use `--operation discrimination` to isolate 2PL item-discrimination estimation;
 that measurement excludes binary-response preparation. The default `lz`
 operation includes preprocessing, calibration, and respondent scoring.
+The person-total benchmark supports `--order F`, `--missing-rate 1`, and
+`--strict` for missing propagation. Its correctness checks compare sampled
+respondents with direct paired correlations against the sample item means.
 For Mahalanobis scoring, use `--na-rm` to measure complete-case handling on
 complete data, `--missing-row-rate`
 to mark a fraction of rows as incomplete, and `--order F` to compare layouts.
