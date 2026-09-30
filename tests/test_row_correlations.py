@@ -237,6 +237,57 @@ def test_broadcast_profiles_and_empty_respondents_are_supported() -> None:
     assert row_correlations(np.empty((0, 3)), np.empty((0, 3))).shape == (0,)
 
 
+@pytest.mark.parametrize("zero_variance", [0.0, np.nan])
+@pytest.mark.parametrize("missing", [False, True])
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+@pytest.mark.parametrize(
+    "profile",
+    [
+        np.array([1, 4, 2, 5, 3], dtype=np.float32),
+        np.array([1, 4, 2, 5, 3]) + 2**60,
+        np.array([1, 4, 2, 5, 3], dtype=float) * 1e300,
+        np.array([1, 4, 2, 5, 3], dtype=float) * 1e-300,
+        1.1 + np.array([1, 4, 2, 5, 3]) * np.spacing(1.1),
+        np.full(5, 1.1),
+        np.array([1, np.inf, 2, 5, 3]),
+        np.array([1, np.nan, 2, 5, 3]),
+        np.full(5, np.nan),
+    ],
+)
+def test_broadcast_profile_correlations_match_decimal(
+    profile: np.ndarray, layout: str, missing: bool, zero_variance: float
+) -> None:
+    data = np.array(
+        [
+            [1, 2, 3, 4, 5],
+            [1, 5, 2, 4, 3],
+            [1.1] * 5,
+            [5, 4, 3, 2, 1],
+            [1e300, 2e300, 3e300, 4e300, 5e300],
+            [1e-300, 2e-300, 3e-300, 4e-300, 5e-300],
+            1.1 + np.arange(5) * np.spacing(1.1),
+        ],
+        dtype=float,
+    )
+    if missing:
+        data[0, 1] = np.nan
+        data[1, 2:] = np.nan
+        data[2] = np.nan
+    if layout == "strided":
+        data, profile = data[::-1, ::-1], profile[::-1]
+    else:
+        data = np.array(data, order=layout)
+    original = data.copy()
+    data.flags.writeable = False
+    reference = np.broadcast_to(profile, data.shape)
+    expected = [_decimal_correlation(row, profile, zero_variance) for row in data]
+    for budget in (10, 1000):
+        with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", budget):
+            actual = row_correlations(data, reference, zero_variance=zero_variance)
+        np.testing.assert_allclose(actual, expected, rtol=1e-14, atol=1e-15)
+    np.testing.assert_array_equal(data, original)
+
+
 @pytest.mark.parametrize("offsets", [(1.1, 1.1), (1e100, 1e-100), (-1e100, 1e308), (1e-100, -1.1)])
 @pytest.mark.parametrize("layout", ["C", "F", "strided"])
 @pytest.mark.parametrize("zero_variance", [0.0, np.nan])
