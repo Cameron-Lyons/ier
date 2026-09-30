@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 
 _JSON_ARRAY_CHUNK_SIZE = 4096
+_TEXT_RANK_BATCH_SIZE = 16_384
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,66 @@ def _respondent_label_values(
     if len(respondent_ids) != n_respondents:
         raise ValueError("respondent ID count must match result length")
     return respondent_ids
+
+
+def _ranked_rows(
+    scores: np.ndarray,
+    top: int,
+    direction: Literal["high", "low"] = "high",
+) -> np.ndarray:
+    """Select finite scores by rank, resolving ties in original respondent order.
+
+    Small previews retain only the requested rows plus one bounded input batch.
+    Large previews sort directly, since their output already scales with input.
+    """
+    limit = min(max(top, 0), len(scores))
+    if not limit:
+        return np.empty(0, dtype=np.intp)
+    if limit * 8 >= len(scores):
+        candidates = np.flatnonzero(np.isfinite(scores))
+    else:
+        candidates = np.empty(0, dtype=np.intp)
+        cutoff: np.ndarray | None = None
+        for start in range(0, len(scores), _TEXT_RANK_BATCH_SIZE):
+            block = scores[start : start + _TEXT_RANK_BATCH_SIZE]
+            available = np.isfinite(block)
+            if cutoff is not None:
+                # Later rows tied with a full preview cannot outrank its earlier
+                # respondents. Retain only rows that improve the current cutoff.
+                available &= block > cutoff if direction == "high" else block < cutoff
+            rows = np.flatnonzero(available) + start
+            if not len(rows):
+                continue
+            candidates = np.concatenate((candidates, rows))
+            if len(candidates) <= limit:
+                continue
+            values = scores[candidates]
+            position = len(values) - limit if direction == "high" else limit - 1
+            # Keep the dtype in a small array for exact large-integer comparisons
+            # on both NumPy 1.x and 2.x, without retaining the partition buffer.
+            cutoff = np.partition(values, position)[position : position + 1].copy()
+            keep = values > cutoff if direction == "high" else values < cutoff
+            ties = np.flatnonzero(values == cutoff)
+            # Candidates stay in input order, including ties at the cutoff.
+            keep[ties[: limit - np.count_nonzero(keep)]] = True
+            candidates = candidates[keep]
+
+    values = scores[candidates]
+    order = np.argsort(values)
+    if direction == "high":
+        order = order[::-1]
+    # Only ties within the preview or at its boundary affect returned row order.
+    preview = values[order[: limit + 1]]
+    if np.any(preview[1:] == preview[:-1]):
+        if direction == "high":
+            # Reversing a stable sort's input and result preserves input-order
+            # ties in descending ranks without negating unsigned or extreme scores.
+            order = np.argsort(values[::-1], kind="stable")[::-1][:limit]
+            result: np.ndarray = candidates[::-1][order]
+            return result
+        order = np.argsort(values, kind="stable")
+    result = candidates[order[:limit]]
+    return result
 
 
 def _emit_index_catalog_text(catalog: IndexCatalog) -> str:
@@ -250,7 +311,7 @@ def _emit_screen_text(
     valid_counts = result["valid_index_counts"]
     eligible = result["consensus_eligible"]
     labels = _respondent_label_values(result["n_respondents"], respondent_ids)
-    order = np.argsort(counts)[::-1][: max(top, 0)]
+    order = _ranked_rows(counts, top)
     label_name = "identifier" if respondent_ids is not None else "index"
     if result["min_valid_indices"] is None:
         lines.append(f"top flagged respondents ({label_name}, flag_count):")
@@ -391,8 +452,7 @@ def _emit_composite_text(
     validate_composite_components(len(scores), component_scores, valid_index_counts)
     validate_composite_flags(len(scores), flags, flag_threshold, flag_percentile)
     validate_composite_probabilities(len(scores), probabilities)
-    finite_rows = np.flatnonzero(np.isfinite(scores))
-    order = finite_rows[np.argsort(scores[finite_rows])[::-1]][: max(top, 0)]
+    order = _ranked_rows(scores, top)
     labels = _respondent_label_values(len(scores), respondent_ids)
     label_name = "identifier" if respondent_ids is not None else "index"
     lines = [
@@ -588,11 +648,7 @@ def _emit_response_time_text(
 ) -> str:
     """Render timing results as a compact human-readable summary."""
     labels = _respondent_label_values(len(scores), respondent_ids)
-    valid_indices = np.flatnonzero(np.isfinite(scores))
-    order = valid_indices[np.argsort(scores[valid_indices])]
-    if direction == "high":
-        order = order[::-1]
-    order = order[: max(top, 0)]
+    order = _ranked_rows(scores, top, direction)
     label_name = "identifier" if respondent_ids is not None else "index"
     lines = [
         f"respondents: {len(scores)}",
