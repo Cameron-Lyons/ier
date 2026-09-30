@@ -123,6 +123,15 @@ component returns its directed score because its positive weight cancels.
 `composite_summary()` includes the full resolved weight mapping, including
 default weight 1 values.
 
+Sums also normalize common weight units, then restore the weighted total.
+Overflowing intermediate products or additions, severe cancellation, and
+subnormal totals use bounded repairs. Maximum repairs compare scaled products
+before converting the winner, so an oversized negative contribution can be
+discarded safely. These repairs preserve finite final results. If a final sum
+or maximum exceeds the finite float range, the helpers raise `ValueError` with
+the respondent's zero-based index; reduce weights or choose `method="mean"`.
+Respondents below `min_valid_indices` receive `NaN` without a range error.
+
 ## Reusing component scores
 
 Weight, method, standardization, and completeness sensitivity checks do not need

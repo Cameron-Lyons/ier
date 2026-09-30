@@ -17,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.25] - 2026-09-30
+
+### Fixed
+
+- Composite sums retain representable weighted totals after intermediate
+  overflow, preserve tiny cancellation residuals, and round subnormal totals
+  after combining contributions.
+- Composite maxima discard overflowing negative contributions when another
+  component provides a finite winner.
+- Final weighted sums and maxima outside the finite float range raise a
+  contextual `ValueError`. Respondents below the requested coverage minimum
+  still receive `NaN` without a range error.
+
+### Changed
+
+- All composite reductions share component calibration and bounded numeric
+  repairs. Single-component sums and maxima reuse an owned score buffer instead
+  of allocating a separate accumulator.
+- Documented sum and maximum benchmark runs, including subnormal weighted totals.
+
 ## [1.7.24] - 2026-09-30
 
 ### Fixed

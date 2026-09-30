@@ -40,14 +40,19 @@ _validation / _flagging    ← shared input checks and threshold helpers
   use the same bounded approach. Orchestration retains its documented per-index
   result vectors but does not construct another complete respondent-by-index
   matrix for final reductions.
-- **Composite means.** Component calibration and mean reduction share
-  `_composite_reductions`. Ordinary weighted means normalize safe common weight
-  units. Instability triggers bounded respondent batches that scale numerator
-  products and available weight totals independently; exact scalar arithmetic
-  repairs severe cancellation and subnormal rounding. Calibrations retain only
-  scalar metadata between components, allowing repair without another complete
-  respondent-by-index matrix. Unweighted summaries reuse coverage counts, and a
-  single-component mean returns its directed score without weight arithmetic.
+- **Composite reductions.** Component calibration and all three reduction methods
+  share `_composite_reductions`. Ordinary weighted means and sums normalize safe
+  common weight units. Instability triggers bounded respondent batches that scale
+  numerator products and, for means, available weight totals independently.
+  Maximum repairs compare product signs, exponents, and mantissas before
+  converting the winner, allowing oversized negative contributions to be
+  discarded. Exact scalar arithmetic repairs severe cancellation and subnormal
+  rounding. Final sums and maxima outside the finite float range raise a
+  contextual error; respondents below the requested coverage minimum retain
+  `NaN`. Calibrations retain only scalar metadata between components, allowing
+  repair without another complete respondent-by-index matrix. Single-component
+  reductions own their output buffer, and means omit the cancelling weight.
+  Unweighted mean summaries reuse coverage counts as their denominator.
 - **Score statistics.** Shared summaries reuse stable row means, deviations, and
   medians on observed score vectors. Screening and composite summaries reuse
   complete vectors directly. Composite standardization owns a scaled observation
