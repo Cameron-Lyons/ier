@@ -136,6 +136,15 @@ sample-relative tail sensitivity by index. Results retain the actual cutoff,
 its fixed/percentile/presence source, and the requested tail percentile. See
 [Threshold Guidance](thresholds.md).
 
+Sample cutoffs use linear interpolation at rank `(n - 1) * percentile / 100`
+among available scores. The shared selector partitions an owned observation
+buffer without reordering retained scores. Interpolation uses double precision,
+with exact scalar repairs for overflowing spans, subnormal differences, and
+integer endpoints. Percentiles 0 and 100 use the observed minimum and maximum;
+an entirely unavailable sample retains cutoff zero and produces no flags.
+Integer score comparisons preserve exact values, and single-precision arrays
+compare against the double-precision cutoff without narrowing it.
+
 ## Missing data
 
 Most indices honor `IndexOptions.na_rm` (default `True`) and document

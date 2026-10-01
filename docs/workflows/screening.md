@@ -269,6 +269,9 @@ flagging.
 - Most indices use percentile thresholds (`percentile=95` by default).
 - High-direction indices flag above the percentile; low-direction indices flag
   below `100 - percentile`.
+- Sample cutoffs use linear interpolation among available scores, retaining
+  finite cutoffs even for extreme score units. Retained score arrays keep their
+  original order; missing scores remain unflagged.
 - Override individual tail settings with
   `percentiles={"irv": 90, "longstring": 99}`. Values use the same directional
   convention as the global setting, and unspecified indices retain the global
