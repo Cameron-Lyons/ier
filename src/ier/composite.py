@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 
-from ier._composite_reductions import combine_mean_scores, standardize_index_scores
+from ier._composite_reductions import (
+    combine_mean_scores,
+    combine_sum_max_scores,
+    standardize_index_scores,
+)
 from ier._flagging import threshold_flags
 from ier._registry import (
     INDEX_REGISTRY,
@@ -134,38 +138,9 @@ def _combine_scores(
             index_scores, standardize, weights, min_valid_indices, valid_counts_out, multipliers
         )
 
-    tracked_counts = valid_counts_out
-    if tracked_counts is None and min_valid_indices is not None:
-        tracked_counts = np.zeros(n_respondents, dtype=np.int_)
-    combined = np.full(n_respondents, np.nan) if method == "max" else np.zeros(n_respondents)
-
-    for name, scores in index_scores.items():
-        values = _standardize_index_scores(scores) if standardize else scores
-        weight = weights.get(name, 1.0) if weights is not None else 1.0
-        multiplier = multipliers.get(name, 1.0) if multipliers is not None else 1.0
-        scale = weight * multiplier
-        if scale == 1.0:
-            weighted_values = values
-        elif standardize and values is not scores:
-            np.multiply(values, scale, out=values)
-            weighted_values = values
-        else:
-            weighted_values = values * scale
-        valid_mask = ~np.isnan(weighted_values)
-        if tracked_counts is not None:
-            tracked_counts += valid_mask
-
-        if method == "max":
-            np.fmax(combined, weighted_values, out=combined)
-            continue
-
-        np.add(combined, weighted_values, out=combined, where=valid_mask)
-
-    if min_valid_indices is not None:
-        assert tracked_counts is not None
-        combined[tracked_counts < min_valid_indices] = np.nan
-
-    return combined
+    return combine_sum_max_scores(
+        index_scores, method, standardize, weights, min_valid_indices, valid_counts_out, multipliers
+    )
 
 
 def composite_scores(
@@ -199,6 +174,10 @@ def composite_scores(
 
     Returns:
     - A respondent-aligned NumPy array of composite scores.
+
+    Raises:
+    - ValueError: If a final weighted sum or maximum exceeds the finite float
+                  range. Reduce weights or choose ``method="mean"``.
 
     Example:
         >>> from ier import composite_scores, composite_summary
@@ -287,7 +266,8 @@ def composite(
       greater likelihood of careless responding.
 
     Raises:
-    - ValueError: If invalid indices are specified, or no index succeeds.
+    - ValueError: If invalid indices are specified, no index succeeds, or a final
+                  weighted sum or maximum exceeds the finite float range.
 
     Example:
         >>> from ier import IndexOptions, composite
@@ -348,7 +328,7 @@ def composite_flag(
     Configure with ``options=IndexOptions(...)``. Missing index config soft-fails
     by default; set ``strict=True`` to require every selected index to succeed.
     Optional ``weights`` follow the same validation and combination semantics as
-    ``composite()``.
+    ``composite()``, including range errors for unrepresentable sums or maxima.
     Set ``min_valid_indices`` to suppress scores based on too few available indices.
     Set ``workers`` above 1 to score independent indices concurrently.
     Explicit thresholds include scores equal to the cutoff; percentile cutoffs
@@ -406,6 +386,7 @@ def composite_summary(
     indices concurrently. The returned ``weights`` mapping contains every
     resolved selected-index weight. ``valid_index_counts`` reports the available
     component count for each respondent before applying ``min_valid_indices``.
+    Unrepresentable weighted sums or maxima raise ``ValueError``, as in ``composite()``.
     """
     workers = validate_worker_count(workers)
     standardize = _validate_standardize(standardize)
@@ -517,6 +498,7 @@ def composite_probability(
     transform. ``min_valid_indices`` applies the same completeness rule as
     ``composite()`` before transformation. Set ``return_diagnostics=True`` to
     also receive ordered per-index soft-failure messages.
+    Unrepresentable weighted sums or maxima raise ``ValueError`` before transformation.
     """
     z_scores_result = composite(
         x,
