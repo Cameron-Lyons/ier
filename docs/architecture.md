@@ -40,6 +40,14 @@ _validation / _flagging    ← shared input checks and threshold helpers
   use the same bounded approach. Orchestration retains its documented per-index
   result vectors but does not construct another complete respondent-by-index
   matrix for final reductions.
+- **Composite means.** Component calibration and mean reduction share
+  `_composite_reductions`. Ordinary weighted means normalize safe common weight
+  units. Instability triggers bounded respondent batches that scale numerator
+  products and available weight totals independently; exact scalar arithmetic
+  repairs severe cancellation and subnormal rounding. Calibrations retain only
+  scalar metadata between components, allowing repair without another complete
+  respondent-by-index matrix. Unweighted summaries reuse coverage counts, and a
+  single-component mean returns its directed score without weight arithmetic.
 - **Score statistics.** Shared summaries reuse stable row means, deviations, and
   medians on observed score vectors. Screening and composite summaries reuse
   complete vectors directly. Composite standardization owns a scaled observation

@@ -69,7 +69,8 @@ uv run python benchmarks/bench_flagging.py --structure opposite --scale 1.797693
 uv run python benchmarks/bench_orchestration.py --structure constant
 uv run python benchmarks/bench_orchestration.py --structure near-constant --weighted
 uv run python benchmarks/bench_orchestration.py --scale 1e300
-
+uv run python benchmarks/bench_orchestration.py --weight-scale 1e308
+uv run python benchmarks/bench_orchestration.py --no-standardize --scale 1e-300 --weight-scale 1e-300
 uv run python benchmarks/bench_cli_output.py --format text --respondents 1000000 --top 10
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0.1
 uv run python benchmarks/bench_guttman.py --respondents 1000 --items 1000 --structure continuous
@@ -102,6 +103,10 @@ and coverage, and sampled weighted reductions after measurement. It accepts
 `--structure`, `--scale`, and `--offset` to exercise decimal constants, nearby
 scores, and extreme finite units, as well as `--missing-rate 1` for unavailable
 components. `--warmup` defaults to one untimed composite and screening call.
+Use `--weight-scale` for a common positive weight multiplier; it enables
+nonuniform weights even without `--weighted`. Mean runs cover very large and
+tiny weight units, including sparse availability. Every resolved weight must
+remain positive and finite.
 
 The flagging benchmark validates fixed and percentile flags against a sorted
 Decimal reference outside measurement. It supports constant, nearly constant,

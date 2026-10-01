@@ -17,6 +17,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.24] - 2026-09-30
+
+### Fixed
+
+- Composite means retain finite scores with huge or tiny positive weights,
+  overflowing raw totals, subnormal weighted products, and severe cancellation.
+  Missing components still omit their weights, including respondents whose only
+  available component has a tiny weight relative to the other selected indices.
+- Single-component means omit the cancelling weight multiplication and division,
+  while preserving direction, sparse calibration, coverage, and input ownership.
+
+### Changed
+
+- Component calibration and mean reduction share an internal numeric module.
+  Safe common weight scaling keeps ordinary weighted means on the fast path;
+  unstable reductions use bounded respondent batches with separately scaled
+  numerator products and weight totals. Exceptional cancellation and subnormal
+  rounding use exact scalar arithmetic.
+- Unweighted means reuse requested coverage counts as their denominator, reducing
+  duplicate allocation in composite summaries.
+- The orchestration benchmark accepts a finite positive weight scale to validate
+  extreme weight units and sparse coverage outside measurement.
+
 ## [1.7.23] - 2026-09-29
 
 ### Fixed
