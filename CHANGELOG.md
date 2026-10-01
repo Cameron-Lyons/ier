@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Updated locked development and documentation dependencies to urllib3 2.8.0,
+  addressing HTTPS proxy TLS verification and chunked streaming vulnerabilities
+  reported by the dependency audit.
+
 ### Changed
 
 - All performance benchmarks now share timing and allocation measurement,
