@@ -17,6 +17,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.27] - 2026-09-30
+
+### Fixed
+
+- MAD and semantic-antonym overflow repairs preserve small finite differences
+  when another respondent in the same block has an overflowing pair difference.
+  Cancelled response bounds no longer force small responses into extreme units.
+- Overflowing reflections match ordered responses to ordered scale endpoints,
+  retaining small differences near a widely separated endpoint.
+- Exceptional pair means retain rounded reflection residuals and correctly
+  normalize subnormal differences, including cases where the scaled divisor
+  overflows or underflows. Exact scalar repairs precede final float rounding.
+
+### Changed
+
+- The item-pair benchmark checks measured scores against exact sums and Decimal
+  deviations. Its mixed-scale profile combines small responses with extreme
+  neighbors to exercise the overflow repairs.
+
 ## [1.7.26] - 2026-09-30
 
 ### Changed

@@ -362,8 +362,13 @@ Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
 reducer. Pair selection, optional reverse scoring, and missing-aware means stay
 within the common element budget instead of materializing complete pair matrices.
 Exceptional reverse scoring subtracts each scale endpoint separately, avoiding
-overflow and cancellation in their sum. Overflowing differences recover their
-original responses and reduce in power-of-two-scaled units. Semantic consistency
+overflow and cancellation in their sum, matching ordered responses to ordered
+endpoints when the reflection overflows. Overflowing differences recover their
+original responses and reduce in power-of-two-scaled units. A finite reflection
+sets the effective scale without retaining cancelled large endpoints; the two
+largest terms combine first to preserve a small residual. Rounded reflection
+remainders, exceptional cancellation, and subnormal or overflowing normalized
+ratios receive exact scalar repairs before final conversion. Semantic consistency
 batches row deviations alongside those pair reductions and can divide before
 restoring units, preserving finite ratios when the raw difference mean exceeds
 float range. MAD restores original units, including infinity for an

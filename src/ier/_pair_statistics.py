@@ -131,6 +131,11 @@ def paired_mean_absolute_difference(
         with np.errstate(over="raise", invalid="ignore", under="ignore"):
             try:
                 if centered_reflection and right_bounds is not None:
+                    if reflection is not None and not math.isfinite(reflection):
+                        smaller = np.minimum(left, right)
+                        np.maximum(left, right, out=right)
+                        left = smaller
+                        del smaller
                     np.subtract(left, right_bounds[0], out=left)
                     np.subtract(right, right_bounds[1], out=right)
                     np.add(left, right, out=left)
@@ -197,26 +202,117 @@ def _rescaled_pair_difference(
     """Recover overflowing differences in a common power-of-two coordinate system."""
     left = np.asarray(x[:, left_indices], dtype=float)
     right = np.asarray(x[:, right_indices], dtype=float)
+    reflection = 0.0
+    remainder = 0.0
+    if bounds is not None:
+        if all(math.isfinite(value) for value in bounds):
+            exact_reflection = Fraction(bounds[0]) + Fraction(bounds[1])
+            try:
+                reflection = float(exact_reflection)
+            except OverflowError:
+                reflection = math.inf
+            if math.isfinite(reflection):
+                remainder = float(exact_reflection - Fraction(reflection))
+        else:
+            reflection = bounds[0] + bounds[1]
     magnitudes = np.maximum(
         np.max(np.abs(left), axis=1, where=np.isfinite(left), initial=0),
         np.max(np.abs(right), axis=1, where=np.isfinite(right), initial=0),
     )
     if bounds is not None:
-        magnitudes = np.maximum(magnitudes, max(abs(bounds[0]), abs(bounds[1])))
+        bound = (
+            abs(reflection) if math.isfinite(reflection) else max(abs(bounds[0]), abs(bounds[1]))
+        )
+        magnitudes = np.maximum(magnitudes, bound)
     _, exponents = np.frexp(magnitudes)
     with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
         np.ldexp(left, -exponents[:, None], out=left)
         np.ldexp(right, -exponents[:, None], out=right)
         if bounds is None:
             left -= right
+        elif reflection == 0:
+            left += right
+        elif math.isfinite(reflection):
+            scaled_reflection = np.ldexp(reflection, -exponents)[:, None]
+            # Sum the two largest terms first so cancellation preserves the small term.
+            left_magnitudes, right_magnitudes = np.abs(left), np.abs(right)
+            sum_first = np.abs(scaled_reflection) <= np.minimum(left_magnitudes, right_magnitudes)
+            right_larger = right_magnitudes > left_magnitudes
+            larger = np.where(right_larger, right, left)
+            smaller = np.where(right_larger, left, right)
+            np.subtract(larger, scaled_reflection, out=larger, where=~sum_first)
+            larger += smaller
+            np.subtract(larger, scaled_reflection, out=larger, where=sum_first)
+            if remainder:
+                larger -= np.ldexp(remainder, -exponents)[:, None]
+            left = larger
+            del larger, smaller, left_magnitudes, right_magnitudes, sum_first, right_larger
         else:
+            smaller = np.minimum(left, right)
+            np.maximum(left, right, out=right)
+            left = smaller
             left -= np.ldexp(bounds[0], -exponents)[:, None]
             right -= np.ldexp(bounds[1], -exponents)[:, None]
             left += right
+        del right
         np.abs(left, out=left)
         means = row_mean(left, ignore_nan=ignore_nan)
+        repair = np.isfinite(means) & (means <= 8 * np.finfo(float).eps)
+        nonzero = np.isfinite(means) & (means > 0)
         if normalizers is None:
             np.ldexp(means, exponents, out=means)
         else:
             means /= np.ldexp(normalizers, -exponents)
+        repair |= nonzero & ((np.abs(means) < np.finfo(float).tiny) | ~np.isfinite(means))
+        if normalizers is not None:
+            repair &= np.isfinite(normalizers) & (normalizers != 0)
+        for row in np.flatnonzero(repair):
+            means[row] = _exact_pair_mean(
+                x[row],
+                left_indices,
+                right_indices,
+                bounds,
+                ignore_nan,
+                None if normalizers is None else float(normalizers[row]),
+            )
     return means
+
+
+def _exact_pair_mean(
+    row: np.ndarray,
+    left_indices: np.ndarray,
+    right_indices: np.ndarray,
+    bounds: tuple[float, float] | None,
+    ignore_nan: bool,
+    normalizer: float | None,
+) -> float:
+    """Repair a cancellation or subnormal mean before its final float rounding."""
+    reflection = Fraction(0) if bounds is None else Fraction(bounds[0]) + Fraction(bounds[1])
+    total = Fraction(0)
+    count = 0
+    for left_index, right_index in zip(left_indices, right_indices, strict=True):
+        left, right = float(row[left_index]), float(row[right_index])
+        if math.isnan(left) or math.isnan(right):
+            if ignore_nan:
+                continue
+            return math.nan
+        if not math.isfinite(left) or not math.isfinite(right):
+            return math.nan
+        difference = (
+            Fraction(left) - Fraction(right)
+            if bounds is None
+            else Fraction(left) + Fraction(right) - reflection
+        )
+        total += abs(difference)
+        count += 1
+    if not count:
+        return math.nan
+    result = total / count
+    if normalizer is not None:
+        if normalizer == 0 or not math.isfinite(normalizer):
+            return math.nan
+        result /= Fraction(normalizer)
+    try:
+        return float(result)
+    except OverflowError:
+        return math.inf if result >= 0 else -math.inf
