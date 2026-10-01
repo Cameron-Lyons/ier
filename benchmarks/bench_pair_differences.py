@@ -103,7 +103,9 @@ def main() -> None:
     parser.add_argument("--scale", type=float, default=1.0)
     parser.add_argument("--offset", type=float, default=0.0)
     parser.add_argument(
-        "--structure", choices=("categorical", "mixed-scale"), default="categorical"
+        "--structure",
+        choices=("categorical", "mixed-scale", "reflected-residual"),
+        default="categorical",
     )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
@@ -118,13 +120,18 @@ def main() -> None:
         parser.error("missing-rate must be between 0 and 1")
     if not np.isfinite(args.scale) or args.scale <= 0 or not np.isfinite(args.offset):
         parser.error("scale must be positive and finite, and offset must be finite")
-    scale_min = -args.scale if args.structure == "mixed-scale" else args.offset + args.scale
-    scale_max = args.scale if args.structure == "mixed-scale" else args.offset + 5 * args.scale
+    if args.structure == "categorical":
+        scale_min, scale_max = args.offset + args.scale, args.offset + 5 * args.scale
+    else:
+        scale_min = -args.scale if args.structure == "mixed-scale" else 0.0
+        scale_max = args.scale
     if not np.isfinite([scale_min, scale_max]).all() or scale_min >= scale_max:
         parser.error("scale and offset must produce distinct finite response bounds")
     integer_input = np.dtype(args.dtype).kind in "iu"
-    if args.structure == "mixed-scale" and (integer_input or args.offset):
-        parser.error("mixed-scale inputs require float64 and offset 0")
+    if args.structure != "categorical" and (integer_input or args.offset):
+        parser.error("non-categorical inputs require float64 and offset 0")
+    if args.structure == "reflected-residual" and args.scale < 2**53:
+        parser.error("reflected-residual inputs require scale at least 2**53")
     if integer_input:
         if args.missing_rate or args.scale != 1 or args.offset:
             parser.error("integer inputs require --missing-rate 0 and use --integer-offset")
@@ -140,11 +147,14 @@ def main() -> None:
         data = rng.integers(-5, 6, size=(args.respondents, args.items)).astype(float)
         data[0] = args.scale
         data[-1] = -args.scale
+    elif args.structure == "reflected-residual":
+        data = rng.integers(0, 6, size=(args.respondents, args.items)).astype(float)
+        data[:, : args.items // 2] = args.scale
     else:
         data = rng.integers(0, 5, size=(args.respondents, args.items)).astype(args.dtype)
     if integer_input:
         data += scale_min
-    elif args.structure != "mixed-scale":
+    elif args.structure == "categorical":
         data += 1
         with np.errstate(under="ignore"):
             data *= args.scale

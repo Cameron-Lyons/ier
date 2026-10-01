@@ -361,9 +361,11 @@ so discovery preserves small differences on large baselines.
 Predefined semantic pairs and MAD item pairs share a bounded absolute-difference
 reducer. Pair selection, optional reverse scoring, and missing-aware means stay
 within the common element budget instead of materializing complete pair matrices.
-Exceptional reverse scoring subtracts each scale endpoint separately, avoiding
-overflow and cancellation in their sum, matching ordered responses to ordered
-endpoints when the reflection overflows. Overflowing differences recover their
+Finite reverse scoring retains the reflection's rounded remainder and uses
+compensated subtraction to preserve small responses when the reflected value
+rounds. Corrections that themselves cancel receive exact row repairs.
+Overflowing reflections subtract each scale endpoint separately, matching
+ordered responses to ordered endpoints. Overflowing differences recover their
 original responses and reduce in power-of-two-scaled units. A finite reflection
 sets the effective scale without retaining cancelled large endpoints; the two
 largest terms combine first to preserve a small residual. Rounded reflection
@@ -371,8 +373,9 @@ remainders, exceptional cancellation, and subnormal or overflowing normalized
 ratios receive exact scalar repairs before final conversion. Semantic consistency
 batches row deviations alongside those pair reductions and can divide before
 restoring units, preserving finite ratios when the raw difference mean exceeds
-float range. MAD restores original units, including infinity for an
-unrepresentable mean difference.
+float range. Native subnormal means and exceptional normalized ratios also
+receive exact row repairs before final rounding. MAD restores original units,
+including infinity for an unrepresentable mean difference.
 Large integer pairs subtract before floating-point conversion; reverse scoring
 retains exact scale bounds, including fractional endpoints. Only the bounded
 exceptional path uses Python integer arithmetic, and its means are rounded after

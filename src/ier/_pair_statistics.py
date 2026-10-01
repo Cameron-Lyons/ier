@@ -78,18 +78,13 @@ def paired_mean_absolute_difference(
         raise ValueError("paired index arrays cannot be empty")
     scores = np.empty(len(x))
     reflection = None
+    remainder = 0.0
     integer_pairs = x.dtype.kind in "iu"
     exact_reflection = None
-    centered_reflection = False
     if right_bounds is not None:
-        reflection = right_bounds[0] + right_bounds[1]
-        centered_reflection = (
-            not math.isfinite(reflection)
-            or abs(reflection) * math.sqrt(np.finfo(float).eps) > right_bounds[1] - right_bounds[0]
-        )
-        integer_pairs &= all(math.isfinite(value) for value in right_bounds)
-        if integer_pairs:
-            exact_reflection = Fraction(right_bounds[0]) + Fraction(right_bounds[1])
+        finite_bounds = all(math.isfinite(value) for value in right_bounds)
+        integer_pairs &= finite_bounds
+        reflection, remainder, exact_reflection = _reflection_parameters(right_bounds)
 
     for start, stop in row_slices(len(x), n_pairs):
         divisors = None if normalizers is None else normalizers[start:stop]
@@ -128,20 +123,25 @@ def paired_mean_absolute_difference(
         left = np.asarray(left_values, dtype=float)
         right = np.asarray(right_values, dtype=float)
         del left_values, right_values
+        repair = None
         with np.errstate(over="raise", invalid="ignore", under="ignore"):
             try:
-                if centered_reflection and right_bounds is not None:
-                    if reflection is not None and not math.isfinite(reflection):
-                        smaller = np.minimum(left, right)
-                        np.maximum(left, right, out=right)
-                        left = smaller
-                        del smaller
+                if reflection is not None and not math.isfinite(reflection):
+                    assert right_bounds is not None
+                    smaller = np.minimum(left, right)
+                    np.maximum(left, right, out=right)
+                    left = smaller
+                    del smaller
                     np.subtract(left, right_bounds[0], out=left)
                     np.subtract(right, right_bounds[1], out=right)
                     np.add(left, right, out=left)
+                elif reflection is not None and reflection != 0:
+                    repair = _subtract_reflected(left, right, reflection, remainder)
+                elif reflection == 0:
+                    np.add(left, right, out=left)
+                    if remainder:
+                        np.subtract(left, remainder, out=left)
                 else:
-                    if reflection is not None:
-                        np.subtract(reflection, right, out=right)
                     np.subtract(left, right, out=left)
             except FloatingPointError:
                 scores[start:stop] = _rescaled_pair_difference(
@@ -152,12 +152,97 @@ def paired_mean_absolute_difference(
         np.abs(left, out=left)
         block_scores = row_mean(left, ignore_nan=ignore_nan)
         if divisors is not None:
+            # Normalize before rounding exceptionally small pair means.
+            subnormal = (block_scores >= 0) & (block_scores < np.finfo(float).tiny)
+            if np.any(subnormal):
+                subnormal &= np.any(left > 0, axis=1)
+                repair = subnormal if repair is None else repair | subnormal
+            nonzero = np.isfinite(block_scores) & (block_scores > 0)
             with np.errstate(over="ignore", invalid="ignore", divide="ignore", under="ignore"):
                 block_scores /= divisors
+            exceptional = nonzero & (
+                (np.abs(block_scores) < np.finfo(float).tiny) | ~np.isfinite(block_scores)
+            )
+            repair = exceptional if repair is None else repair | exceptional
+        if repair is not None:
+            if divisors is not None:
+                repair &= np.isfinite(divisors) & (divisors != 0)
+            for row in np.flatnonzero(repair):
+                block_scores[row] = _exact_pair_mean(
+                    x[start + row],
+                    left_indices,
+                    right_indices,
+                    right_bounds,
+                    ignore_nan,
+                    None if divisors is None else float(divisors[row]),
+                )
         scores[start:stop] = block_scores
         del left, right
 
     return scores
+
+
+def _subtract_reflected(
+    left: np.ndarray, right: np.ndarray, reflection: float, remainder: float
+) -> np.ndarray | None:
+    """Preserve the residual of a rounded reflection before subtracting it."""
+    if (
+        not remainder
+        and reflection.is_integer()
+        and abs(reflection) <= 2**51
+        and not np.any(right > 2**51)
+        and not np.any(right < -(2**51))
+        and np.all((right == np.rint(right)) | np.isnan(right))
+    ):
+        # Small integral responses and reflection subtract exactly in float64.
+        np.subtract(reflection, right, out=right)
+        np.subtract(left, right, out=left)
+        return None
+    reflected = reflection - right
+    magnitude = abs(reflection)
+    if not np.any(right > magnitude) and not np.any(right < -magnitude):
+        right -= reflection - reflected
+        error = right
+        correction_sign = 1
+    else:
+        right_larger = (right > magnitude) | (right < -magnitude)
+        if np.all(right_larger):
+            right += reflected
+            np.subtract(reflection, right, out=right)
+            error = right
+        else:
+            error = (reflection - reflected) - right
+            error[right_larger] = reflection - (reflected[right_larger] + right[right_larger])
+        del right_larger
+        correction_sign = -1
+    np.subtract(left, reflected, out=left)
+    del reflected
+    if not remainder and not (np.any(error > 0) or np.any(error < 0)):
+        return None
+    if correction_sign == 1:
+        left += error
+    else:
+        left -= error
+    if remainder:
+        left -= remainder
+    # Exact row repair is needed only when the correction itself cancels.
+    np.abs(error, out=error)
+    error += abs(remainder)
+    error *= 8 * np.finfo(float).eps
+    repair: np.ndarray = np.any((np.abs(left) <= error) & (error > 0), axis=1)
+    return repair
+
+
+def _reflection_parameters(bounds: tuple[float, float]) -> tuple[float, float, Fraction | None]:
+    """Split finite endpoint sums into a rounded reflection and its residual."""
+    if not all(math.isfinite(value) for value in bounds):
+        return bounds[0] + bounds[1], 0.0, None
+    exact = Fraction(bounds[0]) + Fraction(bounds[1])
+    try:
+        reflection = float(exact)
+    except OverflowError:
+        return math.inf if exact > 0 else -math.inf, 0.0, exact
+    return reflection, float(exact - Fraction(reflection)), exact
 
 
 def _integer_pair_means(
@@ -205,16 +290,7 @@ def _rescaled_pair_difference(
     reflection = 0.0
     remainder = 0.0
     if bounds is not None:
-        if all(math.isfinite(value) for value in bounds):
-            exact_reflection = Fraction(bounds[0]) + Fraction(bounds[1])
-            try:
-                reflection = float(exact_reflection)
-            except OverflowError:
-                reflection = math.inf
-            if math.isfinite(reflection):
-                remainder = float(exact_reflection - Fraction(reflection))
-        else:
-            reflection = bounds[0] + bounds[1]
+        reflection, remainder, _ = _reflection_parameters(bounds)
     magnitudes = np.maximum(
         np.max(np.abs(left), axis=1, where=np.isfinite(left), initial=0),
         np.max(np.abs(right), axis=1, where=np.isfinite(right), initial=0),

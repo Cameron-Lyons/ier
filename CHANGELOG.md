@@ -17,6 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.28] - 2026-09-30
+
+### Fixed
+
+- MAD and semantic-antonym native arithmetic preserve small residuals when
+  reverse scoring rounds a response away, including either pair order and
+  exact integer scale endpoints supplied with floating responses.
+- Semantic-synonym and antonym differences normalize subnormal means before
+  final rounding, retaining finite ratios that would otherwise become zero.
+- Native normalized differences receive exact row repairs when their final
+  ratio is subnormal or overflows.
+
+### Changed
+
+- Finite reflections share exact endpoint-sum preparation across native and
+  overflowing paired reductions.
+- Added a reflected-residual benchmark profile checked against exact sums.
+
 ## [1.7.27] - 2026-09-30
 
 ### Fixed
