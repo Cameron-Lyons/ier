@@ -263,6 +263,10 @@ compression finish. Handled write failures preserve previous results and remove
 staged output. Existing file permission bits and symbolic links are retained;
 standard output, pipes, and device destinations continue streaming directly.
 
+Text output selects a small `--top N` preview in bounded batches and preserves
+input row order when ranking values tie. Use `--top 0` to show summary metadata
+without selecting respondent rows.
+
 When a requested screen or composite index soft-fails, every CLI format emits a
 concise warning on standard error. Text output also lists the failure, JSON
 includes an `errors` object, and NPZ includes aligned `error_names` and

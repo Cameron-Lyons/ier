@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.21] - 2026-09-29
+
+### Changed
+
+- Small CLI text previews select top respondents in bounded batches instead of
+  sorting every respondent. Screening, composite, and response-time summaries
+  share the selector; summary-only previews skip rank selection entirely.
+- Equal text ranking scores consistently retain original respondent order,
+  including ties at the preview boundary. Score and flag decisions are unchanged.
+- The CLI output benchmark includes text previews, configurable preview sizes,
+  compression, and checks against a complete stable ordering.
+
 ## [1.7.20] - 2026-09-29
 
 ### Changed
