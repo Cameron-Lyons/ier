@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.20] - 2026-09-29
+
+### Changed
+
+- Complete person-total correlations reuse the common item-mean profile's
+  centering and norm within each bounded batch, reducing repeated reductions
+  and temporary allocation. Missing pairs retain their respondent-specific
+  calculations, and exceptional scales retain their stable fallback.
+- The person-total benchmark supports array layouts, strict missing propagation,
+  and entirely missing inputs, with sampled direct correlation checks.
+
 ## [1.7.19] - 2026-09-29
 
 ### Fixed
