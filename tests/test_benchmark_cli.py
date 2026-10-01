@@ -142,6 +142,51 @@ _CASES = [
         [*_MATRIX, "--dtype", "uint64", "--integer-offset", str(2**64 - 6), "--order", "F"],
     ),
     ("orchestration", ["--respondents", "64", "--indices", "3", "--repeats", "1"]),
+    (
+        "orchestration",
+        ["--respondents", "37", "--indices", "3", "--repeats", "1", "--structure", "constant"],
+    ),
+    (
+        "orchestration",
+        [
+            "--respondents",
+            "37",
+            "--indices",
+            "3",
+            "--repeats",
+            "1",
+            "--structure",
+            "near-constant",
+            "--weighted",
+        ],
+    ),
+    (
+        "orchestration",
+        ["--respondents", "64", "--indices", "3", "--repeats", "1", "--scale", "1e300"],
+    ),
+    (
+        "orchestration",
+        ["--respondents", "64", "--indices", "3", "--repeats", "1", "--scale", "1e-300"],
+    ),
+    (
+        "orchestration",
+        ["--respondents", "64", "--indices", "3", "--repeats", "1", "--missing-rate", "1"],
+    ),
+    (
+        "orchestration",
+        [
+            "--respondents",
+            "64",
+            "--indices",
+            "3",
+            "--repeats",
+            "1",
+            "--missing-rate",
+            "1",
+            "--method",
+            "sum",
+        ],
+    ),
     ("pair_differences", _MATRIX),
     ("pair_differences", [*_MATRIX, "--dtype", "int64", "--missing-rate", "0"]),
     (

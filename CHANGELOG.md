@@ -17,6 +17,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.22] - 2026-09-29
+
+### Fixed
+
+- Composite standardization keeps constant decimal components at zero, retains
+  tiny and nearly constant score differences, and avoids overflowing on finite
+  large scores. Missing scores and the existing single-observation policy remain
+  unchanged.
+- Screening, composite, and shared index summaries use stable mean, deviation,
+  and median reductions, including double-precision accumulation for float32
+  inputs and exact integer totals. Extreme finite scores retain representable
+  mean, deviation, and median values without intermediate overflow or underflow.
+
+### Changed
+
+- Composite standardization reuses an owned observation buffer. Complete
+  screening and composite summaries avoid copying their entire score vector.
+- The orchestration benchmark covers constant and nearly constant components,
+  scale and offset transformations, and all-missing scores. Its checks validate
+  calibration, coverage, and sampled weighted reductions outside measurement.
+
 ## [1.7.21] - 2026-09-29
 
 ### Changed

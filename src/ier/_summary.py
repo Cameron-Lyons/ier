@@ -4,6 +4,28 @@ from typing import Any
 
 import numpy as np
 
+from ier._row_statistics import row_mean_std, row_median
+
+
+def observed_summary_stats(values: np.ndarray, *, include_median: bool = False) -> dict[str, float]:
+    """Summarize already-selected observations with stable shared reductions."""
+    names = (
+        ("mean", "std", "min", "max", "median") if include_median else ("mean", "std", "min", "max")
+    )
+    if values.size == 0:
+        return dict.fromkeys(names, float("nan"))
+    vector = values.reshape(1, -1)
+    means, deviations = row_mean_std(vector, ignore_nan=False)
+    stats = {
+        "mean": float(means[0]),
+        "std": float(deviations[0]),
+        "min": float(np.min(values)),
+        "max": float(np.max(values)),
+    }
+    if include_median:
+        stats["median"] = float(row_median(vector, ignore_nan=False)[0])
+    return stats
+
 
 def calculate_summary_stats(
     values: np.ndarray,
@@ -22,12 +44,5 @@ def calculate_summary_stats(
     """
     available = ~np.isnan(values)
     observed = values if np.all(available) else values[available]
-    if observed.size == 0:
-        return {f"{name}{suffix}": float("nan") for name in ("mean", "std", "min", "max", "median")}
-    return {
-        f"mean{suffix}": float(np.mean(observed)),
-        f"std{suffix}": float(np.std(observed)),
-        f"min{suffix}": float(np.min(observed)),
-        f"max{suffix}": float(np.max(observed)),
-        f"median{suffix}": float(np.median(observed)),
-    }
+    stats = observed_summary_stats(observed, include_median=True)
+    return {f"{name}{suffix}": value for name, value in stats.items()}

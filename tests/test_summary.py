@@ -32,6 +32,8 @@ def test_summaries_match_numpy_and_preserve_input(dtype: type, missing: bool) ->
     data.flags.writeable = False
     original = data.copy()
     actual = calculate_summary_stats(data)
+    # Summary scalars accumulate single-precision observations in double precision.
+    reference = data.astype(float)
     for name, reduction in (
         ("mean", np.nanmean),
         ("std", np.nanstd),
@@ -39,7 +41,7 @@ def test_summaries_match_numpy_and_preserve_input(dtype: type, missing: bool) ->
         ("max", np.nanmax),
         ("median", np.nanmedian),
     ):
-        np.testing.assert_allclose(actual[name], reduction(data), rtol=1e-7)
+        np.testing.assert_allclose(actual[name], reduction(reference), rtol=1e-14)
     np.testing.assert_array_equal(data, original)
 
 
