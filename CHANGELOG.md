@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added small CLI smoke runs for every performance benchmark and documented
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
+- Benchmark comparisons discard intermediate outputs outside the timer and
+  retain only the final repetition for correctness checks, reducing allocation
+  bias from other retained results. Allocation samples stay alive until tracing
+  stops so result cleanup does not inflate the recorded peak.
 
 ## [1.7.29] - 2026-09-30
 

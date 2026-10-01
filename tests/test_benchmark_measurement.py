@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tracemalloc
+import weakref
 from unittest.mock import patch
 
 import pytest
@@ -84,6 +85,78 @@ def test_previous_result_destruction_stays_outside_the_timer() -> None:
         result = measure(Result, 3)
     assert destruction_states == [False, False, False]
     assert isinstance(result.result, Result)
+
+
+def test_comparisons_release_intermediate_outputs_and_preserve_final_timed_results() -> None:
+    live: weakref.WeakSet[Result] = weakref.WeakSet()
+    observations = []
+    calls = {"left": 0, "right": 0}
+    destruction_states = []
+    timed = False
+
+    class Result:
+        def __init__(self, name: str, call: int) -> None:
+            self.name = name
+            self.call = call
+            live.add(self)
+
+        def __del__(self) -> None:
+            destruction_states.append(timed)
+
+    def operation(name: str) -> Result:
+        observations.append((name, len(live), tracemalloc.is_tracing()))
+        calls[name] += 1
+        return Result(name, calls[name])
+
+    def clock() -> float:
+        nonlocal timed
+        timed = not timed
+        return 0.0
+
+    with (
+        patch("benchmarks._measurement.time.perf_counter", side_effect=clock),
+        patch("benchmarks._measurement.gc.collect"),
+    ):
+        measured = measure_many(
+            {"left": lambda: operation("left"), "right": lambda: operation("right")}, 3
+        )
+
+    assert observations == [
+        ("left", 0, False),
+        ("right", 0, False),
+        ("right", 0, False),
+        ("left", 0, False),
+        ("left", 0, False),
+        ("right", 1, False),
+        ("left", 2, True),
+        ("right", 2, True),
+    ]
+    assert len(live) == 2
+    assert destruction_states == [False] * 6
+    assert measured["left"].result.call == measured["right"].result.call == 3
+    assert measured["left"].result.name == "left"
+    assert measured["right"].result.name == "right"
+    assert calls == {"left": 4, "right": 4}
+
+
+def test_allocation_peak_excludes_result_cleanup() -> None:
+    destruction_tracing = []
+
+    class Result:
+        def __init__(self) -> None:
+            self.payload = bytearray(512 * 1024)
+
+        def __del__(self) -> None:
+            destruction_tracing.append(tracemalloc.is_tracing())
+            bytearray(2 * 1024 * 1024)
+
+    with patch("benchmarks._measurement.gc.collect"):
+        measured = measure(Result, 2)
+
+    assert 0.5 <= measured.peak_mib < 0.6
+    assert destruction_tracing == [False, False]
+    assert len(measured.result.payload) == 512 * 1024
+    assert not tracemalloc.is_tracing()
 
 
 def test_none_results_are_supported() -> None:

@@ -99,10 +99,14 @@ All performance benchmarks share `benchmarks/_measurement.py`. Timed repeats
 run with allocation tracing disabled; one additional call per operation measures
 peak traced allocation in MiB. The peak is allocation during that call, not total
 process memory. Input generation, imports, requested warmups, garbage collection,
-and disposal of previous results stay outside the timing window. Callers retain
-the last timed result for correctness checks. Paired measurements alternate
-operation order. Allocation tracing is stopped even when a measured call fails;
-already-active tracing is rejected to avoid reporting distorted timings.
+and disposal of intermediate results stay outside the timing window. Results
+are released after each call until the final repetition, whose outputs are kept
+for correctness checks. Paired measurements alternate operation order; use at
+least five repeats so retaining the final outputs cannot dominate the median.
+Allocation samples remain alive until their peak is recorded and tracing stops,
+keeping result cleanup out of the allocation report. Tracing stops even when a
+measured call fails; already-active tracing is rejected to avoid reporting
+distorted timings.
 
 The orchestration benchmark checks component calibration, screening summaries
 and coverage, and sampled weighted reductions after measurement. It accepts
