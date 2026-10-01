@@ -371,6 +371,12 @@ within the common element budget instead of materializing complete pair matrices
 Finite reverse scoring retains the reflection's rounded remainder and uses
 compensated subtraction to preserve small responses when the reflected value
 rounds. Corrections that themselves cancel receive exact row repairs.
+For small integral reflections, a compact int32 equality probe proves that
+floating responses permit exact native reflection subtraction. The cast only
+checks equality and never supplies arithmetic values. Fractional responses use
+compensated subtraction, while responses outside that probe's range retain the
+wider float64 integrality proof. Scalar missing-aware range reductions select
+the proof without allocating range masks or attempting casts of wide responses.
 Overflowing reflections subtract each scale endpoint separately, matching
 ordered responses to ordered endpoints. Overflowing differences recover their
 original responses and reduce in power-of-two-scaled units. A finite reflection

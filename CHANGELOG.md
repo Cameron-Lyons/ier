@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bias from other retained results. Allocation samples stay alive until tracing
   stops so result cleanup does not inflate the recorded peak.
 
+## [1.7.30] - 2026-09-30
+
+### Changed
+
+- MAD and semantic-antonym reverse scoring prove ordinary floating-point integer
+  categories with a compact equality probe, reducing temporary memory and work.
+  Fractional responses retain compensated subtraction, and wider integer
+  responses retain the existing full-precision proof.
+- Added exact-reference checks for category boundaries, fractional and extreme
+  responses, missing policies, normalized differences, and read-only layouts.
+
 ## [1.7.29] - 2026-09-30
 
 ### Fixed
