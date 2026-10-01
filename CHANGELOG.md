@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the common measurement method. Historical timings collected with tracing
   enabled must be rerun before comparing them with the new reports.
 
+## [1.7.29] - 2026-09-30
+
+### Fixed
+
+- Composite sums and maxima report a contextual `ValueError` for eligible final
+  results made unrepresentable by an already infinite computed score. Negative
+  infinite maximum candidates can still lose to finite winners, and respondents below
+  the coverage minimum receive `NaN` without range errors.
+- Bounded reduction repairs separate infinite inputs from finite scaled
+  arithmetic, preserving row order, coverage, and raw mean infinity semantics.
+- Mixed finite/infinite component calibration remains unavailable without
+  arithmetic warnings. Single-component summaries count calibrated availability
+  consistently with multiple-component reductions.
+
 ## [1.7.28] - 2026-09-30
 
 ### Fixed

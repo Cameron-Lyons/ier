@@ -209,6 +209,13 @@ An optional minimum valid-index rule masks under-supported respondent scores
 after reduction. Equal-weight means reuse their existing denominator counts, so
 the rule needs no additional respondent-sized workspace on that path; other
 methods allocate one integer count vector only when the rule is enabled.
+Mixed finite and infinite component observations have an unavailable calibration
+and contribute no coverage. Single-component reductions count the calibrated
+values consistently with multiple-component reductions. Exceptional reduction
+batches separate already infinite scores from finite scaled arithmetic, then
+repair rows in their original order. Sums and maxima report unrepresentable
+eligible results with the respondent index; negative infinite maximum candidates
+can lose to finite winners, and raw means retain IEEE infinite-value behavior.
 `composite_probability()` applies a logistic transform for convenience — it is
 **not** a calibrated probability of carelessness. Do not treat it as a
 posterior or diagnostic probability without your own validation study. Its

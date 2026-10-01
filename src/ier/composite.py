@@ -267,7 +267,8 @@ def composite(
 
     Raises:
     - ValueError: If invalid indices are specified, no index succeeds, or a final
-                  weighted sum or maximum exceeds the finite float range.
+                  weighted sum or maximum exceeds the finite float range,
+                  including an infinite score returned by an index.
 
     Example:
         >>> from ier import IndexOptions, composite
