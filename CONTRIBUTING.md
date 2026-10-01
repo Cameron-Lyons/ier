@@ -73,6 +73,8 @@ uv run python benchmarks/bench_orchestration.py --weight-scale 1e308
 uv run python benchmarks/bench_orchestration.py --no-standardize --scale 1e-300 --weight-scale 1e-300
 uv run python benchmarks/bench_orchestration.py --method sum --no-standardize --scale 1e-161 --weight-scale 1e-161 --respondents 1000
 uv run python benchmarks/bench_orchestration.py --method max --no-standardize --scale 1e300 --weight-scale 1e-300
+uv run python benchmarks/bench_orchestration.py --method sum --missing-rate 0 --weighted
+uv run python benchmarks/bench_orchestration.py --method max --missing-rate 0 --weighted --min-valid-indices 2
 uv run python benchmarks/bench_cli_output.py --format text --respondents 1000000 --top 10
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0.1
 uv run python benchmarks/bench_guttman.py --respondents 1000 --items 1000 --structure continuous
@@ -112,6 +114,9 @@ remain positive and finite.
 Sum and maximum runs validate the weighted total and winning product against the
 same reference. Use subnormal products for sum repair checks; choose scales whose
 final sum or maximum fits the finite float range.
+Compare `--missing-rate 0` with partial and entirely missing components to check
+complete-data accumulation and reused availability masks. `--min-valid-indices`
+also exercises coverage counts without changing the prepared input vectors.
 
 The flagging benchmark validates fixed and percentile flags against a sorted
 Decimal reference outside measurement. It supports constant, nearly constant,

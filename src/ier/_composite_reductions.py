@@ -44,14 +44,25 @@ class _Calibration:
         return ((math.ldexp(value, -self.exponent) - self.anchor) - self.center) / self.deviation
 
 
-def _prepare_scores(scores: np.ndarray) -> tuple[np.ndarray, _Calibration | None, float]:
-    available = ~np.isnan(scores)
-    n_valid = int(np.count_nonzero(available))
-    if n_valid <= 1:
-        observed = scores[available]
-        return scores, None, abs(float(observed[0])) if n_valid else 0.0
+def _score_availability(scores: np.ndarray) -> np.ndarray | None:
+    """Return one observed-score mask, or None when every score is available."""
+    missing: np.ndarray = np.isnan(scores)
+    if not np.any(missing):
+        return None
+    np.logical_not(missing, out=missing)
+    return missing
 
-    complete = n_valid == len(scores)
+
+def _prepare_scores(
+    scores: np.ndarray,
+) -> tuple[np.ndarray, _Calibration | None, float, np.ndarray | None]:
+    available = _score_availability(scores)
+    n_valid = len(scores) if available is None else int(np.count_nonzero(available))
+    if n_valid <= 1:
+        observed = scores if available is None else scores[available]
+        return scores, None, abs(float(observed[0])) if n_valid else 0.0, available
+
+    complete = available is None
     observed = (
         np.array(scores, dtype=float, copy=True)
         if complete
@@ -77,15 +88,29 @@ def _prepare_scores(scores: np.ndarray) -> tuple[np.ndarray, _Calibration | None
         calibration = _Calibration(exponent, anchor, center, deviation)
         bound = max(abs(calibration.scalar(lower)), abs(calibration.scalar(upper)))
     if complete:
-        return observed, calibration, bound
-    prepared = np.full(len(scores), np.nan)
-    prepared[available] = observed
-    return prepared, calibration, bound
+        prepared = observed
+    else:
+        prepared = np.full(len(scores), np.nan)
+        prepared[available] = observed
+    if not math.isfinite(bound):
+        # Scorers can return an unrepresentable magnitude; calibration may omit it.
+        available = _score_availability(prepared)
+    return prepared, calibration, bound, available
 
 
 def standardize_index_scores(scores: np.ndarray) -> np.ndarray:
     """Standardize observations without mutating inputs or changing sparse policy."""
     return _prepare_scores(scores)[0]
+
+
+def _cancellation_mask(result: np.ndarray, magnitude: float) -> np.ndarray | None:
+    """Find near-zero totals using boolean buffers instead of a full float copy."""
+    if magnitude == 0:
+        return None
+    limit = _ROUNDING_TOLERANCE * magnitude
+    cancellation = result <= limit
+    cancellation &= result >= -limit
+    return cancellation if np.any(cancellation) else None
 
 
 @dataclass(frozen=True)
@@ -347,9 +372,10 @@ def combine_mean_scores(
     magnitude = 0.0
     for name, original in scores.items():
         if standardize:
-            values, calibration, bound = _prepare_scores(original)
+            values, calibration, bound, available = _prepare_scores(original)
         else:
             values, calibration = original, None
+            available = _score_availability(values)
             lower, upper = float(np.fmin.reduce(values)), float(np.fmax.reduce(values))
             bound = 0.0 if math.isnan(lower) else max(abs(lower), abs(upper))
         weight = weights.get(name, 1.0) if weights is not None else 1.0
@@ -359,7 +385,6 @@ def combine_mean_scores(
         magnitude += bound * normalized_weight * abs(multiplier)
         if failed:
             continue
-        available = ~np.isnan(values)
         weighted = values
         with np.errstate(over="raise", under="raise", invalid="raise"):
             try:
@@ -369,21 +394,24 @@ def combine_mean_scores(
                         np.multiply(values, scale, out=values)
                     else:
                         weighted = values * scale
-                np.add(result, weighted, out=result, where=available)
+                where = True if available is None else available
+                np.add(result, weighted, out=result, where=where)
                 if weights is None:
-                    denominator += available
+                    denominator += 1 if available is None else available
                 else:
-                    np.add(denominator, normalized_weight, out=denominator, where=available)
+                    np.add(denominator, normalized_weight, out=denominator, where=where)
                 if counts is not None and counts is not denominator:
-                    counts += available
+                    counts += 1 if available is None else available
             except FloatingPointError:
                 failed = True
-    del values, weighted
+    del values, weighted, available
 
     if failed:
         _repair_reductions(components, result, denominator if weights is None else counts)
     else:
-        cancellation = (np.abs(result) <= _ROUNDING_TOLERANCE * magnitude) & (denominator > 0)
+        cancellation = _cancellation_mask(result, magnitude)
+        if cancellation is not None:
+            cancellation &= denominator > 0
         with np.errstate(over="raise", under="raise", invalid="raise"):
             try:
                 np.divide(result, denominator, out=result, where=denominator > 0)
@@ -393,7 +421,7 @@ def combine_mean_scores(
             _repair_reductions(components, result, denominator if weights is None else counts)
         else:
             result[denominator == 0] = np.nan
-            if magnitude > 0 and np.any(cancellation):
+            if cancellation is not None and np.any(cancellation):
                 _repair_reductions(components, result, counts, cancellation)
 
     if min_valid_indices is not None:
@@ -452,7 +480,7 @@ def combine_sum_max_scores(
     if counts is None and min_valid_indices is not None:
         counts = np.zeros(n_rows, dtype=np.int_)
     result = np.zeros(n_rows) if method == "sum" else np.full(n_rows, np.nan)
-    presence = np.zeros(n_rows, dtype=bool) if method == "sum" and counts is None else None
+    presence: bool | np.ndarray = False
     weight_scale = (
         max(weights.get(name, 1.0) for name in scores)
         if method == "sum" and weights is not None
@@ -468,9 +496,12 @@ def combine_sum_max_scores(
     weighted = result
     for name, original in scores.items():
         if standardize:
-            values, calibration, bound = _prepare_scores(original)
+            values, calibration, bound, available = _prepare_scores(original)
         else:
             values, calibration, bound = original, None, 0.0
+            available = (
+                _score_availability(values) if method == "sum" or counts is not None else None
+            )
             if method == "sum" and not failed:
                 lower, upper = float(np.fmin.reduce(values)), float(np.fmax.reduce(values))
                 bound = 0.0 if math.isnan(lower) else max(abs(lower), abs(upper))
@@ -481,7 +512,6 @@ def combine_sum_max_scores(
         magnitude += bound * normalized_weight * abs(multiplier)
         if failed:
             continue
-        available = ~np.isnan(values)
         weighted = values
         with np.errstate(
             over="raise", under="raise" if method == "sum" else "ignore", invalid="raise"
@@ -494,25 +524,35 @@ def combine_sum_max_scores(
                     else:
                         weighted = values * scale
                 if method == "sum":
-                    np.add(result, weighted, out=result, where=available)
+                    np.add(
+                        result, weighted, out=result, where=True if available is None else available
+                    )
                 else:
                     np.fmax(result, weighted, out=result)
                 if counts is not None:
-                    counts += available
-                if presence is not None:
-                    np.logical_or(presence, available, out=presence)
+                    counts += 1 if available is None else available
+                elif method == "sum" and presence is not True:
+                    if available is None:
+                        presence = True
+                    elif isinstance(presence, np.ndarray):
+                        np.logical_or(presence, available, out=presence)
+                    else:
+                        presence = available.copy()
             except FloatingPointError:
                 failed = True
-    del values, weighted
+    del values, weighted, available
 
     if failed:
         _repair_reductions(
             components, result, counts, method=method, min_valid_indices=min_valid_indices
         )
     elif method == "sum":
-        cancellation = (np.abs(result) <= _ROUNDING_TOLERANCE * magnitude) & (
-            counts > 0 if counts is not None else presence
-        )
+        cancellation = _cancellation_mask(result, magnitude)
+        if cancellation is not None:
+            if counts is not None:
+                cancellation &= counts > 0
+            elif presence is not True:
+                cancellation &= presence
         with np.errstate(over="raise", under="raise", invalid="raise"):
             try:
                 if weight_scale != 1.0:
@@ -523,7 +563,7 @@ def combine_sum_max_scores(
             _repair_reductions(
                 components, result, counts, method=method, min_valid_indices=min_valid_indices
             )
-        elif magnitude > 0 and np.any(cancellation):
+        elif cancellation is not None and np.any(cancellation):
             _repair_reductions(
                 components,
                 result,
