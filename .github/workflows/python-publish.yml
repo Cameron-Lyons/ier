@@ -21,6 +21,7 @@ jobs:
   validate-release:
     name: Validate release version
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout repository
@@ -59,6 +60,7 @@ jobs:
   test-install:
     name: Test installation
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: test
 
     steps:
@@ -87,6 +89,7 @@ jobs:
   publish-testpypi:
     name: Publish to TestPyPI
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [test, test-install, lint, docs, security]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
     permissions:
@@ -111,6 +114,7 @@ jobs:
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [test, test-install, lint, docs, security]
     if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
     permissions:

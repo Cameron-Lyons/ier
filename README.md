@@ -12,6 +12,7 @@ For a comprehensive methods review, see
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
 - Saved-score CLI screening and composites with reusable coverage summaries
+- Saved response-time CLI reflagging and lossless result conversion
 - Validated, pickle-free score and response-time archive persistence
 - Atomic result-file replacement across text, CSV, JSON, and NPZ output
 - Validated per-index weights across all composite scoring helpers
@@ -140,6 +141,8 @@ ier screen survey-export.csv --skip-rows 2 --id-column participant_id
 ier screen responses.npy --indices irv longstring
 ier screen-scores screening.npz --index-percentile irv=99 --min-flags 2
 ier composite-scores screening.npz --indices irv longstring --weight irv=2
+ier response-time-scores timing.npz --threshold 1.0 --format json
+ier response-time-scores timing.npz --format csv --output timing.csv
 cat responses.csv | ier screen - --indices irv longstring --format json
 ier indices --format json
 ier --version
@@ -238,6 +241,10 @@ Response-time results have matching `save_response_time_archive()` and
 `load_response_time_archive()` boundaries. The writer preserves prepared scores,
 Boolean flags, cutoff metadata, and optional identifiers after verifying the
 same fixed or percentile decision contract enforced by the loader.
+Use `ier response-time-scores timing.npz` to export the saved scores and exact
+decisions without the original timings or another mixture fit. Supplying
+`--threshold` or `--percentile` applies a new cutoff using the saved metric and
+flag direction; omitting both preserves the stored flags, including cutoff ties.
 
 Composite scores are standardized per index by default. Pass
 `ier composite --no-standardize` to combine directed scores in their original
@@ -362,6 +369,7 @@ uv run python benchmarks/bench_flagging.py
 uv run python benchmarks/bench_cli_output.py
 uv run python benchmarks/bench_score_reuse.py
 uv run python benchmarks/bench_score_reuse.py --workflow composite
+uv run python benchmarks/bench_score_reuse.py --workflow response-time
 uv run python benchmarks/bench_detection.py
 ```
 

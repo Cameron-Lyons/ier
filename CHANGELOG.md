@@ -27,6 +27,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bias from other retained results. Allocation samples stay alive until tracing
   stops so result cleanup does not inflate the recorded peak.
 
+## [1.9.0] - 2026-10-02
+
+### Added
+
+- `ier response-time-scores` reflags saved timing results or exports their exact
+  stored decisions in text, JSON, CSV, and NPZ without the original matrix or
+  another mixture fit. Metric, suspicious tail, missing scores, and respondent
+  identifiers remain aligned.
+
+### Fixed
+
+- Calibrated Lz predictor arithmetic preserves representable results when
+  finite difficulty and ability differences overflow, or discrimination products
+  underflow. Strict missing-response propagation also applies when every item
+  discrimination is zero.
+- Lz ability estimation uses scaled Newton steps for extreme finite item slopes,
+  preserving available information without overflowing squared discriminations.
+  Independent Decimal roots and analytic likelihood solutions verify the repair.
+- Archive readers validate NPY shapes and payload sizes before NumPy allocates
+  arrays, rejecting inflated or overflowed shapes, nonempty zero-width members,
+  and forged compressed sizes with contextual errors.
+- Version checks reject Unicode core digits, enforcing the ASCII SemVer grammar.
+- Prerelease version checks preserve SemVer source and tag spelling while
+  matching normalized Python versions in lock entries and distribution metadata.
+
+### Changed
+
+- Distribution verification compares packaged Python sources and typing markers
+  byte for byte with the checkout, validates runtime and optional dependency
+  metadata, and checks every bundled project metadata field. Source distributions
+  also retain the test fixtures required by their bundled tests. Regression tests
+  prove failed local quality gates stop later commands.
+- The timing-reuse benchmark compares complete fresh and saved workflows with
+  exact output parity and independent flag checks. A local 20,000 × 80 mixture
+  run reduced runtime from 21.2 to 3.3 ms and peak allocation from 2.3 to 0.7 MiB.
+- Installed artifact smoke tests exercise timing archive reuse, including exact
+  tie decisions, missing scores, identifiers, and atomic in-place reflagging.
+- Release, publishing, version, and documentation jobs now have explicit time
+  limits; documentation deployment also rebuilds when the dependency lock changes.
+
 ## [1.8.1] - 2026-10-01
 
 ### Added

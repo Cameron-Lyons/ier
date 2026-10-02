@@ -16,6 +16,7 @@ jobs:
   version-check:
     name: Check version updated
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: >
       github.actor != 'dependabot[bot]' &&
       !(github.event_name == 'pull_request' &&

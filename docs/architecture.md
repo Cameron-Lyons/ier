@@ -102,6 +102,9 @@ The command-line path is split by responsibility:
 - `archive.py` owns the shared archive stream writer and
   public validated save/load boundaries for reusable registered score vectors
   and response-time results.
+- `_archive_input.py` checks bounded NPY headers, shape ranges, and actual payload
+  sizes before allocating arrays. Stored ZIP members use their physical byte
+  boundaries; compressed members verify decompressed sizes in bounded chunks.
 
 Screen and composite commands carry the registry's ordered soft-failure map
 through text, JSON, and NPZ serializers and mirror failures to standard error

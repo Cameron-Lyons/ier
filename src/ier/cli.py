@@ -17,6 +17,7 @@ from ier import (
     composite_scores_summary,
     composite_summary,
     index_catalog,
+    load_response_time_archive,
     load_score_archive,
     response_time,
     response_time_consistency,
@@ -416,6 +417,28 @@ def _add_composite_decision_options(
     )
 
 
+def _add_response_time_decision_options(
+    parser: argparse.ArgumentParser, *, precomputed: bool = False
+) -> None:
+    flagging = parser.add_mutually_exclusive_group()
+    flagging.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Fixed inclusive flag cutoff in score units",
+    )
+    flagging.add_argument(
+        "--percentile",
+        type=float,
+        default=None,
+        help=(
+            "Percentile cutoff (default: preserve saved decisions)"
+            if precomputed
+            else "Percentile cutoff (default: 5 for low scores, 95 for mixture)"
+        ),
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ier",
@@ -493,18 +516,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="median",
         help="Timing score to compute (default: median)",
     )
-    response_time_parser.add_argument(
-        "--threshold",
-        type=float,
-        default=None,
-        help="Fixed inclusive flag cutoff in score units",
-    )
-    response_time_parser.add_argument(
-        "--percentile",
-        type=float,
-        default=None,
-        help="Percentile cutoff (default: 5 for low scores, 95 for mixture)",
-    )
+    _add_response_time_decision_options(response_time_parser)
     response_time_parser.add_argument(
         "--components",
         type=int,
@@ -520,6 +532,14 @@ def _build_parser() -> argparse.ArgumentParser:
     response_time_parser.add_argument("--random-seed", type=int, default=None)
     _add_matrix_input_options(response_time_parser)
     _add_output_options(response_time_parser)
+
+    timing_saved_parser = sub.add_parser(
+        "response-time-scores",
+        help="Reflag or export a saved timing archive without recomputing scores.",
+    )
+    timing_saved_parser.add_argument("data", type=Path, help="Response-time .npz archive")
+    _add_response_time_decision_options(timing_saved_parser, precomputed=True)
+    _add_output_options(timing_saved_parser)
 
     indices_parser = sub.add_parser(
         "indices", help="List registered indices and orchestration metadata."
@@ -584,6 +604,72 @@ def _load_reusable_scores(
     return scores, errors, archive["respondent_ids"]
 
 
+def _run_response_time_command(args: argparse.Namespace) -> int:
+    """Score or reuse timing results through one decision and output path."""
+    if args.command == "response-time-scores":
+        saved = load_response_time_archive(args.data)
+        scores = saved["scores"]
+        direction = saved["flag_direction"]
+        metric = saved["metric"]
+        respondent_ids = saved["respondent_ids"]
+        cutoff = saved["threshold"]
+        flags = saved["flags"]
+    else:
+        matrix, respondent_ids = _load_input(
+            args.data,
+            args.delimiter,
+            args.id_column,
+            _parse_name_list(args.item_columns),
+            args.header,
+            args.missing_values,
+            args.skip_rows,
+        )
+        metric = args.metric
+        scores, direction = _score_response_times(
+            matrix,
+            metric,
+            args.components,
+            args.log_transform,
+            args.random_seed,
+        )
+
+    if args.command == "response-time" or args.threshold is not None or args.percentile is not None:
+        percentile = args.percentile
+        if percentile is None:
+            percentile = 95.0 if direction == "high" else 5.0
+        cutoff = resolve_threshold(scores, args.threshold, percentile)
+        flags = threshold_flags(
+            scores,
+            threshold=cutoff,
+            percentile=percentile,
+            direction=direction,
+            inclusive=args.threshold is not None,
+        )
+
+    if args.format == "json":
+        _write_json_output(
+            args.output,
+            lambda handle: _write_response_time_json(
+                handle, scores, flags, metric, direction, cutoff, respondent_ids
+            ),
+        )
+    elif args.format == "csv":
+        with _output_stream(args.output) as handle:
+            _write_response_time_csv(handle, scores, flags, respondent_ids)
+    elif args.format == "npz":
+        _write_response_time_npz(
+            args.output, scores, flags, metric, direction, cutoff, respondent_ids
+        )
+    else:
+        _write_output(
+            _emit_response_time_text(
+                scores, flags, metric, direction, cutoff, args.top, respondent_ids
+            ),
+            args.output,
+        )
+    return 0
+
+
 def _run_command(args: argparse.Namespace) -> int:
     """Execute one parsed CLI command, allowing user-facing failures to bubble to main()."""
     if args.command == "indices":
@@ -605,6 +691,9 @@ def _run_command(args: argparse.Namespace) -> int:
     if args.format == "npz":
         _require_npz_output_path(args.output)
 
+    if args.command in {"response-time", "response-time-scores"}:
+        return _run_response_time_command(args)
+
     precomputed = args.command in {"screen-scores", "composite-scores"}
     saved_scores: dict[str, np.ndarray] = {}
     archive_errors: dict[str, str] = {}
@@ -623,69 +712,6 @@ def _run_command(args: argparse.Namespace) -> int:
             args.missing_values,
             args.skip_rows,
         )
-    if args.command == "response-time":
-        assert matrix is not None
-        scores, direction = _score_response_times(
-            matrix,
-            args.metric,
-            args.components,
-            args.log_transform,
-            args.random_seed,
-        )
-        percentile = args.percentile
-        if percentile is None:
-            percentile = 95.0 if direction == "high" else 5.0
-        cutoff = resolve_threshold(scores, args.threshold, percentile)
-        flags = threshold_flags(
-            scores,
-            threshold=cutoff,
-            percentile=percentile,
-            direction=direction,
-            inclusive=args.threshold is not None,
-        )
-
-        if args.format == "json":
-            _write_json_output(
-                args.output,
-                lambda handle: _write_response_time_json(
-                    handle,
-                    scores,
-                    flags,
-                    args.metric,
-                    direction,
-                    cutoff,
-                    respondent_ids,
-                ),
-            )
-            return 0
-        elif args.format == "csv":
-            with _output_stream(args.output) as handle:
-                _write_response_time_csv(handle, scores, flags, respondent_ids)
-            return 0
-        elif args.format == "npz":
-            _write_response_time_npz(
-                args.output,
-                scores,
-                flags,
-                args.metric,
-                direction,
-                cutoff,
-                respondent_ids,
-            )
-            return 0
-        else:
-            text = _emit_response_time_text(
-                scores,
-                flags,
-                args.metric,
-                direction,
-                cutoff,
-                args.top,
-                respondent_ids,
-            )
-        _write_output(text, args.output)
-        return 0
-
     options = None if precomputed else _options_from_args(args)
     if args.command in {"screen", "screen-scores"}:
         if precomputed:

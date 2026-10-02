@@ -23,7 +23,7 @@ class TestReleaseTagGate(unittest.TestCase):
         return path
 
     def test_matching_stable_and_prerelease_tags_pass(self) -> None:
-        for version in ["2.1.2", "2.2.0-rc.1"]:
+        for version in ["2.1.2", "2.2.0-rc.1", "2.2.0-dev.4+Build-Tag.007"]:
             with self.subTest(version=version):
                 stdout = StringIO()
 
@@ -32,6 +32,24 @@ class TestReleaseTagGate(unittest.TestCase):
 
                 self.assertEqual(result, 0)
                 self.assertIn(f"matches project version {version}", stdout.getvalue())
+
+    def test_tag_keeps_original_prerelease_spelling(self) -> None:
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            result = main(["v2.2.0rc1", str(self._pyproject("2.2.0-rc.1"))])
+
+        self.assertEqual(result, 1)
+        self.assertIn("'v2.2.0-rc.1'", stderr.getvalue())
+
+    def test_unbuildable_semver_fails_before_release(self) -> None:
+        stderr = StringIO()
+
+        with patch("sys.stderr", stderr):
+            result = main(["v2.2.0-canary.1", str(self._pyproject("2.2.0-canary.1"))])
+
+        self.assertEqual(result, 1)
+        self.assertIn("not a supported Python prerelease", stderr.getvalue())
 
     def test_mismatched_or_unprefixed_tag_fails(self) -> None:
         pyproject = self._pyproject("2.1.2")

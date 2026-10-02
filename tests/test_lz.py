@@ -373,7 +373,7 @@ def test_public_missing_scoring_and_flags(model: str, na_rm: bool, provided_thet
 @pytest.mark.parametrize("na_rm", [False, True])
 def test_zero_likelihood_variance_and_unavailable_rows(na_rm: bool) -> None:
     data = np.array([[1, 0, 1], [0, np.nan, 1], [np.nan, np.nan, np.nan]])
-    expected = [0.0, 0.0, np.nan if na_rm else 0.0]
+    expected = [0.0, 0.0 if na_rm else np.nan, np.nan]
     scores = lz(data, difficulty=np.zeros(3), theta=np.zeros(3), model="1pl", na_rm=na_rm)
     np.testing.assert_array_equal(scores, expected)
 

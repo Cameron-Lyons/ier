@@ -54,6 +54,25 @@ class TestLockVersionCheck(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("does not match project.version '2.4.0'", stderr.getvalue())
 
+    def test_normalized_prerelease_matches_raw_project_version(self) -> None:
+        self.pyproject.write_text(
+            '[project]\nname = "example-package"\nversion = "2.4.0-rc.1"\n',
+            encoding="utf-8",
+        )
+        self._write_lock("2.4.0rc1")
+
+        self.assertEqual(validate_lock_version(self.pyproject, self.lockfile), "2.4.0-rc.1")
+
+    def test_wrong_normalized_prerelease_fails(self) -> None:
+        self.pyproject.write_text(
+            '[project]\nname = "example-package"\nversion = "2.4.0-rc.1"\n',
+            encoding="utf-8",
+        )
+        self._write_lock("2.4.0rc2")
+
+        with self.assertRaisesRegex(ValueError, "normalized distribution version '2.4.0rc1'"):
+            validate_lock_version(self.pyproject, self.lockfile)
+
     def test_missing_editable_entry_fails(self) -> None:
         self._write_lock("2.4.0", editable="../other")
         stderr = StringIO()

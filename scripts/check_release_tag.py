@@ -7,15 +7,15 @@ import sys
 from pathlib import Path
 
 if __package__:
-    from .check_version import parse_semver, read_project_version
+    from .check_version import normalized_distribution_version, read_project_version
 else:
-    from check_version import parse_semver, read_project_version
+    from check_version import normalized_distribution_version, read_project_version
 
 
 def validate_release_tag(tag: str, pyproject: Path) -> str:
     """Return the project version when ``tag`` is its exact ``v``-prefixed form."""
     version = read_project_version(pyproject)
-    parse_semver(version)
+    normalized_distribution_version(version)
     expected = f"v{version}"
     if tag != expected:
         raise ValueError(

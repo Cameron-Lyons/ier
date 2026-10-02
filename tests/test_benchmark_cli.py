@@ -442,6 +442,10 @@ _CASES = [
         "score_reuse",
         ["--respondents", "64", "--items", "24", "--repeats", "1", "--workflow", "composite"],
     ),
+    (
+        "score_reuse",
+        ["--respondents", "64", "--items", "24", "--repeats", "1", "--workflow", "response-time"],
+    ),
     ("sequence_scoring", _MATRIX),
     ("lz", [*_MATRIX, "--operation", "discrimination", "--categories", "5"]),
     ("psychsyn", [*_MATRIX, "--operation", "psychsyn_critval"]),

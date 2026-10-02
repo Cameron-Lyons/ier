@@ -1,0 +1,5 @@
+recursive-include tests/fixtures *
+recursive-include tests *.py
+recursive-include scripts *.py *.sh
+recursive-include benchmarks *.py
+include uv.lock
