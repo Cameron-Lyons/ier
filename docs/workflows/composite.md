@@ -180,10 +180,12 @@ initial = composite_summary(
 
 weighted = composite_scores(
     initial["indices"],
+    errors=initial["errors"],
     weights={"irv": 2.0, "longstring": 0.75},
 )
 raw_maximum = composite_scores(
     initial["indices"],
+    errors=initial["errors"],
     method="max",
     standardize=False,
     min_valid_indices=2,
@@ -195,6 +197,18 @@ reversed automatically, matching `composite()`. Only composite-enabled registere
 indices are accepted, and every vector must be one-dimensional, non-empty,
 equally sized, and contain only finite values or `NaN`. The input arrays are never
 mutated.
+
+Pass `errors=initial["errors"]` to preserve the original selected-index set when
+validating weights and `min_valid_indices`. Failed indices contribute no scores,
+weight totals, or availability. A minimum of three therefore still suppresses
+every score if only two of the three selected indices succeeded. Failure names
+must be composite-enabled registered indices, absent from the score mapping,
+and paired with nonblank string messages.
+
+`composite_scores_summary()` accepts the same arguments and returns aggregate
+statistics, raw components, calibrated `valid_index_counts`, resolved weights,
+and supplied failure provenance. Its `errors` mapping is empty when omitted.
+Retained failures are copied without rerunning any index.
 
 `best_subset` is intentionally unavailable on this path because its purpose is
 selecting and calculating a predefined component set. Supply that set explicitly
@@ -217,8 +231,10 @@ save_score_archive(
     result_type="composite",
     errors=initial["errors"],
 )
-saved = load_score_archive("composite.npz")
-reweighted = composite_scores(saved["scores"], weights={"irv": 2.0})
+saved = load_score_archive("raw-components.npz")
+reweighted = composite_scores(
+    saved["scores"], errors=saved["errors"], weights={"irv": 2.0}
+)
 ```
 
 Aggregate-only composite archives intentionally fail this load because they do

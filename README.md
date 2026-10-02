@@ -161,6 +161,12 @@ remove a named header column from scoring and preserve its unique, nonblank valu
 in text, JSON, CSV, and NPZ output. Use `--item-columns q1,q2,...` to select and order
 the numeric item matrix while ignoring unselected metadata columns; repeat the
 option to build the selection in groups.
+Quoted delimiters, escaped quotes, and multiline identifiers are preserved.
+Entirely missing delimited records retain their respondent position; physically
+blank lines are skipped.
+Malformed quoted records fail with their physical line number before an existing
+result file is replaced; jagged records retain their detected delimiter and
+report the actual and expected column counts.
 
 Missing-response scoring is opt-in because planned omissions are often valid.
 Use `IndexOptions(missing_item_indices=[...])` or CLI
@@ -197,6 +203,11 @@ the indices again. The reusable path validates registered, equally sized score
 vectors and returns the same screening result structure while retaining compatible
 NumPy arrays by reference.
 
+Pass `errors=result["errors"]` alongside retained scores to preserve soft-failure
+provenance and the original selected-index count when reapplying completeness
+rules. Failed indices remain unavailable; they never contribute to respondent
+coverage or decisions.
+
 Set `screen(..., min_valid_indices=N)` or CLI `--min-valid-indices N` to require
 at least `N` available index scores before a respondent is eligible for a
 consensus decision. Results always include per-respondent `valid_index_counts`
@@ -219,6 +230,9 @@ standardization, or completeness rules without recalculating any index. Directio
 correction remains automatic and inputs are not mutated.
 `composite_scores_summary()` additionally reports component availability and
 aggregate statistics using the same reduction pass.
+Both composite reuse APIs accept `errors=details["errors"]` to retain failed
+selections when validating weights and minimum coverage. Saved-score CLI commands
+carry this provenance automatically.
 
 Use `save_score_archive("scores.npz", scores)` to persist any ordered mapping of
 raw registered-index vectors directly from Python, then

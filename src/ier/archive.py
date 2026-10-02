@@ -14,7 +14,7 @@ from numpy.lib.format import MAGIC_PREFIX
 
 from ier._archive_input import read_npz_member
 from ier._atomic_output import atomic_output_path
-from ier._registry import composite_index_names, validate_index_names
+from ier._registry import composite_index_names, validate_index_errors, validate_index_names
 from ier._validation import validate_score_array, validate_score_vectors
 
 if TYPE_CHECKING:
@@ -74,13 +74,11 @@ def _validate_error_metadata(
     if len(names) != len(messages):
         raise ValueError("score archive error names and messages must have equal lengths")
     _validate_archive_index_names(names, result_type, allow_empty=True, label="error")
-    if score_names.intersection(names):
-        raise ValueError("score archive indices cannot contain both scores and errors")
-    if any(not isinstance(message, str) for message in messages):
-        raise ValueError("score archive error messages must be strings")
-    if any(not message.strip() for message in messages):
-        raise ValueError("score archive error messages must be nonblank")
-    return dict(zip(names, messages, strict=True))
+    return validate_index_errors(
+        dict(zip(names, messages, strict=True)),
+        list(score_names),
+        composite_index_names() if result_type == "composite" else None,
+    )
 
 
 def _validate_respondent_ids(values: list[str], n_respondents: int) -> list[str]:
@@ -608,11 +606,14 @@ def load_score_archive(path: str | Path) -> ScoreArchive:
     Example:
         >>> from ier import composite_scores, load_score_archive, screen_scores
         >>> saved = load_score_archive("screening.npz")
-        >>> updated_screen = screen_scores(saved["scores"], percentile=99)
+        >>> updated_screen = screen_scores(
+        ...     saved["scores"], percentile=99, errors=saved["errors"]
+        ... )
         >>> saved_components = load_score_archive("composite.npz")
         >>> updated_composite = composite_scores(
         ...     saved_components["scores"],
         ...     weights={"irv": 2.0},
+        ...     errors=saved_components["errors"],
         ... )
     """
     with _open_npz_archive(path, label="score") as archive:

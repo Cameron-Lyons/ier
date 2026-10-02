@@ -17,6 +17,7 @@ from ier._registry import (
     default_screen_indices,
     resolve_index_options,
     score_registered_indices,
+    validate_index_errors,
     validate_index_names,
     validate_min_valid_indices,
     validate_worker_count,
@@ -217,6 +218,7 @@ def screen_scores(
     min_valid_indices: int | None = None,
     thresholds: Mapping[str, float] | None = None,
     percentiles: Mapping[str, float] | None = None,
+    errors: Mapping[str, str] | None = None,
 ) -> ScreenResult:
     """
     Apply screening decisions to already-computed registered-index scores.
@@ -239,10 +241,12 @@ def screen_scores(
     - min_valid_indices: Optional minimum available-score count for consensus.
     - thresholds: Optional fixed per-index cutoffs.
     - percentiles: Optional per-index tail-percentile overrides.
+    - errors: Optional retained per-index soft failures. Failed indices count as
+              selected for validation but never as available respondent scores.
 
     Returns:
     - The same structured ``ScreenResult`` contract as :func:`screen`, with an
-      empty ``errors`` mapping because no index calculation is attempted.
+      ``errors`` mapping containing any supplied failure provenance.
 
     Example:
         >>> from ier import screen, screen_scores
@@ -253,7 +257,8 @@ def screen_scores(
         ... )
     """
     validated_scores, n_respondents = _validate_screen_scores(scores)
-    indices = list(validated_scores)
+    retained_errors = validate_index_errors(errors, list(validated_scores))
+    indices = [*validated_scores, *retained_errors]
     percentile = validate_percentile(percentile)
     min_flags = _validate_min_flags(min_flags)
     min_valid_indices = validate_min_valid_indices(min_valid_indices, len(indices))
@@ -262,7 +267,7 @@ def screen_scores(
 
     return _build_screen_result(
         validated_scores,
-        {},
+        retained_errors,
         n_respondents,
         percentile=percentile,
         min_flags=min_flags,

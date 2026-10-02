@@ -24,6 +24,10 @@ else:
 if TYPE_CHECKING:
     from email.message import Message
 
+_WINDOWS_RESERVED_NAMES = {"con", "prn", "aux", "nul", "conin$", "conout$"} | {
+    f"{prefix}{number}" for prefix in ("com", "lpt") for number in "123456789¹²³"
+}
+
 
 class _EntryPointParser(configparser.ConfigParser):
     """Preserve the case of console-script names, as installers do."""
@@ -73,6 +77,10 @@ def _sdist_support_files() -> dict[str, bytes]:
         *(root / "scripts").rglob("*.sh"),
         *(root / "benchmarks").rglob("*.py"),
         root / "uv.lock",
+        root / "pyproject.toml",
+        root / "MANIFEST.in",
+        root / "README.md",
+        root / "LICENSE",
     ]
     return {
         path.relative_to(root).as_posix(): path.read_bytes() for path in paths if path.is_file()
@@ -138,15 +146,49 @@ def _verify_metadata(path: Path, metadata: Message, project: dict[str, object]) 
         "Requires-Python": _project_value(project, "requires-python"),
     }
     for header, expected in expected_headers.items():
-        actual = metadata.get(header)
+        actual = metadata.get_all(header, [])
         _require(
-            actual == expected,
+            actual == [expected],
             f"{path.name} has {header}={actual!r}; expected {expected!r}",
         )
 
     license_files = metadata.get_all("License-File", failobj=[])
     _require("LICENSE" in license_files, f"{path.name} does not declare LICENSE metadata")
     _verify_dependencies(path, metadata, project)
+
+
+def _verify_archive_members(path: Path, names: list[str]) -> None:
+    """Reject ambiguous names and paths that differ across archive extractors."""
+    normalized = [
+        "/".join(part.rstrip(" .").casefold() for part in name.removesuffix("/").split("/"))
+        for name in names
+    ]
+    duplicates = sorted(name for name, count in Counter(normalized).items() if count > 1)
+    _require(not duplicates, f"{path.name} has duplicate archive members: {duplicates}")
+    invalid = [
+        name
+        for name in names
+        if any(character in '<>:"\\|?*' or ord(character) < 32 for character in name)
+        or any(
+            part in {"", ".", ".."}
+            or part.endswith((" ", "."))
+            or part.split(".", 1)[0].rstrip(" ").casefold() in _WINDOWS_RESERVED_NAMES
+            for part in name.removesuffix("/").split("/")
+        )
+    ]
+    _require(not invalid, f"{path.name} has unsafe archive paths: {sorted(invalid)}")
+
+
+def _verify_package_members(path: Path, members: set[str], package_files: dict[str, bytes]) -> None:
+    """Catch deleted package modules accidentally retained by an old build tree."""
+    package_roots = {name.split("/", 1)[0].casefold() for name in package_files}
+    unexpected = sorted(
+        name
+        for name in members - package_files.keys()
+        if name.split("/", 1)[0].casefold() in package_roots
+        and (name.casefold().endswith((".py", ".pyc", ".so", ".pyd", "/py.typed")))
+    )
+    _require(not unexpected, f"{path.name} has unexpected package files: {unexpected}")
 
 
 def _verify_wheel(
@@ -160,6 +202,11 @@ def _verify_wheel(
         package_files = _package_files()
 
     with zipfile.ZipFile(path) as archive:
+        # ZipInfo normalizes separators on Windows and truncates NUL suffixes.
+        # Validate original names before those repairs can conceal unsafe paths.
+        _verify_archive_members(path, [member.orig_filename for member in archive.infolist()])
+        # Unicode path extras can independently replace the effective names.
+        _verify_archive_members(path, [member.filename for member in archive.infolist()])
         members = {member.filename for member in archive.infolist() if not member.is_dir()}
         required_members = package_files.keys() | {
             f"{dist_info}/METADATA",
@@ -168,6 +215,7 @@ def _verify_wheel(
         }
         missing = sorted(required_members - members)
         _require(not missing, f"{path.name} is missing required files: {missing}")
+        _verify_package_members(path, members, package_files)
 
         for name, expected in package_files.items():
             _require(
@@ -177,11 +225,30 @@ def _verify_wheel(
 
         _verify_metadata(path, _wheel_metadata(archive, dist_info), project)
         entry_points = archive.read(f"{dist_info}/entry_points.txt").decode("utf-8")
-        configuration = _EntryPointParser(interpolation=None)
-        configuration.read_string(entry_points)
+        configuration = _EntryPointParser(interpolation=None, delimiters=("=",))
+        try:
+            configuration.read_string(entry_points)
+        except configparser.Error as error:
+            raise ValueError(f"{path.name} has invalid CLI entry points: {error}") from error
         _require(
-            configuration.get("console_scripts", "ier", fallback=None) == "ier.cli:main",
-            f"{path.name} is missing the ier CLI entry point",
+            not configuration.defaults(),
+            f"{path.name} CLI entry points cannot use [DEFAULT] settings",
+        )
+        expected_scripts = project.get("scripts", {})
+        if not isinstance(expected_scripts, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str)
+            for key, value in expected_scripts.items()
+        ):
+            raise ValueError("pyproject.toml project.scripts must be a table of strings")
+        actual_scripts = (
+            dict(configuration.items("console_scripts"))
+            if configuration.has_section("console_scripts")
+            else {}
+        )
+        _require(
+            actual_scripts == expected_scripts,
+            f"{path.name} CLI entry points {actual_scripts!r} do not match "
+            f"project.scripts {expected_scripts!r}",
         )
 
 
@@ -210,9 +277,21 @@ def _verify_sdist(
     }
 
     with tarfile.open(path, mode="r:gz") as archive:
+        _verify_archive_members(path, [member.name for member in archive.getmembers()])
+        links = sorted(
+            member.name for member in archive.getmembers() if member.issym() or member.islnk()
+        )
+        _require(not links, f"{path.name} contains archive links: {links}")
         members = {member.name for member in archive.getmembers() if member.isfile()}
         missing = sorted(required_members - members)
         _require(not missing, f"{path.name} is missing required files: {missing}")
+        source_prefix = f"{root}/src/"
+        package_members = {
+            name[len(source_prefix) :]
+            for name in members
+            if name.casefold().startswith(source_prefix.casefold())
+        }
+        _verify_package_members(path, package_members, package_files)
         for name, expected in source_files.items():
             member_name = f"{root}/{name}"
             source_file = archive.extractfile(member_name)

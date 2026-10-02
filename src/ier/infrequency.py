@@ -23,6 +23,49 @@ from ier.types import InfrequencyMissingPolicy
 _MISSING_POLICIES = {"pass", "fail", "omit", "propagate"}
 
 
+def _prepare_expected_responses(
+    values: list[float], dtype: np.dtype[np.generic]
+) -> tuple[np.ndarray, np.ndarray | None]:
+    """Validate answers once and retain exact integer-category comparisons."""
+    try:
+        supplied = np.asarray(values)
+        if supplied.dtype.kind == "c":
+            raise ValueError("complex answers are not real response categories")
+        with np.errstate(over="ignore", invalid="ignore"):
+            expected = np.asarray(supplied, dtype=float)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError("expected_responses must contain finite numeric values") from error
+    if expected.ndim != 1 or not np.isfinite(expected).all():
+        raise ValueError("expected_responses must contain finite numeric values")
+
+    if dtype.kind not in "iub":
+        comparison_dtype = np.result_type(np.empty((), dtype=dtype).real.dtype, float)
+        expected = expected.astype(comparison_dtype, copy=False)
+        # An integer answer that the comparison dtype cannot represent cannot
+        # equal a response. Avoid accepting its rounded neighbour.
+        for item, value in enumerate(values):
+            if isinstance(value, (int, np.integer)):
+                target = np.asarray([int(value)], dtype=comparison_dtype)[0]
+                expected[item] = target if int(target) == int(value) else np.nan
+        return expected, None
+
+    if dtype.kind == "b":
+        lower, upper = 0, 1
+    else:
+        limits = np.iinfo(dtype.name)
+        lower, upper = limits.min, limits.max
+    targets = np.zeros(len(expected), dtype=dtype)
+    impossible = np.ones(len(expected), dtype=bool)
+    for item, value in enumerate(values):
+        # Preserve integer answers before float conversion, including unsigned
+        # endpoints. Fractional and out-of-range answers cannot match a category.
+        answer = int(value) if isinstance(value, (int, np.integer)) else float(expected[item])
+        if lower <= answer <= upper and answer == int(answer):
+            targets[item] = int(answer)
+            impossible[item] = False
+    return targets, impossible if np.any(impossible) else None
+
+
 def infrequency(
     x: MatrixLike,
     item_indices: list[int],
@@ -75,33 +118,28 @@ def infrequency(
 
     selected = validate_item_indices(item_indices, n_cols)
 
-    try:
-        expected = np.asarray(expected_responses, dtype=float)
-    except (TypeError, ValueError) as error:
-        raise ValueError("expected_responses must contain finite numeric values") from error
-    if expected.ndim != 1 or not np.isfinite(expected).all():
-        raise ValueError("expected_responses must contain finite numeric values")
+    expected, impossible = _prepare_expected_responses(expected_responses, x_array.dtype)
 
     failures = np.empty(len(x_array), dtype=float)
     for start, stop in row_slices(len(x_array), len(selected)):
         block = x_array[start:stop, selected]
         mismatch = block != expected
-        observed = None if missing == "fail" else ~np.isnan(block)
+        if impossible is not None:
+            mismatch |= impossible
+        observed = None if missing == "fail" or block.dtype.kind in "iub" else ~np.isnan(block)
         del block  # Release selected responses before allocating the next batch.
         if observed is not None:
             mismatch &= observed
         scores = failures[start:stop]
         np.sum(mismatch, axis=1, dtype=float, out=scores)
-        if missing == "omit":
-            assert observed is not None
+        if missing == "omit" and observed is not None:
             counts = np.count_nonzero(observed, axis=1)
             if proportion:
                 np.divide(scores, counts, out=scores, where=counts > 0)
             scores[counts == 0] = np.nan
         elif proportion:
             scores /= len(selected)
-        if missing == "propagate":
-            assert observed is not None
+        if missing == "propagate" and observed is not None:
             scores[~np.all(observed, axis=1)] = np.nan
 
     return failures

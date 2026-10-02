@@ -190,6 +190,14 @@ validation. Both select columns and reduce responses in bounded respondent
 batches; missing-response scoring selects applicability cells within the same
 batch instead of copying the entire selected mask. Attention checks compare
 selected items together and write directly into a single result vector.
+Expected attention-check answers are prepared once in the response dtype for
+integer inputs, retaining adjacent categories near signed and unsigned 64-bit
+limits. Fractional and out-of-range answers cannot match integer responses;
+integer answers that the floating comparison dtype cannot represent cannot
+match rounded neighboring responses. Integer and boolean response batches
+skip missing-value scans and use complete-check denominators for every policy.
+Complex expected answers are rejected before conversion can discard their
+imaginary part.
 
 Screening counts available scores alongside flags without stacking either set of
 vectors. An optional `min_valid_indices` rule marks rows with insufficient score
