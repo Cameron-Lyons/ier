@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preserving calibrated scores near equal item probabilities without subtracting
   nearly equal likelihood sums. Local calibrated 10,000 × 80 runs reduce runtime
   by 25–36% while removing redundant logarithm matrices.
+- Logistic transforms preserve subnormal probabilities and saturated limits
+  under strict floating-point checks, including macOS exponential underflow
+  signals for tiny predictors. Only exponential underflow is handled locally;
+  caller error policies remain unchanged.
 - Supplied Lz difficulty, discrimination, and ability parameters must be real
   one-dimensional vectors aligned to items or respondents. Invalid axes and
   lossy numeric types fail before scoring instead of silently broadcasting;
