@@ -13,12 +13,16 @@ from ier import (
     IndexOptions,
     __version__,
     composite,
+    composite_scores,
+    composite_scores_summary,
     composite_summary,
     index_catalog,
+    load_score_archive,
     response_time,
     response_time_consistency,
     response_time_mixture,
     screen,
+    screen_scores,
 )
 from ier._cli_input import _load_input
 from ier._cli_npz import (
@@ -45,7 +49,7 @@ from ier._cli_output import (
     _write_screen_json,
 )
 from ier._flagging import resolve_threshold, threshold_flags
-from ier._registry import validate_worker_count
+from ier._registry import composite_index_names, validate_index_names, validate_worker_count
 from ier._statistics import logistic_transform
 
 
@@ -329,6 +333,89 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
     _add_output_options(parser)
 
 
+def _add_screen_decision_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--percentile", type=float, default=95.0)
+    parser.add_argument(
+        "--threshold",
+        action="append",
+        default=None,
+        metavar="INDEX=VALUE",
+        help="Fixed per-index cutoff; repeat for multiple indices",
+    )
+    parser.add_argument(
+        "--index-percentile",
+        action="append",
+        default=None,
+        metavar="INDEX=VALUE",
+        help="Per-index tail percentile; repeat for multiple indices",
+    )
+    parser.add_argument(
+        "--min-flags",
+        type=int,
+        default=2,
+        help="Minimum per-index flags for a consensus flag (default: 2)",
+    )
+    parser.add_argument(
+        "--min-valid-indices",
+        type=int,
+        default=None,
+        help="Minimum available index scores required for consensus eligibility",
+    )
+
+
+def _add_composite_decision_options(
+    parser: argparse.ArgumentParser, *, precomputed: bool = False
+) -> None:
+    parser.add_argument(
+        "--method",
+        choices=["mean", "sum", "max"] if precomputed else ["mean", "sum", "max", "best_subset"],
+        default="mean",
+    )
+    parser.add_argument(
+        "--standardize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Standardize each directed component before combining (default: true)",
+    )
+    composite_flagging = parser.add_mutually_exclusive_group()
+    composite_flagging.add_argument(
+        "--threshold",
+        type=float,
+        default=None,
+        help="Flag scores at or above a fixed cutoff",
+    )
+    composite_flagging.add_argument(
+        "--percentile",
+        type=float,
+        default=None,
+        help="Flag scores strictly above a sample percentile",
+    )
+    parser.add_argument(
+        "--weight",
+        action="append",
+        default=None,
+        metavar="INDEX=VALUE",
+        help="Positive index weight override; repeat for multiple indices",
+    )
+    parser.add_argument(
+        "--min-valid-indices",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Require at least N available component scores per respondent",
+    )
+    parser.add_argument(
+        "--include-components",
+        action="store_true",
+        help="Include raw component scores and per-respondent availability counts",
+    )
+    parser.add_argument(
+        "--include-probability",
+        action="store_true",
+        help="Include uncalibrated logistic composite values alongside scores",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ier",
@@ -350,33 +437,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Index names to compute (default: package screen defaults)",
     )
-    screen_parser.add_argument("--percentile", type=float, default=95.0)
-    screen_parser.add_argument(
-        "--threshold",
-        action="append",
-        default=None,
-        metavar="INDEX=VALUE",
-        help="Fixed per-index cutoff; repeat for multiple indices",
-    )
-    screen_parser.add_argument(
-        "--index-percentile",
-        action="append",
-        default=None,
-        metavar="INDEX=VALUE",
-        help="Per-index tail percentile; repeat for multiple indices",
-    )
-    screen_parser.add_argument(
-        "--min-flags",
-        type=int,
-        default=2,
-        help="Minimum per-index flags for a consensus flag (default: 2)",
-    )
-    screen_parser.add_argument(
-        "--min-valid-indices",
-        type=int,
-        default=None,
-        help="Minimum available index scores required for consensus eligibility",
-    )
+    _add_screen_decision_options(screen_parser)
     _add_shared_options(screen_parser)
 
     composite_parser = sub.add_parser(
@@ -393,55 +454,29 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Index names to include (default: package composite defaults)",
     )
-    composite_parser.add_argument(
-        "--method",
-        choices=["mean", "sum", "max", "best_subset"],
-        default="mean",
-    )
-    composite_parser.add_argument(
-        "--standardize",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Standardize each directed component before combining (default: true)",
-    )
-    composite_flagging = composite_parser.add_mutually_exclusive_group()
-    composite_flagging.add_argument(
-        "--threshold",
-        type=float,
-        default=None,
-        help="Flag scores at or above a fixed cutoff",
-    )
-    composite_flagging.add_argument(
-        "--percentile",
-        type=float,
-        default=None,
-        help="Flag scores strictly above a sample percentile",
-    )
-    composite_parser.add_argument(
-        "--weight",
-        action="append",
-        default=None,
-        metavar="INDEX=VALUE",
-        help="Positive index weight override; repeat for multiple indices",
-    )
-    composite_parser.add_argument(
-        "--min-valid-indices",
-        type=int,
-        default=None,
-        metavar="N",
-        help="Require at least N available component scores per respondent",
-    )
-    composite_parser.add_argument(
-        "--include-components",
-        action="store_true",
-        help="Include raw component scores and per-respondent availability counts",
-    )
-    composite_parser.add_argument(
-        "--include-probability",
-        action="store_true",
-        help="Include uncalibrated logistic composite values alongside scores",
-    )
+    _add_composite_decision_options(composite_parser)
     _add_shared_options(composite_parser)
+
+    for command, help_text in (
+        ("screen-scores", "Apply screening decisions to a saved score archive."),
+        ("composite-scores", "Combine saved component scores without rescoring items."),
+    ):
+        saved_parser = sub.add_parser(command, help=help_text)
+        saved_parser.add_argument("data", type=Path, help="Reusable .npz score archive")
+        saved_parser.add_argument(
+            "--indices",
+            nargs="+",
+            default=None,
+            help="Saved score names to select in order (default: all saved scores)",
+        )
+        saved_parser.add_argument(
+            "--strict", action="store_true", help="Fail if the archive retains index failures"
+        )
+        if command == "screen-scores":
+            _add_screen_decision_options(saved_parser)
+        else:
+            _add_composite_decision_options(saved_parser, precomputed=True)
+        _add_output_options(saved_parser)
 
     response_time_parser = sub.add_parser(
         "response-time",
@@ -528,6 +563,27 @@ def _score_response_times(
     return response_time(matrix, metric=metric), "low"
 
 
+def _load_reusable_scores(
+    path: Path, indices: list[str] | None, strict: bool
+) -> tuple[dict[str, np.ndarray], dict[str, str], list[str] | None]:
+    """Select saved raw scores while retaining relevant archive provenance."""
+    archive = load_score_archive(path)
+    scores = archive["scores"]
+    errors = archive["errors"]
+    if indices is not None:
+        validate_index_names(indices)
+        for name in indices:
+            if name not in scores:
+                detail = errors.get(name, "the index was not saved in this archive")
+                raise ValueError(f"index '{name}' has no saved scores: {detail}")
+        scores = {name: scores[name] for name in indices}
+        errors = {}
+    if strict and errors:
+        name, message = next(iter(errors.items()))
+        raise ValueError(f"archive index '{name}' failed: {message}")
+    return scores, errors, archive["respondent_ids"]
+
+
 def _run_command(args: argparse.Namespace) -> int:
     """Execute one parsed CLI command, allowing user-facing failures to bubble to main()."""
     if args.command == "indices":
@@ -549,16 +605,26 @@ def _run_command(args: argparse.Namespace) -> int:
     if args.format == "npz":
         _require_npz_output_path(args.output)
 
-    matrix, respondent_ids = _load_input(
-        args.data,
-        args.delimiter,
-        args.id_column,
-        _parse_name_list(args.item_columns),
-        args.header,
-        args.missing_values,
-        args.skip_rows,
-    )
+    precomputed = args.command in {"screen-scores", "composite-scores"}
+    saved_scores: dict[str, np.ndarray] = {}
+    archive_errors: dict[str, str] = {}
+    if precomputed:
+        saved_scores, archive_errors, respondent_ids = _load_reusable_scores(
+            args.data, args.indices, args.strict
+        )
+        matrix = None
+    else:
+        matrix, respondent_ids = _load_input(
+            args.data,
+            args.delimiter,
+            args.id_column,
+            _parse_name_list(args.item_columns),
+            args.header,
+            args.missing_values,
+            args.skip_rows,
+        )
     if args.command == "response-time":
+        assert matrix is not None
         scores, direction = _score_response_times(
             matrix,
             args.metric,
@@ -620,20 +686,32 @@ def _run_command(args: argparse.Namespace) -> int:
         _write_output(text, args.output)
         return 0
 
-    options = _options_from_args(args)
-    if args.command == "screen":
-        result = screen(
-            matrix,
-            indices=args.indices,
-            options=options,
-            percentile=args.percentile,
-            min_flags=args.min_flags,
-            min_valid_indices=args.min_valid_indices,
-            thresholds=_parse_thresholds(args.threshold),
-            percentiles=_parse_percentiles(args.index_percentile),
-            strict=args.strict,
-            workers=args.workers,
-        )
+    options = None if precomputed else _options_from_args(args)
+    if args.command in {"screen", "screen-scores"}:
+        if precomputed:
+            result = screen_scores(
+                saved_scores,
+                percentile=args.percentile,
+                min_flags=args.min_flags,
+                min_valid_indices=args.min_valid_indices,
+                thresholds=_parse_thresholds(args.threshold),
+                percentiles=_parse_percentiles(args.index_percentile),
+            )
+            result["errors"] = archive_errors
+        else:
+            assert matrix is not None
+            result = screen(
+                matrix,
+                indices=args.indices,
+                options=options,
+                percentile=args.percentile,
+                min_flags=args.min_flags,
+                min_valid_indices=args.min_valid_indices,
+                thresholds=_parse_thresholds(args.threshold),
+                percentiles=_parse_percentiles(args.index_percentile),
+                strict=args.strict,
+                workers=args.workers,
+            )
         _report_soft_errors(result["errors"])
         if args.format == "json":
             _write_json_output(
@@ -656,7 +734,34 @@ def _run_command(args: argparse.Namespace) -> int:
     weights = _parse_weights(args.weight)
     component_scores: dict[str, np.ndarray] | None = None
     valid_index_counts: np.ndarray | None = None
-    if args.include_components:
+    if precomputed:
+        # Error metadata in composite archives follows the composite registry.
+        enabled = composite_index_names()
+        archive_errors = {
+            name: message for name, message in archive_errors.items() if name in enabled
+        }
+        if args.include_components:
+            details = composite_scores_summary(
+                saved_scores,
+                method=args.method,
+                standardize=args.standardize,
+                weights=weights,
+                min_valid_indices=args.min_valid_indices,
+            )
+            scores = details["composite"]
+            component_scores = details["indices"]
+            valid_index_counts = details["valid_index_counts"]
+        else:
+            scores = composite_scores(
+                saved_scores,
+                method=args.method,
+                standardize=args.standardize,
+                weights=weights,
+                min_valid_indices=args.min_valid_indices,
+            )
+        errors = archive_errors
+    elif args.include_components:
+        assert matrix is not None
         details = composite_summary(
             matrix,
             indices=args.indices,
@@ -673,6 +778,7 @@ def _run_command(args: argparse.Namespace) -> int:
         component_scores = details["indices"]
         valid_index_counts = details["valid_index_counts"]
     else:
+        assert matrix is not None
         scores_result = composite(
             matrix,
             indices=args.indices,

@@ -45,15 +45,19 @@ def normal_quantile(probability: float) -> float:
 
 
 def logistic_transform(values: np.ndarray) -> np.ndarray:
-    """Apply the logistic transform without overflowing at either extreme."""
+    """Apply the logistic transform, retaining subnormal tails and saturated limits."""
     value_array = np.asarray(values, dtype=float)
     result = np.empty_like(value_array)
     nonnegative = value_array >= 0.0
 
     np.negative(value_array, out=result)
-    np.exp(result, out=result, where=nonnegative)
-    np.logical_not(nonnegative, out=nonnegative)
-    np.exp(value_array, out=result, where=nonnegative)
+    # Tiny exponential tails may underflow to zero. Some platform math libraries
+    # also signal underflow for near-zero arguments whose exponential rounds to
+    # one. Both are valid here; retain the caller's other floating-point checks.
+    with np.errstate(under="ignore"):
+        np.exp(result, out=result, where=nonnegative)
+        np.logical_not(nonnegative, out=nonnegative)
+        np.exp(value_array, out=result, where=nonnegative)
     denominator = 1.0 + result
     np.divide(result, denominator, out=result, where=nonnegative)
     np.logical_not(nonnegative, out=nonnegative)

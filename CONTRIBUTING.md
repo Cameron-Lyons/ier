@@ -46,9 +46,18 @@ Or run checks individually:
 uv run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing
 uv run --no-sync ruff check .
 uv run --no-sync ruff format --check .
-uv run --no-sync mypy src/ier
+uv run --no-sync mypy src/ier benchmarks
 uv run --no-sync mkdocs build --strict
 ```
+
+CI selects and verifies each supported Python interpreter explicitly across
+Linux, macOS, and Windows. Additional jobs run the complete test suite against
+the declared minimum NumPy version, 1.26.0, on Python 3.11 and the newest release
+within the supported range on Python 3.14, using locked integration tools.
+Project/lock version consistency is checked even when the PR has the
+`no-version-bump` label. Every test environment enforces warnings as errors and
+the 95% coverage floor with branch measurement enabled. Superseded PR runs are
+cancelled and jobs have time limits.
 
 ### Lint roles
 
@@ -234,7 +243,18 @@ Verify release artifacts after packaging changes:
 uv build
 uv run --no-project python scripts/check_dist.py dist/*
 uv run --isolated --no-project --with dist/*.whl python scripts/smoke_test_install.py
+uv run --isolated --no-project --with dist/*.tar.gz python scripts/smoke_test_install.py
 ```
+
+The artifact verifier checks all Python package files, typing support, license,
+CLI entry point, and release metadata in the wheel and source distribution.
+It also checks that the source distribution's bundled project metadata matches
+the current project. Both artifacts are installed into isolated environments
+with only runtime dependencies, then tested with known screening scores,
+compressed CSV input, JSON and NPZ CLI output, respondent IDs, and archive
+reload/reflagging. Release and publish workflows reuse these tested artifacts.
+Both workflows also require lint, type, docs, and dependency-audit checks to pass
+before creating a release or publishing a package.
 
 ## Architecture
 
@@ -257,7 +277,7 @@ The repository supports two release paths:
 - Tag-based GitHub release workflow (`vX.Y.Z`) — runs the full CI suite, then
   produces artifacts and a GitHub Release. The tag must exactly match
   `v<project.version>` from `pyproject.toml`.
-- Publish workflow (`Publish to PyPI`) — runs tests, builds, then uploads to
+- Publish workflow (`Publish to PyPI`) — runs tests, validates artifacts, then uploads to
   TestPyPI/PyPI. Release-triggered publishes enforce the same tag/version match.
 
 ### Publish to TestPyPI
@@ -270,7 +290,11 @@ The repository supports two release paths:
 
 1. Open GitHub Actions.
 2. Run `Publish to PyPI` manually with `target=pypi`,
-   or publish a GitHub Release.
+   or publish a GitHub Release manually.
+
+A release created by the tag workflow uses GitHub's default token, which does
+not trigger the separate release-event publish workflow. After tagging, dispatch
+`Publish to PyPI` manually when the package should be published.
 
 ## Versioning Policy
 

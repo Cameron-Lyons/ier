@@ -3,6 +3,28 @@
 `composite()` combines multiple IER indices into one sample-relative score.
 Higher values indicate stronger careless-responding signal **within the sample**.
 
+After computing components once, use `composite_scores_summary()` to change the
+combination while retaining raw components, per-respondent coverage counts, and
+aggregate statistics:
+
+```python
+from ier import composite_scores_summary, load_score_archive
+
+saved = load_score_archive("screening.npz")
+details = composite_scores_summary(
+    {name: saved["scores"][name] for name in ["irv", "longstring"]},
+    weights={"irv": 2.0},
+    min_valid_indices=2,
+)
+print(details["composite"], details["valid_index_counts"])
+```
+
+Only successful saved scores can be combined. The summary's `errors` mapping is
+empty because no index is recomputed; source failures remain in the loaded
+archive. Compatible arrays are retained in `indices` and never mutated. Coverage
+is measured using the same calibration and availability rules as a fresh
+composite summary, including the established raw single-observation policy.
+
 ```python
 from ier import IndexOptions, composite, composite_probability
 

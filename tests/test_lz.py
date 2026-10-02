@@ -1,5 +1,6 @@
 """Person-fit regression tests with independent scalar reference calculations."""
 
+import math
 import unittest
 from unittest.mock import patch
 
@@ -58,14 +59,15 @@ def _reference_lz_row(
     b: np.ndarray,
     theta: float,
 ) -> float:
-    """Compute one lz score for the missing-data fallback path."""
-    prob = logistic_transform(a * (theta - b))
+    """Evaluate the centered Bernoulli likelihood moments for one row."""
+    predictor = a * (theta - b)
+    prob = logistic_transform(predictor)
     prob = np.clip(prob, 1e-10, 1 - 1e-10)
-    log_l = np.sum(responses * np.log(prob) + (1 - responses) * np.log(1 - prob))
-    expected_l = np.sum(prob * np.log(prob) + (1 - prob) * np.log(1 - prob))
-    log_odds = np.log(prob / (1 - prob))
+    ceiling = 1 - 1e-10
+    log_odds = np.clip(predictor, math.log(1e-10 / ceiling), math.log(ceiling / (1 - ceiling)))
+    centered_l = np.sum((responses - prob) * log_odds)
     var_l = np.sum(prob * (1 - prob) * log_odds**2)
-    return 0.0 if var_l <= 0 else float((log_l - expected_l) / np.sqrt(var_l))
+    return 0.0 if var_l <= 0 else float(centered_l / np.sqrt(var_l))
 
 
 class TestLz(unittest.TestCase):
@@ -203,7 +205,7 @@ class TestLz(unittest.TestCase):
         self.assertEqual(len(result), 2)
 
     def test_complete_batch_kernels_match_scalar_rows(self) -> None:
-        """Batched complete-data kernels preserve exact scalar results."""
+        """Batched complete-data kernels preserve scalar scores within rounding."""
         rng = np.random.default_rng(29)
         for n_items in (4, 5, 17, 80):
             with self.subTest(n_items=n_items):
@@ -239,7 +241,7 @@ class TestLz(unittest.TestCase):
                     ]
                 )
                 np.testing.assert_array_equal(theta, expected_theta)
-                np.testing.assert_array_equal(scores, expected_scores)
+                np.testing.assert_allclose(scores, expected_scores, rtol=3e-15, atol=2e-15)
 
     def test_all_correct_responses(self) -> None:
         """Test handling of all correct responses."""

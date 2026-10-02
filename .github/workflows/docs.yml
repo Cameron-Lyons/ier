@@ -9,6 +9,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
@@ -20,7 +21,7 @@ jobs:
         run: uv python install 3.14
 
       - name: Install dependencies
-        run: uv sync --locked --group docs
+        run: uv sync --locked --group docs --python 3.14
 
       - name: Build docs
         run: uv run --no-sync mkdocs build --strict

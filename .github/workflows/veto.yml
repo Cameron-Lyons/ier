@@ -8,6 +8,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: veto-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     uses: ./.github/workflows/ci.yml
@@ -30,6 +34,7 @@ jobs:
   veto:
     name: Veto
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 5
     needs: [ci, lint, security, docs, version-check]
     if: always()
     steps:

@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from zipfile import ZIP_STORED, ZipFile
+from zipfile import ZIP_STORED, BadZipFile, ZipFile
+from zlib import error as ZlibError
 
 import numpy as np
+from numpy.lib.format import MAGIC_PREFIX
 
 from ier._atomic_output import atomic_output_path
 from ier._registry import composite_index_names, validate_index_names
 from ier._validation import validate_score_array, validate_score_vectors
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from numpy.lib.npyio import NpzFile
     from numpy.typing import ArrayLike
@@ -116,10 +119,35 @@ def _require_member(archive: NpzFile, name: str) -> np.ndarray:
     try:
         value = archive[name]
     except ValueError as error:
-        raise ValueError(f"NPZ archive member {name} is not pickle-free") from error
+        if "Object arrays cannot be loaded" in str(error):
+            raise ValueError(f"NPZ archive member {name} is not pickle-free") from error
+        raise ValueError(f"NPZ archive member {name} is malformed: {error}") from error
+    except (EOFError, BadZipFile, ZlibError, NotImplementedError, RuntimeError) as error:
+        raise ValueError(f"NPZ archive member {name} cannot be read: {error}") from error
     if not isinstance(value, np.ndarray):
         raise ValueError(f"NPZ archive member {name} must be a NumPy array")
     return value
+
+
+@contextmanager
+def _open_npz_archive(path: str | Path, *, label: str) -> Iterator[NpzFile]:
+    """Own the input stream, even when NumPy fails while opening the ZIP container."""
+    with Path(path).open("rb") as handle:
+        # A wrong-format NPY matrix can be much larger than an archive's metadata.
+        # Reject it before NumPy reads its header or allocates its entire payload.
+        if handle.read(len(MAGIC_PREFIX)) == MAGIC_PREFIX:
+            raise ValueError(f"{label} archive must be an NPZ archive")
+        handle.seek(0)
+        try:
+            loaded = np.load(handle, allow_pickle=False)
+        except (EOFError, ValueError, BadZipFile) as error:
+            raise ValueError(
+                f"{label} archive could not be read as an NPZ archive: {error}"
+            ) from error
+        if isinstance(loaded, np.ndarray):
+            raise ValueError(f"{label} archive must be an NPZ archive")
+        with cast("NpzFile", loaded) as archive:
+            yield archive
 
 
 def _integer_scalar(archive: NpzFile, name: str) -> int:
@@ -586,10 +614,7 @@ def load_score_archive(path: str | Path) -> ScoreArchive:
         ...     weights={"irv": 2.0},
         ... )
     """
-    loaded = np.load(path, allow_pickle=False)
-    if isinstance(loaded, np.ndarray):
-        raise ValueError("score archive must be an NPZ archive")
-    with loaded as archive:
+    with _open_npz_archive(path, label="score") as archive:
         return _read_score_archive(archive)
 
 
@@ -618,8 +643,5 @@ def load_response_time_archive(path: str | Path) -> ResponseTimeArchive:
         ...     direction=saved["flag_direction"],
         ... )
     """
-    loaded = np.load(path, allow_pickle=False)
-    if isinstance(loaded, np.ndarray):
-        raise ValueError("response-time archive must be an NPZ archive")
-    with loaded as archive:
+    with _open_npz_archive(path, label="response-time") as archive:
         return _read_response_time_archive(archive)

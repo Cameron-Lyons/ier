@@ -11,6 +11,7 @@ For a comprehensive methods review, see
 - Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
 - Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
 - Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
+- Saved-score CLI screening and composites with reusable coverage summaries
 - Validated, pickle-free score and response-time archive persistence
 - Atomic result-file replacement across text, CSV, JSON, and NPZ output
 - Validated per-index weights across all composite scoring helpers
@@ -137,6 +138,8 @@ ier screen responses.csv.gz --format json --output screening.json.gz
 ier screen responses.csv.xz --format csv --output screening.csv.xz
 ier screen survey-export.csv --skip-rows 2 --id-column participant_id
 ier screen responses.npy --indices irv longstring
+ier screen-scores screening.npz --index-percentile irv=99 --min-flags 2
+ier composite-scores screening.npz --indices irv longstring --weight irv=2
 cat responses.csv | ier screen - --indices irv longstring --format json
 ier indices --format json
 ier --version
@@ -211,6 +214,8 @@ Use `composite_scores(details["indices"], ...)` with the raw component mapping
 from `composite_summary()` to compare weights, mean/sum/max reductions,
 standardization, or completeness rules without recalculating any index. Direction
 correction remains automatic and inputs are not mutated.
+`composite_scores_summary()` additionally reports component availability and
+aggregate statistics using the same reduction pass.
 
 Use `save_score_archive("scores.npz", scores)` to persist any ordered mapping of
 raw registered-index vectors directly from Python, then
@@ -218,6 +223,16 @@ raw registered-index vectors directly from Python, then
 IDs, and soft failures. Full CLI screen output and detailed composite archives
 written with `--include-components` are compatible as well; schema, registry,
 alignment, and pickle-free safety checks run before reuse.
+
+The `screen-scores` and `composite-scores` CLI commands reuse these archives
+without the original item matrix. They support the corresponding cutoffs,
+percentiles, weights, coverage controls, and all four output formats. Saved
+respondent IDs remain aligned. Optional `--indices` selects saved components in
+the requested order; by default all saved scores are used. Composite inputs must
+contain composite-enabled indices, so select a subset when the screening archive
+also contains response-style or onset scores. Archive failures remain visible
+unless an explicit subset excludes them; `--strict` rejects retained failures.
+Composite output omits failures belonging only to screening indices.
 
 Response-time results have matching `save_response_time_archive()` and
 `load_response_time_archive()` boundaries. The writer preserves prepared scores,
@@ -345,6 +360,8 @@ uv run python benchmarks/bench_response_time.py
 uv run python benchmarks/bench_orchestration.py
 uv run python benchmarks/bench_flagging.py
 uv run python benchmarks/bench_cli_output.py
+uv run python benchmarks/bench_score_reuse.py
+uv run python benchmarks/bench_score_reuse.py --workflow composite
 uv run python benchmarks/bench_detection.py
 ```
 

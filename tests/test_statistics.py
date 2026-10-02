@@ -2,6 +2,7 @@
 
 import math
 import unittest
+from decimal import Decimal, localcontext
 
 import numpy as np
 
@@ -14,6 +15,59 @@ from ier._statistics import (
 
 
 class TestLogisticTransform(unittest.TestCase):
+    def test_tiny_predictors_and_subnormal_tails_under_strict_errors(self) -> None:
+        tiny = float(np.finfo(float).smallest_subnormal)
+        values = np.array(
+            [
+                -1000.0,
+                -746.0,
+                -745.0,
+                -744.0,
+                -710.0,
+                -1e-300,
+                -tiny,
+                0.0,
+                tiny,
+                1e-300,
+                710.0,
+                744.0,
+                745.0,
+                746.0,
+                1000.0,
+            ]
+        )
+        with localcontext() as context:
+            context.prec = 450
+            expected = np.array(
+                [float(1 / (1 + (-Decimal.from_float(float(value))).exp())) for value in values]
+            )
+        for prepared in (values, values[::-1], values.reshape(3, 5)):
+            with self.subTest(shape=prepared.shape, strides=prepared.strides):
+                prepared.flags.writeable = False
+                original = prepared.copy()
+                with np.errstate(all="raise"):
+                    actual = logistic_transform(prepared)
+                # Absolute zero tolerance ensures subnormal probabilities survive.
+                reference = expected[::-1] if prepared.strides[0] < 0 else expected
+                np.testing.assert_allclose(
+                    actual, reference.reshape(prepared.shape), rtol=2e-15, atol=0
+                )
+                np.testing.assert_array_equal(prepared, original)
+                self.assertTrue(np.isfinite(actual).all())
+
+    def test_underflow_handling_restores_the_callers_error_policy(self) -> None:
+        original_policy = np.geterr()
+        with np.errstate(all="raise"):
+            strict_policy = np.geterr()
+            actual = logistic_transform(np.array([-np.inf, -1000.0, 0.0, 1000.0, np.inf, np.nan]))
+            np.testing.assert_array_equal(actual, [0.0, 0.0, 0.5, 1.0, 1.0, np.nan])
+            self.assertEqual(np.geterr(), strict_policy)
+            with self.assertRaises(FloatingPointError):
+                np.exp(np.array([-1000.0]))
+            with self.assertRaises(FloatingPointError):
+                np.exp(np.array([1000.0]))
+        self.assertEqual(np.geterr(), original_policy)
+
     def test_extreme_values_are_stable_and_precise(self) -> None:
         values = np.array([-np.inf, -1000.0, -1.0, 0.0, 1.0, 1000.0, np.inf, np.nan])
 

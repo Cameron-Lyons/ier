@@ -27,6 +27,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bias from other retained results. Allocation samples stay alive until tracing
   stops so result cleanup does not inflate the recorded peak.
 
+## [1.8.1] - 2026-10-01
+
+### Added
+
+- `ier screen-scores` and `ier composite-scores` reuse validated NPZ components
+  for cutoff, coverage, and weighting analysis without the original item matrix.
+  Respondent IDs, selected component order, relevant source failures, flags,
+  probabilities, and all four output formats remain available.
+- `composite_scores_summary()` reports reusable composite scores, raw components,
+  calibrated coverage, resolved weights, and aggregate statistics in one pass.
+- An end-to-end CLI reuse benchmark checks every saved result member against
+  fresh scoring. Local 20,000 × 80 runs reduce screening from 120 to 5 ms and
+  detailed composites from 173 to 7 ms, with peak traced allocation reduced
+  from 7.1 MiB to 1.6–1.8 MiB.
+
+### Fixed
+
+- Lz dichotomization preserves exact midpoint decisions at signed and unsigned
+  integer limits and for floating overflow, subnormal values, and rounded ties.
+- Lz scoring uses centered Bernoulli moments and scaled predictor log-odds,
+  preserving calibrated scores near equal item probabilities without subtracting
+  nearly equal likelihood sums. Local calibrated 10,000 × 80 runs reduce runtime
+  by 25–36% while removing redundant logarithm matrices.
+- Logistic transforms preserve subnormal probabilities and saturated limits
+  under strict floating-point checks, including macOS exponential underflow
+  signals for tiny predictors. Only exponential underflow is handled locally;
+  caller error policies remain unchanged.
+- Supplied Lz difficulty, discrimination, and ability parameters must be real
+  one-dimensional vectors aligned to items or respondents. Invalid axes and
+  lossy numeric types fail before scoring instead of silently broadcasting;
+  missing parameter values retain the existing availability policy.
+- Reusable-score APIs reject Boolean, string, complex, object, and timedelta
+  arrays instead of changing their meaning through implicit float conversion.
+- Archive loaders report malformed members, checksum failures, and corrupt ZIP
+  containers with context, close input files on failures, and reject NPY inputs
+  before allocating their payloads.
+- Release and publishing jobs reuse the distribution artifacts verified by CI,
+  removing conflicting duplicate uploads and redundant builds.
+
+### Changed
+
+- CI explicitly selects and verifies each matrix Python version, runs the full
+  suite with minimum and newest supported NumPy, checks benchmark typing, and validates
+  project/lock version consistency regardless of version-bump exemptions.
+- The combined statement/branch coverage gate rises from 90% to 95%. Releases
+  and publishing also require the existing lint, documentation, and dependency
+  audit gates before distributing the tested artifacts.
+- Built wheel and source distribution checks verify package source completeness,
+  metadata, and executable entry points. Isolated installations exercise real
+  scoring, missing data, respondent IDs, compressed input, JSON, NPZ, and reuse.
+- Added hand-calculated CLI and reusable-summary checks, fault-injected archive
+  and distribution proofs, and exact-reference Lz numerical regression tests.
+
 ## [1.7.30] - 2026-09-30
 
 ### Changed

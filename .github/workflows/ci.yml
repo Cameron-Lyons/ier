@@ -12,6 +12,7 @@ jobs:
   test:
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -30,11 +31,19 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
+      - name: Require project and lock versions to match
+        run: uv run --no-project --python ${{ matrix.python-version }} python scripts/check_lock_version.py
+
       - name: Install dependencies
-        run: uv sync --locked --group integration
+        run: uv sync --locked --group integration --python ${{ matrix.python-version }}
+
+      - name: Verify test interpreter
+        env:
+          EXPECTED_PYTHON: ${{ matrix.python-version }}
+        run: uv run --no-sync python -c "import os, sys; actual = '.'.join(map(str, sys.version_info[:2])); assert actual == os.environ['EXPECTED_PYTHON'], actual"
 
       - name: Run tests with coverage
-        run: uv run --no-sync pytest tests/ -v --cov=ier --cov-report=xml --cov-report=term-missing --cov-fail-under=90
+        run: uv run --no-sync pytest tests/ -v --cov=ier --cov-report=xml --cov-report=term-missing --cov-fail-under=95
 
       - name: Upload coverage to Codecov
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
@@ -45,10 +54,53 @@ jobs:
           fail_ci_if_error: false
           verbose: true
 
+  numpy-compatibility:
+    name: Test ${{ matrix.numpy-mode }} NumPy on Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.11"
+            numpy-mode: minimum
+            numpy-specifier: numpy==1.26.0
+          - python-version: "3.14"
+            numpy-mode: latest
+            numpy-specifier: numpy>=1.26.0,<2.5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install locked integration tools
+        run: uv sync --locked --group integration --python ${{ matrix.python-version }}
+
+      - name: Install supported NumPy boundary
+        env:
+          NUMPY_SPECIFIER: ${{ matrix.numpy-specifier }}
+        run: uv pip install --upgrade --python .venv/bin/python "$NUMPY_SPECIFIER"
+
+      - name: Verify dependency environment
+        env:
+          EXPECTED_PYTHON: ${{ matrix.python-version }}
+          NUMPY_MODE: ${{ matrix.numpy-mode }}
+        run: |
+          uv run --no-sync python -c "import os, sys, numpy; actual = '.'.join(map(str, sys.version_info[:2])); assert actual == os.environ['EXPECTED_PYTHON'], actual; version = tuple(map(int, numpy.__version__.split('.')[:2])); assert (1, 26) <= version < (2, 5), numpy.__version__; assert os.environ['NUMPY_MODE'] != 'minimum' or numpy.__version__ == '1.26.0', numpy.__version__"
+
+      - name: Run complete suite with supported NumPy boundary
+        run: uv run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing --cov-fail-under=95
+
   build:
     name: Build distribution
     runs-on: ubuntu-24.04-arm
-    needs: test
+    timeout-minutes: 15
+    needs: [test, numpy-compatibility]
 
     steps:
       - name: Checkout repository
@@ -63,7 +115,7 @@ jobs:
         run: uv python install 3.14
 
       - name: Build package
-        run: uv build
+        run: uv build --python 3.14
 
       - name: Verify package metadata
         run: uv run --no-project python scripts/check_dist.py dist/*
@@ -72,11 +124,15 @@ jobs:
         run: uvx twine check dist/*
 
       - name: Smoke-test built wheel
-        run: uv run --isolated --no-project --with dist/*.whl python scripts/smoke_test_install.py
+        run: uv run --isolated --no-project --python 3.14 --with dist/*.whl python scripts/smoke_test_install.py
+
+      - name: Smoke-test source distribution
+        run: uv run --isolated --no-project --python 3.14 --with dist/*.tar.gz python scripts/smoke_test_install.py
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
           retention-days: 7
