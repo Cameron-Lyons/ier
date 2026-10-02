@@ -437,6 +437,11 @@ _CASES = [
         [*_MATRIX, "--dtype", "float32", "--strict", "--order", "F", "--irv-splits", "2"],
     ),
     ("screen", [*_MATRIX, "--sensitivity-scenarios", "2"]),
+    ("score_reuse", ["--respondents", "64", "--items", "24", "--repeats", "1"]),
+    (
+        "score_reuse",
+        ["--respondents", "64", "--items", "24", "--repeats", "1", "--workflow", "composite"],
+    ),
     ("sequence_scoring", _MATRIX),
     ("lz", [*_MATRIX, "--operation", "discrimination", "--categories", "5"]),
     ("psychsyn", [*_MATRIX, "--operation", "psychsyn_critval"]),

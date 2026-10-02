@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 import tarfile
 import tomllib
 import zipfile
@@ -12,6 +13,13 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from email.message import Message
+
+
+class _EntryPointParser(configparser.ConfigParser):
+    """Preserve the case of console-script names, as installers do."""
+
+    def optionxform(self, optionstr: str) -> str:
+        return optionstr
 
 
 def _require(condition: bool, message: str) -> None:
@@ -39,18 +47,44 @@ def _wheel_metadata(archive: zipfile.ZipFile, dist_info: str) -> Message:
     return BytesParser().parsebytes(metadata)
 
 
-def _verify_wheel(path: Path, project: dict[str, object]) -> None:
+def _package_files() -> set[str]:
+    source = Path(__file__).resolve().parents[1] / "src"
+    return {path.relative_to(source).as_posix() for path in (source / "ier").rglob("*.py")} | {
+        "ier/py.typed"
+    }
+
+
+def _verify_metadata(path: Path, metadata: Message, project: dict[str, object]) -> None:
+    expected_headers = {
+        "Name": _project_value(project, "name"),
+        "Version": _project_value(project, "version"),
+        "License-Expression": _project_value(project, "license"),
+        "Requires-Python": _project_value(project, "requires-python"),
+    }
+    for header, expected in expected_headers.items():
+        actual = metadata.get(header)
+        _require(
+            actual == expected,
+            f"{path.name} has {header}={actual!r}; expected {expected!r}",
+        )
+
+    license_files = metadata.get_all("License-File", failobj=[])
+    _require("LICENSE" in license_files, f"{path.name} does not declare LICENSE metadata")
+
+
+def _verify_wheel(
+    path: Path, project: dict[str, object], package_files: set[str] | None = None
+) -> None:
     name = _project_value(project, "name")
     version = _project_value(project, "version")
-    license_expression = _project_value(project, "license")
-    requires_python = _project_value(project, "requires-python")
     distribution = name.replace("-", "_")
     dist_info = f"{distribution}-{version}.dist-info"
+    if package_files is None:
+        package_files = _package_files()
 
     with zipfile.ZipFile(path) as archive:
-        members = set(archive.namelist())
-        required_members = {
-            "ier/py.typed",
+        members = {member.filename for member in archive.infolist() if not member.is_dir()}
+        required_members = package_files | {
             f"{dist_info}/METADATA",
             f"{dist_info}/entry_points.txt",
             f"{dist_info}/licenses/LICENSE",
@@ -58,44 +92,53 @@ def _verify_wheel(path: Path, project: dict[str, object]) -> None:
         missing = sorted(required_members - members)
         _require(not missing, f"{path.name} is missing required files: {missing}")
 
-        metadata = _wheel_metadata(archive, dist_info)
-        expected_headers = {
-            "Name": name,
-            "Version": version,
-            "License-Expression": license_expression,
-            "Requires-Python": requires_python,
-        }
-        for header, expected in expected_headers.items():
-            actual = metadata.get(header)
-            _require(
-                actual == expected,
-                f"{path.name} has {header}={actual!r}; expected {expected!r}",
-            )
-
-        license_files = metadata.get_all("License-File", failobj=[])
-        _require("LICENSE" in license_files, f"{path.name} does not declare LICENSE metadata")
+        _verify_metadata(path, _wheel_metadata(archive, dist_info), project)
         entry_points = archive.read(f"{dist_info}/entry_points.txt").decode("utf-8")
+        configuration = _EntryPointParser(interpolation=None)
+        configuration.read_string(entry_points)
         _require(
-            "ier = ier.cli:main" in entry_points,
+            configuration.get("console_scripts", "ier", fallback=None) == "ier.cli:main",
             f"{path.name} is missing the ier CLI entry point",
         )
 
 
-def _verify_sdist(path: Path, project: dict[str, object]) -> None:
+def _verify_sdist(
+    path: Path, project: dict[str, object], package_files: set[str] | None = None
+) -> None:
     name = _project_value(project, "name").replace("-", "_")
     version = _project_value(project, "version")
     root = f"{name}-{version}"
-    required_members = {
+    if package_files is None:
+        package_files = _package_files()
+    required_members = {f"{root}/src/{member}" for member in package_files} | {
         f"{root}/LICENSE",
+        f"{root}/PKG-INFO",
         f"{root}/README.md",
         f"{root}/pyproject.toml",
-        f"{root}/src/ier/py.typed",
     }
 
     with tarfile.open(path, mode="r:gz") as archive:
-        members = {member.name for member in archive.getmembers()}
-    missing = sorted(required_members - members)
-    _require(not missing, f"{path.name} is missing required files: {missing}")
+        members = {member.name for member in archive.getmembers() if member.isfile()}
+        missing = sorted(required_members - members)
+        _require(not missing, f"{path.name} is missing required files: {missing}")
+        metadata_file = archive.extractfile(f"{root}/PKG-INFO")
+        if metadata_file is None:
+            raise ValueError(f"{path.name} is missing PKG-INFO contents")
+        with metadata_file:
+            _verify_metadata(path, BytesParser().parsebytes(metadata_file.read()), project)
+
+        project_file = archive.extractfile(f"{root}/pyproject.toml")
+        if project_file is None:
+            raise ValueError(f"{path.name} is missing pyproject.toml contents")
+        with project_file:
+            bundled_project = tomllib.loads(project_file.read().decode("utf-8")).get("project", {})
+        if not isinstance(bundled_project, dict):
+            raise ValueError(f"{path.name} bundled pyproject.toml has no [project] table")
+        for key in ("name", "version", "license", "requires-python"):
+            _require(
+                bundled_project.get(key) == project.get(key),
+                f"{path.name} bundled project.{key} does not match pyproject.toml",
+            )
 
 
 def main() -> int:

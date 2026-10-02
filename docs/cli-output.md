@@ -1,6 +1,6 @@
 # CLI Output Formats
 
-The three scoring commands support human-readable summaries, interoperable text
+The scoring and saved-score commands support human-readable summaries, interoperable text
 formats, and lossless NumPy archives:
 
 | Format | Destination | Best for |
@@ -94,6 +94,31 @@ schema. It accepts compact public archives, screen CLI archives, and composite
 CLI archives written with `--include-components`. Aggregate-only composite and
 response-time archives do not contain reusable registered-index vectors and are
 rejected with a contextual error.
+
+Reuse those scores directly from the CLI for sensitivity analysis:
+
+```bash
+ier screen-scores screening.npz --index-percentile irv=99 --min-flags 2 --format json
+ier composite-scores screening.npz --indices irv longstring --weight irv=2 \
+  --include-components --percentile 95 --format npz --output reweighted.npz
+```
+
+These commands never read the original responses or run an index. They apply new
+decisions to raw scores, preserve respondent IDs, and support every output
+format above. Defaults use all saved scores; `--indices` selects and orders a
+subset of available scores and excludes unselected failures. Selecting a failed
+or absent index produces an error explaining why no scores are available.
+Without a subset, historical index failures are retained in output and reported
+on standard error; `--strict` rejects them before writing. Composite output
+retains only failures for composite-enabled indices, although strict validation
+still audits every failure before conversion. Saved screening-only scores must
+be excluded from composites with `--indices`.
+
+Input matrix options, worker counts, and `best_subset` are unavailable for saved
+scores. Select the desired component names explicitly. Composite archives need
+`--include-components` when they are first written to remain reusable. Input and
+output may use the same archive path; replacement occurs only after the new
+result is complete.
 
 ### Common schema
 

@@ -15,14 +15,21 @@ References:
   Applied Psychological Measurement, 25(2), 107-135.
 """
 
+import math
+from fractions import Fraction
+
 import numpy as np
 
 from ier._column_statistics import column_mean
 from ier._row_statistics import row_slices, row_sum
 from ier._statistics import logistic_transform
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_matrix_input, validate_score_array
 
 _LZ_BATCH_ELEMENTS = 10_240
+_MIN_PROBABILITY = 1e-10
+_MAX_PROBABILITY = 1 - _MIN_PROBABILITY
+_MIN_LOG_ODDS = math.log(_MIN_PROBABILITY / (1 - _MIN_PROBABILITY))
+_MAX_LOG_ODDS = math.log(_MAX_PROBABILITY / (1 - _MAX_PROBABILITY))
 
 
 def lz(
@@ -52,10 +59,13 @@ def lz(
     Parameters:
     - x: A matrix of dichotomous data (0/1) where rows are individuals and
          columns are items. Polytomous data is dichotomized at the observed midpoint.
-    - difficulty: Array of item difficulty parameters (b). If None, estimated from data.
-    - discrimination: Array of item discrimination parameters (a). If None and model="2pl",
-                     estimated from data. Ignored if model="1pl".
-    - theta: Array of person ability estimates. If None, estimated from data.
+    - difficulty: One-dimensional real numeric vector of item difficulties (b).
+                  If None, estimated from data. NaN marks unavailable parameters.
+    - discrimination: One-dimensional real numeric vector of item discriminations (a).
+                     If None and model="2pl", estimated from data. Ignored if model="1pl".
+                     NaN marks unavailable parameters.
+    - theta: One-dimensional real numeric vector of person ability estimates.
+             If None, estimated from data. NaN marks unavailable estimates.
     - model: IRT model to use. "1pl" (Rasch) or "2pl" (default).
     - na_rm: Boolean indicating whether to handle missing values.
 
@@ -71,7 +81,6 @@ def lz(
         >>> data = [[1, 1, 0, 0, 1], [1, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
         >>> lz_scores = lz(data)
         >>> print(lz_scores)
-        [0.12, -0.45, -2.31]
     """
     x_array = validate_matrix_input(x, check_type=False)
 
@@ -81,7 +90,7 @@ def lz(
     x_binary = _dichotomize(x_array)
 
     if difficulty is not None:
-        b = np.asarray(difficulty)
+        b = validate_score_array(difficulty, name="difficulty")
         if len(b) != x_array.shape[1]:
             raise ValueError("difficulty length must match number of items")
     else:
@@ -89,7 +98,7 @@ def lz(
 
     if model == "2pl":
         if discrimination is not None:
-            a = np.asarray(discrimination)
+            a = validate_score_array(discrimination, name="discrimination")
             if len(a) != x_array.shape[1]:
                 raise ValueError("discrimination length must match number of items")
         else:
@@ -98,7 +107,7 @@ def lz(
         a = np.ones(x_array.shape[1])
 
     if theta is not None:
-        theta_arr = np.asarray(theta)
+        theta_arr = validate_score_array(theta, name="theta")
         if len(theta_arr) != x_array.shape[0]:
             raise ValueError("theta length must match number of respondents")
     else:
@@ -164,11 +173,31 @@ def _dichotomize(x: np.ndarray) -> np.ndarray:
     else:
         return x
 
-    midpoint = (np.nanmax(x) + np.nanmin(x)) / 2
+    lower, upper = np.nanmin(x), np.nanmax(x)
+    comparison: np.ufunc = np.greater
+    if x.dtype.kind in "iu":
+        # An integer is above the exact midpoint iff it is above its floor.
+        # Python arithmetic preserves labels near either 64-bit limit.
+        midpoint = np.asarray([(int(lower) + int(upper)) // 2], dtype=x.dtype)
+    else:
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            center = (lower + upper) / 2
+            if np.isinf(center) and np.isfinite(lower) and np.isfinite(upper):
+                center = lower / 2 + upper / 2
+            midpoint = np.asarray([center], dtype=x.dtype)
+        center = midpoint[0]
+        if np.isfinite(center):
+            # A midpoint rounded upward can equal an observed category that is
+            # strictly above the true midpoint. Include that category as well.
+            exact_center = (
+                Fraction(*lower.as_integer_ratio()) + Fraction(*upper.as_integer_ratio())
+            ) / 2
+            if Fraction(*center.as_integer_ratio()) > exact_center:
+                comparison = np.greater_equal
     result = np.empty(x.shape)
     for start, stop in row_slices(len(x), x.shape[1]):
         block = x[start:stop]
-        np.greater(block, midpoint, out=result[start:stop])
+        comparison(block, midpoint, out=result[start:stop])
         np.copyto(result[start:stop], np.nan, where=np.isnan(block))
     return result
 
@@ -342,26 +371,29 @@ def _compute_lz_batch(
     """Compute lz scores using the observed items in one response batch."""
     observed = ~np.isnan(responses) if na_rm else None
     valid = True if observed is None or np.all(observed) else observed
-    prob = logistic_transform(a * (theta[:, None] - b))
-    prob = np.clip(prob, 1e-10, 1 - 1e-10)
-    log_prob = np.log(prob)
-    log_one_minus_prob = np.log(1 - prob)
+    log_odds = np.asarray(a * (theta[:, None] - b), dtype=float)
+    prob = logistic_transform(log_odds)
+    np.clip(prob, _MIN_PROBABILITY, _MAX_PROBABILITY, out=prob)
+    np.clip(log_odds, _MIN_LOG_ODDS, _MAX_LOG_ODDS, out=log_odds)
 
-    log_l = np.sum(
-        responses * log_prob + (1 - responses) * log_one_minus_prob,
-        axis=1,
-        where=valid,
-    )
-    expected_l = np.sum(
-        prob * log_prob + (1 - prob) * log_one_minus_prob,
-        axis=1,
-        where=valid,
-    )
-    log_odds = np.log(prob / (1 - prob))
-    var_l = np.sum(prob * (1 - prob) * log_odds**2, axis=1, where=valid)
+    # The centered Bernoulli identity avoids subtracting two nearly equal
+    # log-likelihood sums. Retain the predictor instead of reconstructing its
+    # log-odds from probabilities that can round to exactly 0.5.
+    scales = np.max(np.abs(log_odds), axis=1, where=valid, initial=0.0)
+    np.divide(log_odds, scales[:, None], out=log_odds, where=scales[:, None] != 0)
+    log_odds[scales == 0] = 0.0
+    # Common scaling cancels in lz and keeps tiny log-odds from losing variance
+    # when squared. The same scratch matrix serves both moment reductions.
+    scratch = responses - prob
+    scratch *= log_odds
+    centered_l = np.sum(scratch, axis=1, where=valid)
+    np.square(log_odds, out=scratch)
+    scratch *= prob
+    scratch *= 1 - prob
+    var_l = np.sum(scratch, axis=1, where=valid)
     result = np.where(np.isnan(var_l), np.nan, 0.0)
     np.divide(
-        log_l - expected_l,
+        centered_l,
         np.sqrt(var_l),
         out=result,
         where=var_l > 0,

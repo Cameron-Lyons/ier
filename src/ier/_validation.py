@@ -60,15 +60,21 @@ def validate_item_indices(item_indices: Sequence[int], n_columns: int) -> np.nda
 
 
 def validate_score_array(values: ArrayLike, *, name: str = "scores") -> np.ndarray:
-    """Validate and return one non-empty one-dimensional reusable score vector."""
+    """Validate one real numeric score vector without silently coercing its type."""
     try:
-        score_arr = np.asarray(values, dtype=float)
+        score_arr = np.asarray(values)
     except (TypeError, ValueError) as error:
         raise ValueError(f"{name} must be a one-dimensional numeric array") from error
     if score_arr.ndim != 1:
         raise ValueError(f"{name} must be one-dimensional")
     if len(score_arr) == 0:
         raise ValueError(f"{name} cannot be empty")
+    if score_arr.dtype.kind not in "fiu":
+        raise ValueError(f"{name} must be a one-dimensional real numeric array")
+    # Reject wider floating values outside float64 range through the same
+    # finite-value check, without leaking a NumPy conversion warning.
+    with np.errstate(over="ignore", invalid="ignore"):
+        score_arr = np.asarray(score_arr, dtype=float)
     if np.isinf(score_arr).any():
         raise ValueError(f"{name} must contain only finite values or NaN")
     return score_arr

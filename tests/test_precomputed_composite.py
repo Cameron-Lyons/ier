@@ -5,7 +5,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-from ier import composite, composite_scores, composite_summary
+from ier import composite, composite_scores, composite_scores_summary, composite_summary
 
 
 @pytest.mark.parametrize("method", ["mean", "sum", "max"])
@@ -133,3 +133,62 @@ def test_precomputed_composite_settings_are_validated() -> None:
 def test_raw_composite_rejects_non_boolean_standardization() -> None:
     with pytest.raises(ValueError, match="standardize must be a boolean"):
         composite([[1.0, 2.0], [2.0, 1.0]], standardize=cast("Any", 1))
+
+
+@pytest.mark.parametrize("method", ["mean", "sum", "max"])
+def test_precomputed_summary_reports_hand_calculated_coverage_and_scores(method: str) -> None:
+    components = {
+        "irv": np.array([0.0, 2.0, np.nan, 1.0]),
+        "longstring": np.array([4.0, 1.0, 3.0, np.nan]),
+    }
+    for values in components.values():
+        values.flags.writeable = False
+    expected = {
+        "mean": [4.0 / 3.0, -1.0, np.nan, np.nan],
+        "sum": [4.0, -3.0, np.nan, np.nan],
+        "max": [4.0, 1.0, np.nan, np.nan],
+    }[method]
+    result = composite_scores_summary(
+        components,
+        method=cast("Any", method),
+        standardize=False,
+        weights={"irv": 2.0},
+        min_valid_indices=2,
+    )
+    np.testing.assert_allclose(result["composite"], expected, equal_nan=True)
+    np.testing.assert_array_equal(result["valid_index_counts"], [2, 2, 1, 1])
+    assert result["indices"]["irv"] is components["irv"]
+    assert result["indices"]["longstring"] is components["longstring"]
+    assert result["weights"] == {"irv": 2.0, "longstring": 1.0}
+    assert result["indices_used"] == ["irv", "longstring"]
+    assert result["errors"] == {}
+    assert result["n_total"] == 4
+    assert result["n_valid"] == 2
+    assert result["mean"] == pytest.approx((expected[0] + expected[1]) / 2)
+    assert result["std"] == pytest.approx(abs(expected[0] - expected[1]) / 2)
+    assert result["min"] == expected[1]
+    assert result["max"] == expected[0]
+
+
+@pytest.mark.parametrize("method", ["mean", "sum", "max"])
+def test_precomputed_summary_preserves_sparse_calibration_policy(method: str) -> None:
+    result = composite_scores_summary(
+        {"irv": [0.1, np.nan, np.nan], "longstring": [1.0, 3.0, 5.0]},
+        method=cast("Any", method),
+    )
+    # The existing single-observation policy retains its raw score and availability.
+    np.testing.assert_array_equal(result["valid_index_counts"], [2, 1, 1])
+    first = {
+        "mean": (-0.1 - np.sqrt(1.5)) / 2,
+        "sum": -0.1 - np.sqrt(1.5),
+        "max": -0.1,
+    }[method]
+    np.testing.assert_allclose(result["composite"], [first, 0.0, np.sqrt(1.5)])
+    assert result["n_valid"] == 3
+
+
+def test_precomputed_summary_all_missing_results_have_unavailable_statistics() -> None:
+    result = composite_scores_summary({"irv": [np.nan, np.nan]}, min_valid_indices=1)
+    assert result["n_valid"] == 0
+    np.testing.assert_array_equal(result["valid_index_counts"], [0, 0])
+    assert np.isnan([result[key] for key in ["mean", "std", "min", "max"]]).all()
