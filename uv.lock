@@ -506,7 +506,7 @@ wheels = [
 
 [[package]]
 name = "insufficient-effort"
-version = "1.8.1"
+version = "1.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
@@ -518,6 +518,9 @@ plot = [
 ]
 
 [package.dev-dependencies]
+artifact = [
+    { name = "packaging" },
+]
 docs = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
@@ -554,6 +557,7 @@ requires-dist = [
 provides-extras = ["full", "plot"]
 
 [package.metadata.requires-dev]
+artifact = [{ name = "packaging", specifier = ">=26.2,<27" }]
 docs = [
     { name = "mkdocs", specifier = ">=1.6.0,<2" },
     { name = "mkdocs-material", specifier = ">=9.5.0,<10" },

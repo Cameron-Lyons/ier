@@ -13,12 +13,28 @@ from typing import TypeAlias
 Identifier: TypeAlias = int | str
 
 _SEMVER_PATTERN = re.compile(
-    r"^(0|[1-9]\d*)\."
-    r"(0|[1-9]\d*)\."
-    r"(0|[1-9]\d*)"
+    r"^(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)"
     r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
     r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
 )
+_PYTHON_PRERELEASE_PATTERN = re.compile(
+    r"(?:(?P<label>alpha|a|beta|b|preview|pre|c|rc)[.-]?(?P<number>[0-9]+)?)?"
+    r"(?:[.-]?(?P<dev>dev)[.-]?(?P<dev_number>[0-9]+)?)?",
+    flags=re.IGNORECASE | re.ASCII,
+)
+_PYTHON_BUILD_PATTERN = re.compile(r"[A-Za-z0-9]+(?:[.-][A-Za-z0-9]+)*")
+_PRERELEASE_LABELS = {
+    "alpha": "a",
+    "a": "a",
+    "beta": "b",
+    "b": "b",
+    "preview": "rc",
+    "pre": "rc",
+    "c": "rc",
+    "rc": "rc",
+}
 
 
 @dataclass(frozen=True)
@@ -88,6 +104,43 @@ def parse_semver(value: str) -> SemVer:
     )
 
 
+def normalized_distribution_version(value: str) -> str:
+    """Normalize Python-compatible SemVer without requiring packaging at runtime.
+
+    Keep SemVer's exact source spelling for tags and source metadata. Python
+    distributions use PEP 440's alpha/beta/rc/dev labels and normalized local
+    segments. Numeric/post-release suffixes would reverse SemVer prerelease
+    precedence, so they are deliberately excluded from the release policy.
+    """
+    parsed = parse_semver(value)
+    public, separator, build = value.partition("+")
+    result = f"{parsed.major}.{parsed.minor}.{parsed.patch}"
+    if parsed.prerelease is not None:
+        prerelease = public.split("-", 1)[1]
+        match = _PYTHON_PRERELEASE_PATTERN.fullmatch(prerelease)
+        if match is None:
+            raise ValueError(
+                f"project.version {value!r} is not a supported Python prerelease; "
+                "use alpha.N, beta.N, rc.N, or dev.N"
+            )
+        label = match.group("label")
+        if label is not None:
+            result += _PRERELEASE_LABELS[label.lower()] + str(int(match.group("number") or 0))
+        if match.group("dev") is not None:
+            result += ".dev" + str(int(match.group("dev_number") or 0))
+    if separator:
+        if _PYTHON_BUILD_PATTERN.fullmatch(build) is None:
+            raise ValueError(
+                f"project.version {value!r} has unsupported Python build metadata; "
+                "use alphanumeric segments separated by single dots or hyphens"
+            )
+        parts = re.split(r"[.-]", build)
+        result += "+" + ".".join(
+            str(int(part)) if part.isdigit() else part.lower() for part in parts
+        )
+    return result
+
+
 def read_project_version(path: Path) -> str:
     """Read project.version from a pyproject.toml file."""
     with path.open("rb") as handle:
@@ -112,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         candidate_text = read_project_version(args.candidate_pyproject)
         base = parse_semver(base_text)
         candidate = parse_semver(candidate_text)
+        normalized_distribution_version(candidate_text)
     except (OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

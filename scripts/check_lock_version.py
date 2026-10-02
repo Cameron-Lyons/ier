@@ -8,9 +8,9 @@ import tomllib
 from pathlib import Path
 
 if __package__:
-    from .check_version import parse_semver, read_project_version
+    from .check_version import normalized_distribution_version, read_project_version
 else:
-    from check_version import parse_semver, read_project_version
+    from check_version import normalized_distribution_version, read_project_version
 
 
 def _read_project_name(path: Path) -> str:
@@ -29,7 +29,7 @@ def validate_lock_version(pyproject: Path, lockfile: Path) -> str:
     """Return the shared version after validating the editable lock entry."""
     project_name = _read_project_name(pyproject)
     project_version = read_project_version(pyproject)
-    parse_semver(project_version)
+    distribution_version = normalized_distribution_version(project_version)
 
     with lockfile.open("rb") as handle:
         lock_document = tomllib.load(handle)
@@ -54,10 +54,11 @@ def validate_lock_version(pyproject: Path, lockfile: Path) -> str:
     lock_version = matches[0].get("version")
     if not isinstance(lock_version, str):
         raise ValueError(f"editable package {project_name!r} has no string version in {lockfile}")
-    if lock_version != project_version:
+    if lock_version != distribution_version:
         raise ValueError(
             f"editable package {project_name!r} version {lock_version!r} in {lockfile} "
-            f"does not match project.version {project_version!r}"
+            f"does not match project.version {project_version!r} "
+            f"(normalized distribution version {distribution_version!r})"
         )
     return project_version
 

@@ -30,6 +30,11 @@ _MIN_PROBABILITY = 1e-10
 _MAX_PROBABILITY = 1 - _MIN_PROBABILITY
 _MIN_LOG_ODDS = math.log(_MIN_PROBABILITY / (1 - _MIN_PROBABILITY))
 _MAX_LOG_ODDS = math.log(_MAX_PROBABILITY / (1 - _MAX_PROBABILITY))
+_MIN_LOG_ODDS_EXACT = Fraction(_MIN_LOG_ODDS)
+_MAX_LOG_ODDS_EXACT = Fraction(_MAX_LOG_ODDS)
+# Away from zero, float64 spacing is at least 2**-533 at this boundary.
+# Two parameters and a discrimination above it cannot form a subnormal product.
+_SMALL_PARAMETER = 2.0**-480
 
 
 def lz(
@@ -300,41 +305,130 @@ def _ml_theta_batch(
     lower = np.full(len(active_responses), -4.0)
     upper = np.full(len(active_responses), 4.0)
     active = np.ones(len(active_responses), dtype=bool)
-    a_squared = a**2
+    magnitude = np.max(np.abs(a), where=~np.isnan(a), initial=0.0)
+    scaled = magnitude > math.sqrt(np.finfo(float).max / len(a)) / 4
+    if scaled:
+        estimates = _initial_scaled_theta(active_responses, a, b, estimates, valid)
 
-    for _ in range(64):
-        linear_predictor = a * (estimates[:, None] - b)
-        probabilities = logistic_transform(linear_predictor)
+    # Saturated predictors and tiny moments are valid finite-model limits.
+    # Unrepresentable Newton steps fall back to the safeguarded bracket.
+    with np.errstate(over="ignore", under="ignore"):
+        a_squared = None if scaled else a**2
+        for _ in range(64):
+            linear_predictor = a * (estimates[:, None] - b)
+            probabilities = logistic_transform(linear_predictor)
 
-        score = np.sum(a * (active_responses - probabilities), axis=1, where=valid)
-        score_converged = active & (np.abs(score) <= 1e-12)
-        active[score_converged] = False
-        if not np.any(active):
-            break
+            if scaled:
+                score, steps, step_scales = _scaled_theta_steps(
+                    active_responses, probabilities, a, valid
+                )
+                with np.errstate(divide="ignore"):
+                    tolerance = 1e-12 / np.minimum(step_scales, 1.0)
+            else:
+                score = np.sum(a * (active_responses - probabilities), axis=1, where=valid)
+                tolerance = 1e-12
+            score_converged = active & (np.abs(score) <= tolerance)
+            active[score_converged] = False
+            if not np.any(active):
+                break
 
-        positive = active & (score > 0.0)
-        negative = active & ~positive
-        lower[positive] = estimates[positive]
-        upper[negative] = estimates[negative]
+            positive = active & (score > 0.0)
+            negative = active & ~positive
+            lower[positive] = estimates[positive]
+            upper[negative] = estimates[negative]
 
-        information = np.sum(a_squared * probabilities * (1.0 - probabilities), axis=1, where=valid)
-        candidates = estimates + np.divide(
-            score,
-            information,
-            out=np.full(len(active_responses), np.nan),
-            where=information > 0.0,
-        )
-        invalid = ~np.isfinite(candidates) | (candidates <= lower) | (candidates >= upper)
-        candidates[invalid] = (lower[invalid] + upper[invalid]) / 2.0
+            if not scaled:
+                assert a_squared is not None
+                information = np.sum(
+                    a_squared * probabilities * (1.0 - probabilities), axis=1, where=valid
+                )
+                steps = np.divide(
+                    score,
+                    information,
+                    out=np.full(len(active_responses), np.nan),
+                    where=information > 0.0,
+                )
+            candidates = estimates + steps
+            invalid = ~np.isfinite(candidates) | (candidates <= lower) | (candidates >= upper)
+            candidates[invalid] = (lower[invalid] + upper[invalid]) / 2.0
 
-        step_converged = active & (np.abs(candidates - estimates) <= 1e-12)
-        estimates[active] = candidates[active]
-        active[step_converged] = False
-        if not np.any(active):
-            break
+            changes = np.abs(candidates - estimates)
+            if scaled:
+                changes *= np.maximum(step_scales, 1.0)
+            step_converged = active & (changes <= 1e-12)
+            estimates[active] = candidates[active]
+            active[step_converged] = False
+            if not np.any(active):
+                break
 
     theta[interior] = estimates
     return theta
+
+
+def _initial_scaled_theta(
+    responses: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    logits: np.ndarray,
+    valid: bool | np.ndarray,
+) -> np.ndarray:
+    """Start steep models near the response-weighted difficulty crossing."""
+    magnitudes = np.abs(a)
+    scales = np.max(np.broadcast_to(magnitudes, responses.shape), axis=1, where=valid, initial=0.0)
+    with np.errstate(under="ignore", invalid="ignore"):
+        weights = np.divide(
+            magnitudes, scales[:, None], out=np.zeros(responses.shape), where=scales[:, None] != 0
+        )
+    if not isinstance(valid, bool):
+        np.copyto(weights, 0.0, where=~valid)
+    keyed_responses = np.where(a < 0, 1 - responses, responses)
+    target = np.sum(weights * keyed_responses, axis=1, where=valid)
+    order = np.argsort(b)
+    cumulative = np.cumsum(weights[:, order], axis=1)
+    crossing = np.argmax(cumulative >= target[:, None], axis=1)
+    with np.errstate(over="ignore", under="ignore", divide="ignore", invalid="ignore"):
+        estimates = b[order[crossing]] + np.divide(
+            logits, scales, out=logits.copy(), where=scales != 0
+        )
+    result: np.ndarray = np.clip(estimates, -4.0, 4.0)
+    return result
+
+
+def _scaled_theta_steps(
+    responses: np.ndarray, probabilities: np.ndarray, a: np.ndarray, valid: bool | np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute gradient and Newton steps without squaring native discriminations."""
+    residuals = responses - probabilities
+    relevant = (residuals != 0) | ((probabilities > 0) & (probabilities < 1))
+    relevant &= valid
+    scales = np.max(
+        np.broadcast_to(np.abs(a), responses.shape), axis=1, where=relevant, initial=0.0
+    )
+    with np.errstate(under="ignore", invalid="ignore"):
+        normalized = np.divide(
+            a,
+            scales[:, None],
+            out=np.zeros(responses.shape),
+            where=relevant & (scales[:, None] != 0),
+        )
+        score = np.sum(normalized * residuals, axis=1, where=valid)
+        information = np.sum(
+            normalized**2 * probabilities * (1 - probabilities), axis=1, where=valid
+        )
+        # Separate exponents prevent score/information from overflowing before
+        # division by the discrimination scale restores representable steps.
+        score_mantissa, score_exponent = np.frexp(score)
+        information_mantissa, information_exponent = np.frexp(information)
+        scale_mantissa, scale_exponent = np.frexp(scales)
+        steps = np.divide(
+            score_mantissa,
+            information_mantissa * scale_mantissa,
+            out=np.full(len(responses), np.nan),
+            where=(information > 0) & (scales > 0),
+        )
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        np.ldexp(steps, score_exponent - information_exponent - scale_exponent, out=steps)
+    return score, steps, scales
 
 
 def _compute_lz(
@@ -343,6 +437,7 @@ def _compute_lz(
     """Compute standardized log-likelihood in bounded respondent batches."""
     result = np.empty(len(x))
     batch_rows = max(1, _LZ_BATCH_ELEMENTS // x.shape[1])
+    parameter_extremes = _parameter_extremes(a, b, theta)
     for start in range(0, len(x), batch_rows):
         stop = min(start + batch_rows, len(x))
         batch_result = np.full(stop - start, np.nan)
@@ -355,6 +450,7 @@ def _compute_lz(
                 b,
                 batch_theta[valid],
                 na_rm=na_rm,
+                parameter_extremes=parameter_extremes,
             )
         result[start:stop] = batch_result
     return result
@@ -367,11 +463,33 @@ def _compute_lz_batch(
     theta: np.ndarray,
     *,
     na_rm: bool = True,
+    parameter_extremes: tuple[bool, bool] | None = None,
 ) -> np.ndarray:
     """Compute lz scores using the observed items in one response batch."""
     observed = ~np.isnan(responses) if na_rm else None
     valid = True if observed is None or np.all(observed) else observed
-    log_odds = np.asarray(a * (theta[:, None] - b), dtype=float)
+    possible_overflow, possible_underflow = (
+        _parameter_extremes(a, b, theta) if parameter_extremes is None else parameter_extremes
+    )
+    # Finite calibrated parameters can overflow their difference even when
+    # multiplication by a small discrimination yields ordinary log-odds.
+    # Products can also round to zero before the common lz scale cancels.
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        log_odds = np.subtract(theta[:, None], b)
+        overflowed_differences = np.isinf(log_odds) if possible_overflow else None
+        np.multiply(log_odds, a, out=log_odds)
+    if overflowed_differences is not None:
+        for row, item in zip(*np.nonzero(overflowed_differences), strict=True):
+            exact = _exact_log_odds(theta[row], a[item], b[item])
+            if exact is not None:
+                log_odds[row, item] = float(
+                    min(max(exact, _MIN_LOG_ODDS_EXACT), _MAX_LOG_ODDS_EXACT)
+                )
+    repair_rows = None
+    if possible_underflow:
+        tiny_products = (np.abs(log_odds) < np.finfo(float).tiny) & (a != 0)
+        tiny_products &= theta[:, None] != b
+        repair_rows = np.any(tiny_products, axis=1)
     prob = logistic_transform(log_odds)
     np.clip(prob, _MIN_PROBABILITY, _MAX_PROBABILITY, out=prob)
     np.clip(log_odds, _MIN_LOG_ODDS, _MAX_LOG_ODDS, out=log_odds)
@@ -380,18 +498,25 @@ def _compute_lz_batch(
     # log-likelihood sums. Retain the predictor instead of reconstructing its
     # log-odds from probabilities that can round to exactly 0.5.
     scales = np.max(np.abs(log_odds), axis=1, where=valid, initial=0.0)
-    np.divide(log_odds, scales[:, None], out=log_odds, where=scales[:, None] != 0)
+    with np.errstate(under="ignore"):
+        np.divide(log_odds, scales[:, None], out=log_odds, where=scales[:, None] != 0)
     log_odds[scales == 0] = 0.0
+    if repair_rows is not None:
+        for row in np.flatnonzero(repair_rows):
+            _repair_scaled_log_odds(
+                log_odds[row], a, b, theta[row], valid if isinstance(valid, bool) else valid[row]
+            )
     # Common scaling cancels in lz and keeps tiny log-odds from losing variance
     # when squared. The same scratch matrix serves both moment reductions.
-    scratch = responses - prob
-    scratch *= log_odds
-    centered_l = np.sum(scratch, axis=1, where=valid)
-    np.square(log_odds, out=scratch)
-    scratch *= prob
-    scratch *= 1 - prob
+    with np.errstate(under="ignore"):
+        scratch = responses - prob
+        scratch *= log_odds
+        centered_l = np.sum(scratch, axis=1, where=valid)
+        np.square(log_odds, out=scratch)
+        scratch *= prob
+        scratch *= 1 - prob
     var_l = np.sum(scratch, axis=1, where=valid)
-    result = np.where(np.isnan(var_l), np.nan, 0.0)
+    result = np.where(np.isnan(var_l) | np.isnan(centered_l), np.nan, 0.0)
     np.divide(
         centered_l,
         np.sqrt(var_l),
@@ -401,3 +526,60 @@ def _compute_lz_batch(
     if observed is not None:
         result[~np.any(observed, axis=1)] = np.nan
     return result
+
+
+def _parameter_extremes(a: np.ndarray, b: np.ndarray, theta: np.ndarray) -> tuple[bool, bool]:
+    """Identify exceptional parameter units once for all respondent batches."""
+    overflow = bool(np.any(np.abs(theta) > np.finfo(float).max / 2)) or bool(
+        np.any(np.abs(b) > np.finfo(float).max / 2)
+    )
+    underflow = any(
+        np.any((np.abs(values) < _SMALL_PARAMETER) & (values != 0)) for values in (a, b, theta)
+    )
+    return overflow, underflow
+
+
+def _exact_log_odds(ability: float, discrimination: float, difficulty: float) -> Fraction | None:
+    """Retain a finite calibrated predictor before exceptional float rounding."""
+    if np.isnan(discrimination) or np.isnan(difficulty):
+        return None
+    return Fraction(float(discrimination)) * (
+        Fraction(float(ability)) - Fraction(float(difficulty))
+    )
+
+
+def _repair_scaled_log_odds(
+    destination: np.ndarray,
+    a: np.ndarray,
+    b: np.ndarray,
+    ability: float,
+    observed: bool | np.ndarray,
+) -> None:
+    """Normalize subnormal predictor products before converting them to floats."""
+    predictors = [
+        _exact_log_odds(ability, discrimination, difficulty)
+        for discrimination, difficulty in zip(a, b, strict=True)
+    ]
+    available = np.full(len(a), observed, dtype=bool) if isinstance(observed, bool) else observed
+    if any(
+        predictor is None and present
+        for predictor, present in zip(predictors, available, strict=True)
+    ):
+        destination.fill(np.nan)
+        return
+    clipped = [
+        None if predictor is None else min(max(predictor, _MIN_LOG_ODDS_EXACT), _MAX_LOG_ODDS_EXACT)
+        for predictor in predictors
+    ]
+    scale = max(
+        (
+            abs(predictor)
+            for predictor, present in zip(clipped, available, strict=True)
+            if present and predictor is not None
+        ),
+        default=Fraction(0),
+    )
+    for item, (predictor, present) in enumerate(zip(clipped, available, strict=True)):
+        destination[item] = (
+            np.nan if predictor is None else float(predictor / scale) if scale and present else 0.0
+        )

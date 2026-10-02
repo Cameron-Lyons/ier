@@ -12,6 +12,7 @@ jobs:
   validate-tag:
     name: Validate release tag
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout repository
@@ -41,6 +42,7 @@ jobs:
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: [test, lint, docs, security]
     permissions:
       contents: write

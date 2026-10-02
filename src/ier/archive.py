@@ -12,6 +12,7 @@ from zlib import error as ZlibError
 import numpy as np
 from numpy.lib.format import MAGIC_PREFIX
 
+from ier._archive_input import read_npz_member
 from ier._atomic_output import atomic_output_path
 from ier._registry import composite_index_names, validate_index_names
 from ier._validation import validate_score_array, validate_score_vectors
@@ -117,7 +118,7 @@ def _require_member(archive: NpzFile, name: str) -> np.ndarray:
     if name not in archive.files:
         raise ValueError(f"NPZ archive is missing required member: {name}")
     try:
-        value = archive[name]
+        value = read_npz_member(archive, name)
     except ValueError as error:
         if "Object arrays cannot be loaded" in str(error):
             raise ValueError(f"NPZ archive member {name} is not pickle-free") from error

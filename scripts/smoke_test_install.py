@@ -123,6 +123,104 @@ def _check_scoring(executable: str) -> None:
             raise RuntimeError("installed CLI archive replay disagrees with original screening")
 
 
+def _check_response_times(executable: str) -> None:
+    """Check installed timing archives, inclusive cutoffs, and percentile ties."""
+    identifiers = ["fast", "boundary", "slow", "partial", "missing"]
+    expected_scores = [1.0, 2.0, 6.0, 2.0, np.nan]
+    initial_flags = [True, True, False, True, False]
+    percentile_flags = [True, False, False, False, False]
+    # The observed medians sort to [1, 2, 2, 6]. Their 50th percentile is 2,
+    # which excludes tied scores, unlike an inclusive fixed threshold of 2.
+    expected_payload = {
+        "n_respondents": 5,
+        "metric": "median",
+        "flag_direction": "low",
+        "threshold": 2.0,
+        "scores": [1.0, 2.0, 6.0, 2.0, None],
+        "flags": initial_flags,
+        "respondent_ids": identifiers,
+    }
+
+    def check_archive(path: Path, expected_flags: list[bool]) -> None:
+        saved = ier.load_response_time_archive(path)
+        np.testing.assert_allclose(saved["scores"], expected_scores, equal_nan=True)
+        np.testing.assert_array_equal(saved["flags"], expected_flags)
+        if (
+            saved["respondent_ids"] != identifiers
+            or saved["metric"] != "median"
+            or saved["flag_direction"] != "low"
+            or saved["threshold"] != 2.0
+        ):
+            raise RuntimeError("installed timing archive lost aligned IDs or decision metadata")
+
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source = root / "times.csv"
+        source.write_text(
+            "respondent,t1,t2,t3\n"
+            "fast,1,1,1\n"
+            "boundary,2,2,2\n"
+            "slow,4,6,8\n"
+            "partial,1,,3\n"
+            "missing,,,\n",
+            encoding="utf-8",
+        )
+        original = root / "timing.npz"
+        _run_cli(
+            executable,
+            "response-time",
+            str(source),
+            "--header",
+            "present",
+            "--id-column",
+            "respondent",
+            "--threshold",
+            "2",
+            "--format",
+            "npz",
+            "--output",
+            str(original),
+        )
+        check_archive(original, initial_flags)
+        source.unlink()
+
+        replay = json.loads(
+            _run_cli(executable, "response-time-scores", str(original), "--format", "json")
+        )
+        if replay != expected_payload:
+            raise RuntimeError("installed timing replay changed fixed-cutoff decisions")
+
+        exported = root / "timing-export.npz"
+        _run_cli(
+            executable,
+            "response-time-scores",
+            str(original),
+            "--format",
+            "npz",
+            "--output",
+            str(exported),
+        )
+        check_archive(exported, initial_flags)
+        _run_cli(
+            executable,
+            "response-time-scores",
+            str(exported),
+            "--percentile",
+            "50",
+            "--format",
+            "npz",
+            "--output",
+            str(exported),
+        )
+        check_archive(exported, percentile_flags)
+        expected_payload["flags"] = percentile_flags
+        reflagged = json.loads(
+            _run_cli(executable, "response-time-scores", str(exported), "--format", "json")
+        )
+        if reflagged != expected_payload:
+            raise RuntimeError("installed timing replay changed saved percentile tie decisions")
+
+
 def main() -> int:
     """Verify metadata and real workflows using only runtime dependencies."""
     distribution_version = version("insufficient-effort")
@@ -142,6 +240,7 @@ def main() -> int:
         raise RuntimeError(f"ier --version returned {actual!r}; expected {expected!r}")
 
     _check_scoring(executable)
+    _check_response_times(executable)
     print(f"verified installed insufficient-effort {distribution_version}")
     return 0
 

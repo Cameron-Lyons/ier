@@ -118,7 +118,7 @@ jobs:
         run: uv build --python 3.14
 
       - name: Verify package metadata
-        run: uv run --no-project python scripts/check_dist.py dist/*
+        run: uv run --locked --only-group artifact --python 3.14 python scripts/check_dist.py dist/*
 
       - name: Check package
         run: uvx twine check dist/*

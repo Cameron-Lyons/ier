@@ -21,7 +21,7 @@ python -m pip install -e . --group integration --group lint --group docs --group
 ```
 
 Development dependencies are split into `test`, `integration`, `lint`, `docs`,
-and `security` groups. `integration` includes the test group plus pandas and
+`security`, and `artifact` groups. `integration` includes the test group plus pandas and
 Polars compatibility checks; `uv sync --all-groups` installs the complete
 contributor environment.
 
@@ -34,7 +34,8 @@ Run the unified suite before opening a PR:
 ```
 
 The script first verifies that the editable project version in `uv.lock` matches
-`pyproject.toml`. When `uv` is available, it then synchronizes all locked dependency
+the Python distribution version of `pyproject.toml`. When `uv` is available,
+it then synchronizes all locked dependency
 groups and runs every command without further environment mutation. Without `uv`,
 it uses tools from the active environment.
 
@@ -116,6 +117,11 @@ Allocation samples remain alive until their peak is recorded and tracing stops,
 keeping result cleanup out of the allocation report. Tracing stops even when a
 measured call fails; already-active tracing is rejected to avoid reporting
 distorted timings.
+
+Use `benchmarks/bench_score_reuse.py --workflow response-time` to compare fresh
+Gaussian-mixture scoring with archived timing reflagging. Both paths include
+loading and NPZ output; their complete output members and independently resolved
+percentile decisions are checked after measurement.
 
 The orchestration benchmark checks component calibration, screening summaries
 and coverage, and sampled weighted reductions after measurement. It accepts
@@ -241,18 +247,28 @@ Verify release artifacts after packaging changes:
 
 ```bash
 uv build
-uv run --no-project python scripts/check_dist.py dist/*
+uv run --locked --only-group artifact --python 3.14 python scripts/check_dist.py dist/*
 uv run --isolated --no-project --with dist/*.whl python scripts/smoke_test_install.py
 uv run --isolated --no-project --with dist/*.tar.gz python scripts/smoke_test_install.py
 ```
 
 The artifact verifier checks all Python package files, typing support, license,
 CLI entry point, and release metadata in the wheel and source distribution.
-It also checks that the source distribution's bundled project metadata matches
-the current project. Both artifacts are installed into isolated environments
+It parses runtime and optional dependency metadata with the tooling-only
+`packaging` dependency, including markers and direct references. The source
+distribution must also retain its test modules, fixtures, imported scripts,
+benchmark modules, and `uv.lock` so its bundled tests can run with reproducible
+tools.
+Package sources must match the checkout byte for byte, and the source
+distribution's entire bundled project table must match the current project,
+including runtime dependencies, optional dependencies, and entry points.
+Both artifacts are installed into isolated environments
 with only runtime dependencies, then tested with known screening scores,
 compressed CSV input, JSON and NPZ CLI output, respondent IDs, and archive
-reload/reflagging. Release and publish workflows reuse these tested artifacts.
+reload/reflagging. Timing smoke checks also remove the original input, re-export
+saved medians, and reflag them in place, preserving IDs and missing scores while
+checking fixed-cutoff equality and percentile ties independently.
+Release and publish workflows reuse these tested artifacts.
 Both workflows also require lint, type, docs, and dependency-audit checks to pass
 before creating a release or publishing a package.
 
@@ -299,9 +315,22 @@ not trigger the separate release-event publish workflow. After tagging, dispatch
 ## Versioning Policy
 
 - Use semantic versioning (`MAJOR.MINOR.PATCH`).
+- Prerelease project versions must also represent Python prereleases. Use
+  `X.Y.Z-alpha.N`, `X.Y.Z-beta.N`, `X.Y.Z-rc.N`, or `X.Y.Z-dev.N`.
+  Python aliases (`a`, `b`, `c`, `pre`, and `preview`), implicit stage zero,
+  and a following `dev.N` suffix are also supported. Arbitrary SemVer stages
+  such as `canary` cannot be built by setuptools. Numeric and `post` suffixes
+  are excluded because Python treats them as later releases while SemVer
+  treats them as prereleases.
+- Tags and bundled source metadata keep the exact `project.version` spelling.
+  Generated artifact paths, core version metadata, and the lock entry use its
+  normalized Python version: `1.9.0-rc.1` becomes `1.9.0rc1`.
+  Local build metadata normalizes case, separators, and numeric segments;
+  omit `+build` metadata for public PyPI releases.
 - Source-changing PRs must set a valid semantic version strictly greater than
   the version on `main`; CI rejects unchanged versions and downgrades.
-- Keep the editable project version in `uv.lock` equal to `project.version`;
+- Keep the editable project version in `uv.lock` equal to the normalized
+  Python distribution version of `project.version`;
   local and CI checks reject drift before dependency synchronization.
 - Bump `/pyproject.toml` when preparing a new public package release.
 - PyPI does not allow uploading new files for a version that already exists.

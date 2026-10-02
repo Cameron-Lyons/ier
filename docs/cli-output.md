@@ -229,5 +229,29 @@ all scores, Boolean flags, cutoff metadata, direction rules, and optional
 identifiers before opening the destination. It streams the validated vectors
 without stacking or adding a runtime dependency.
 
+Reflag timing archives or convert them to another output format from the CLI:
+
+```bash
+ier response-time-scores timing.npz --threshold 1.0 --format csv --output revised.csv
+ier response-time-scores timing.npz --percentile 1 --format npz --output stricter.npz
+ier response-time-scores timing.npz --format json --output timing.json.gz
+```
+
+`response-time-scores` validates the archive before using its retained scores,
+metric, suspicious-tail direction, and respondent IDs. It never reads the
+original timing matrix or refits a mixture. Direct metrics and consistency use
+the low tail; mixture probabilities use the high tail. Choose either
+`--threshold` for an inclusive fixed cutoff or `--percentile` for a strict
+sample-percentile cutoff that excludes ties. These options are mutually
+exclusive on both timing commands.
+
+With neither cutoff option, the saved threshold and exact flags are preserved,
+including decisions for scores tied at the cutoff. This allows conversion to
+JSON, CSV, or text without changing the original decision. All output formats,
+compressed text destinations, and `--top` previews are supported. The input and
+NPZ output may share a path; atomic replacement protects the original archive
+until the revised result is complete. Matrix selection and metric-fitting
+options are unavailable for saved timing scores.
+
 Consumers should reject unsupported future `schema_version` values rather than
 assuming their layout is unchanged.
