@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import struct
 import tarfile
 import zipfile
 from io import BytesIO
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
+from zlib import crc32
 
 import pytest
 from scripts.check_dist import _verify_metadata, _verify_wheel
@@ -62,7 +65,11 @@ def _wheel_members() -> dict[str, bytes]:
 def _write_wheel(path: Path, members: dict[str, bytes]) -> None:
     with zipfile.ZipFile(path, "w") as archive:
         for name, contents in members.items():
-            archive.writestr(name, contents)
+            member = zipfile.ZipInfo(name)
+            # Preserve malformed names verbatim: ZipInfo normalizes backslashes
+            # on Windows and truncates NUL suffixes on every platform.
+            member.filename = name
+            archive.writestr(member, contents)
 
 
 def _sdist_members() -> dict[str, bytes]:
@@ -307,6 +314,60 @@ def test_distributions_reject_paths_that_escape_or_depend_on_the_extractor(
         verifier = _verify_sdist
     with pytest.raises(ValueError, match="unsafe archive paths"):
         verifier(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("name", [r"ier\resource.txt", r"ier\cli.py"])
+def test_wheel_checks_original_names_when_windows_normalizes_backslashes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    path = tmp_path / "windows-path.whl"
+    _write_wheel(path, _wheel_members() | {name: b"# unsafe path\n"})
+    # Exercise Windows ZipInfo behavior on every CI platform without changing
+    # the separators used by pathlib, pytest, or other users of the os module.
+    windows_os = SimpleNamespace(**(vars(zipfile.os) | {"sep": "\\", "altsep": "/"}))
+    monkeypatch.setattr(zipfile, "os", windows_os)
+
+    with zipfile.ZipFile(path) as archive:
+        member = archive.infolist()[-1]
+        assert member.orig_filename == name
+        assert member.filename == name.replace("\\", "/")
+    with pytest.raises(ValueError, match="unsafe archive paths"):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("name", ["unrelated\0resource.txt", "ier/resource.txt\0suffix"])
+def test_wheel_rejects_names_truncated_at_nul(tmp_path: Path, name: str) -> None:
+    path = tmp_path / "nul-path.whl"
+    _write_wheel(path, _wheel_members() | {name: b"# unsafe path\n"})
+
+    with zipfile.ZipFile(path) as archive:
+        member = archive.infolist()[-1]
+        assert member.orig_filename == name
+        assert member.filename == name.split("\0", 1)[0]
+    with pytest.raises(ValueError, match="unsafe archive paths"):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+def test_wheel_checks_effective_names_from_unicode_path_extra_fields(tmp_path: Path) -> None:
+    path = tmp_path / "unicode-path.whl"
+    _write_wheel(path, _wheel_members())
+    member = zipfile.ZipInfo("ier/resource.txt")
+    unicode_name = b"ier/resource?.txt"
+    member.extra = (
+        struct.pack("<HHBL", 0x7075, 5 + len(unicode_name), 1, crc32(member.filename.encode()))
+        + unicode_name
+    )
+    with zipfile.ZipFile(path, "a") as archive:
+        archive.writestr(member, b"# unsafe effective path\n")
+
+    with zipfile.ZipFile(path) as archive:
+        member = archive.infolist()[-1]
+        assert member.orig_filename == "ier/resource.txt"
+        if member.filename == member.orig_filename:
+            pytest.skip("This Python does not interpret Unicode Path extra fields")
+        assert member.filename == unicode_name.decode()
+    with pytest.raises(ValueError, match="unsafe archive paths"):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
 
 
 @pytest.mark.parametrize("link_type", [tarfile.SYMTYPE, tarfile.LNKTYPE])

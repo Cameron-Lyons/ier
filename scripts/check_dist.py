@@ -202,6 +202,10 @@ def _verify_wheel(
         package_files = _package_files()
 
     with zipfile.ZipFile(path) as archive:
+        # ZipInfo normalizes separators on Windows and truncates NUL suffixes.
+        # Validate original names before those repairs can conceal unsafe paths.
+        _verify_archive_members(path, [member.orig_filename for member in archive.infolist()])
+        # Unicode path extras can independently replace the effective names.
         _verify_archive_members(path, [member.filename for member in archive.infolist()])
         members = {member.filename for member in archive.infolist() if not member.is_dir()}
         required_members = package_files.keys() | {

@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Distribution validation rejects duplicate members, unsafe paths, source
   distribution links, stale package modules, and ambiguous metadata. Console
   scripts and bundled build configuration must match the project exactly.
+  Wheel checks validate original ZIP names before Windows separator normalization
+  or NUL truncation, as well as effective Unicode path overrides.
 - Updated locked development and documentation dependencies to urllib3 2.8.0,
   addressing HTTPS proxy TLS verification and chunked streaming vulnerabilities
   reported by the dependency audit.
