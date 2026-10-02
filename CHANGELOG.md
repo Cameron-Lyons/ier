@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strict type checks include release scripts and benchmarks. A separate public
   consumer gate verifies valid API calls and requires specific failures for
   invalid return assignments and method choices.
+- Mask input benchmarks release their temporary memory maps before deleting
+  files, including when validation fails, so cleanup also succeeds on Windows.
 - Flag-count chart aggregation uses one histogram pass. A local one-million-row,
   21-bin comparison reduced aggregation from 11.1 to 1.3 ms and peak traced
   allocation from 1.02 MiB to less than 1 KiB, with identical bin counts. Heatmaps

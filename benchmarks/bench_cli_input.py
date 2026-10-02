@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import mmap
 import tempfile
 from functools import partial
 from pathlib import Path
@@ -17,6 +18,15 @@ import numpy as np
 from _measurement import measure
 
 from ier._cli_input import _load_applicable_mask, _load_input
+
+
+def _close_file_mapping(values: np.ndarray) -> None:
+    """Release an owned mapping even when validation tracebacks retain array views."""
+    owner: object = values
+    while isinstance(owner, np.ndarray):
+        owner = owner.base
+    if isinstance(owner, mmap.mmap):
+        owner.close()
 
 
 def _write_fixture(
@@ -45,9 +55,12 @@ def _write_mask_fixture(path: Path, n_respondents: int, n_items: int) -> None:
         mask = np.lib.format.open_memmap(  # type: ignore[no-untyped-call]
             path, mode="w+", dtype=bool, shape=(n_respondents, n_items)
         )
-        mask[::2] = even_items
-        mask[1::2] = ~even_items
-        mask.flush()
+        try:
+            mask[::2] = even_items
+            mask[1::2] = ~even_items
+            mask.flush()
+        finally:
+            _close_file_mapping(mask)
         return
     rows = [
         ",".join("1" if cell else "0" for cell in even_items),
@@ -100,22 +113,27 @@ def main() -> None:
                     partial(_load_applicable_mask, path, shape), args.repeats
                 )
                 mask = mask_measurement.result
-                if mask.dtype != np.dtype(bool) or mask.shape != shape:
-                    raise RuntimeError("benchmark mask fixture loaded incorrectly")
-                if suffix == ".npy" and (not isinstance(mask, np.memmap) or mask.flags.writeable):
-                    raise RuntimeError("NumPy masks must remain read-only memory maps")
-                if suffix == ".csv" and isinstance(mask, np.memmap):
-                    raise RuntimeError("text masks must load as Boolean arrays")
-                for offset in range(min(2, args.respondents)):
-                    observed = mask[offset::2]
-                    expected = (np.arange(args.items) + offset) % 2 == 0
-                    np.testing.assert_array_equal(
-                        observed, np.broadcast_to(expected, observed.shape)
+                try:
+                    if mask.dtype != np.dtype(bool) or mask.shape != shape:
+                        raise RuntimeError("benchmark mask fixture loaded incorrectly")
+                    if suffix == ".npy" and (
+                        not isinstance(mask, np.memmap) or mask.flags.writeable
+                    ):
+                        raise RuntimeError("NumPy masks must remain read-only memory maps")
+                    if suffix == ".csv" and isinstance(mask, np.memmap):
+                        raise RuntimeError("text masks must load as Boolean arrays")
+                    for offset in range(min(2, args.respondents)):
+                        observed = mask[offset::2]
+                        expected = (np.arange(args.items) + offset) % 2 == 0
+                        np.testing.assert_array_equal(
+                            observed, np.broadcast_to(expected, observed.shape)
+                        )
+                    print(
+                        f"mask{suffix}: median={mask_measurement.median_seconds:.4f}s "
+                        f"peak={mask_measurement.peak_mib:.3f} MiB"
                     )
-                print(
-                    f"mask{suffix}: median={mask_measurement.median_seconds:.4f}s "
-                    f"peak={mask_measurement.peak_mib:.3f} MiB"
-                )
+                finally:
+                    _close_file_mapping(mask)
 
 
 if __name__ == "__main__":
