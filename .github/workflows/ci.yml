@@ -136,3 +136,54 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 7
+
+  packaged-tests:
+    name: Test installed wheel with bundled source-distribution tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: build
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "dist/*"
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Run complete suite outside the checkout
+        shell: bash
+        run: |
+          ARTIFACT_ROOT="$(pwd)/dist"
+          PACKAGED_ROOT="$(mktemp -d)"
+          trap 'rm -rf "$PACKAGED_ROOT"' EXIT
+          uv run --no-project --python 3.14 python - "$ARTIFACT_ROOT" "$PACKAGED_ROOT" <<'PY'
+          import sys
+          import tarfile
+          from pathlib import Path
+
+          artifacts = Path(sys.argv[1])
+          sdists = list(artifacts.glob("*.tar.gz"))
+          wheels = list(artifacts.glob("*.whl"))
+          if len(sdists) != 1 or len(wheels) != 1:
+              raise RuntimeError("Expected exactly one tested wheel and source distribution")
+          destination = Path(sys.argv[2])
+          with tarfile.open(sdists[0]) as archive:
+              archive.extractall(destination, filter="data")
+          roots = list(destination.iterdir())
+          if len(roots) != 1 or not roots[0].is_dir():
+              raise RuntimeError("Source distribution must have one root directory")
+          PY
+          cd "$PACKAGED_ROOT"/*
+          uv sync --locked --group integration --group artifact --no-install-project --python 3.14
+          uv pip install --no-deps "$ARTIFACT_ROOT"/*.whl
+          uv run --no-sync python -c "import sys, ier; from pathlib import Path; location = Path(ier.__file__).resolve(); assert location.is_relative_to(Path(sys.prefix).resolve()), f'Package imported outside test environment: {location}'"
+          uv run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing --cov-fail-under=95

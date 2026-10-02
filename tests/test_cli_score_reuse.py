@@ -146,6 +146,99 @@ def test_reused_weighted_composite_with_components_flags_and_probability(
 
 
 @pytest.mark.parametrize("command", ["screen-scores", "composite-scores"])
+@pytest.mark.parametrize("output_format", ["json", "csv", "npz", "text"])
+def test_saved_failures_retain_original_coverage_requirement(
+    saved_scores: Path,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+    output_format: str,
+) -> None:
+    destination = tmp_path / f"coverage.{output_format}"
+    options = (
+        ["--threshold", "mad=2"]
+        if command == "screen-scores"
+        else ["--weight", "mad=1e308", "--include-components"]
+    )
+    assert (
+        main(
+            [
+                command,
+                str(saved_scores),
+                "--min-valid-indices",
+                "3",
+                *options,
+                "--format",
+                output_format,
+                "--output",
+                str(destination),
+            ]
+        )
+        == 0
+    )
+    assert "mad" in capsys.readouterr().err
+    if output_format == "json":
+        result = json.loads(destination.read_text())
+        assert result["min_valid_indices"] == 3
+        assert result["valid_index_counts"] == [2, 2, 1, 1]
+        assert result["errors"] == {"mad": "paired items were not configured"}
+        if command == "screen-scores":
+            assert result["consensus_eligible"] == [False] * 4
+            assert result["consensus_flags"] == [False] * 4
+        else:
+            assert result["scores"] == [None] * 4
+            assert result["weights"] == {"mad": 1e308}
+    elif output_format == "npz":
+        archive = load_score_archive(destination)
+        assert archive["errors"] == {"mad": "paired items were not configured"}
+        with np.load(destination, allow_pickle=False) as result:
+            np.testing.assert_array_equal(result["valid_index_counts"], [2, 2, 1, 1])
+            if command == "screen-scores":
+                assert not result["consensus_eligible"].any()
+                assert not result["consensus_flags"].any()
+            else:
+                assert np.isnan(result["scores"]).all()
+    elif output_format == "csv":
+        with destination.open(newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        assert [row["respondent"] for row in rows] == ["A", "B", "C", "D"]
+        column = "consensus_flag" if command == "screen-scores" else "composite_score"
+        expected = "0" if command == "screen-scores" else ""
+        assert [row[column] for row in rows] == [expected] * 4
+    else:
+        text = destination.read_text()
+        assert "mad" in text
+        if command == "screen-scores":
+            assert "consensus eligible: 0 (min_valid_indices=3)" in text
+        else:
+            assert "minimum valid indices: 3" in text
+
+
+def test_saved_composite_aggregate_only_honors_failed_coverage(
+    saved_scores: Path, tmp_path: Path
+) -> None:
+    destination = tmp_path / "aggregate.json"
+    assert (
+        main(
+            [
+                "composite-scores",
+                str(saved_scores),
+                "--min-valid-indices",
+                "3",
+                "--weight",
+                "mad=2",
+                "--format",
+                "json",
+                "--output",
+                str(destination),
+            ]
+        )
+        == 0
+    )
+    assert json.loads(destination.read_text())["scores"] == [None] * 4
+
+
+@pytest.mark.parametrize("command", ["screen-scores", "composite-scores"])
 def test_selected_scores_reorder_and_drop_unselected_archive_failures(
     saved_scores: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str
 ) -> None:

@@ -190,9 +190,12 @@ from ier import screen, screen_scores
 
 initial = screen(data, indices=["irv", "longstring", "mahad"])
 
-lenient = screen_scores(initial["scores"], percentile=90, min_flags=1)
+lenient = screen_scores(
+    initial["scores"], errors=initial["errors"], percentile=90, min_flags=1
+)
 strict = screen_scores(
     initial["scores"],
+    errors=initial["errors"],
     percentiles={"irv": 99, "longstring": 99, "mahad": 99},
     min_flags=2,
 )
@@ -202,8 +205,14 @@ The reusable path accepts registered index names, preserves their mapping order,
 and returns the same structured result contract as `screen()`. All vectors must
 be one-dimensional, non-empty, equally sized, and contain only finite values or
 `NaN`. Compatible `float64` arrays are retained by reference and never mutated.
-Because no scorer runs, the returned `errors` mapping is empty; retain the first
-run separately if its soft failures are part of the audit record.
+Pass `errors=initial["errors"]` to retain the first run's soft failures in the
+returned result. Failed indices remain selected when validating cutoff overrides
+and `min_valid_indices`, but contribute no scores, flags, or availability. For
+example, if three indices were selected and one failed, a three-index minimum
+still makes every respondent ineligible when the scores are reused. Without
+`errors`, only the supplied score names are selected and the error mapping is
+empty. Failure names must be registered, absent from the score mapping, and
+paired with nonblank string messages.
 
 On the bundled 10,000-respondent, 80-item benchmark, evaluating five tail
 percentiles from retained scores takes 5.1 ms and 1.6 MiB peak temporary
@@ -217,8 +226,10 @@ it later:
 from ier import load_score_archive, save_score_archive, screen_scores
 
 save_score_archive("screening-scores.npz", result["scores"], errors=result["errors"])
-saved = load_score_archive("screening.npz")
-revised = screen_scores(saved["scores"], percentile=99, min_flags=3)
+saved = load_score_archive("screening-scores.npz")
+revised = screen_scores(
+    saved["scores"], errors=saved["errors"], percentile=99, min_flags=3
+)
 ```
 
 The public writer can also store aligned respondent IDs. The loader returns

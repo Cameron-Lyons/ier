@@ -387,6 +387,25 @@ _CASES = [
         ],
     ),
     ("response_checks", _MATRIX),
+    ("response_checks", [*_MATRIX, "--missing-rate", "1", "--dtype", "float32", "--order", "F"]),
+    (
+        "response_checks",
+        [*_MATRIX, "--dtype", "int64", "--missing-rate", "0", "--integer-offset", str(2**60)],
+    ),
+    (
+        "response_checks",
+        [
+            *_MATRIX,
+            "--dtype",
+            "uint64",
+            "--missing-rate",
+            "0",
+            "--integer-offset",
+            str(2**64 - 6),
+            "--order",
+            "F",
+        ],
+    ),
     ("response_time", _MATRIX),
     ("response_time", [*_MATRIX, "--scale", "1e300", "--no-log-transform"]),
     (

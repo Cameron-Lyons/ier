@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import ier._row_statistics as row_statistics
-from ier import infrequency, missing_rate
+from ier import infrequency, infrequency_flag, missing_rate
 from ier.types import InfrequencyMissingPolicy
 
 
@@ -95,6 +95,81 @@ def test_checks_preserve_numeric_input_handling() -> None:
         np.testing.assert_array_equal(missing_rate(integers, indices), np.zeros(15))
         np.testing.assert_array_equal(infrequency(integers, indices, [7, 2]), [0] + [2] * 14)
         np.testing.assert_array_equal(missing_rate([["1", "nan"], ["nan", "nan"]]), [0.5, 1])
+
+
+@pytest.mark.parametrize(
+    "dtype,base", [(np.int64, -(2**63)), (np.int64, 2**60), (np.uint64, 2**64 - 3)]
+)
+@pytest.mark.parametrize("policy", ["pass", "fail", "omit", "propagate"])
+@pytest.mark.parametrize("proportion", [False, True])
+@pytest.mark.parametrize("layout", ["C", "F", "strided"])
+def test_attention_checks_preserve_exact_integer_categories(
+    dtype: type, base: int, policy: InfrequencyMissingPolicy, proportion: bool, layout: str
+) -> None:
+    answers = [base + 1, np.array(base + 2, dtype=dtype)[()], 0.5, -1, 2**64, float(base)]
+    data = np.repeat(np.array([[base], [base + 1], [base + 2]], dtype=dtype), len(answers), axis=1)
+    if layout == "F":
+        data = np.asfortranarray(data)
+    elif layout == "strided":
+        data = np.repeat(data, 2, axis=1)[:, ::2]
+    original = data.copy()
+    data.flags.writeable = False
+    reference = [
+        sum(
+            value.item() != (answer.item() if isinstance(answer, np.generic) else answer)
+            for value, answer in zip(row, answers, strict=True)
+        )
+        for row in data
+    ]
+    if proportion:
+        reference = [count / len(answers) for count in reference]
+    with (
+        patch.object(row_statistics, "_ROW_BATCH_ELEMENTS", 7),
+        np.errstate(all="raise"),
+    ):
+        actual = infrequency(
+            data, list(range(len(answers))), answers, proportion=proportion, missing=policy
+        )
+    np.testing.assert_array_equal(actual, reference)
+    np.testing.assert_array_equal(data, original)
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+@pytest.mark.parametrize("policy", ["pass", "fail", "omit", "propagate"])
+def test_unrepresentable_integer_answers_do_not_match_float_neighbours(
+    dtype: type, policy: InfrequencyMissingPolicy
+) -> None:
+    base = 2**60
+    data = np.array([[base, base], [np.nan, base]], dtype=dtype)
+    scores, flags = infrequency_flag(data, [0, 1], [base + 1, np.uint64(base + 2)], missing=policy)
+    expected = [2, np.nan if policy == "propagate" else 2 if policy == "fail" else 1]
+    np.testing.assert_array_equal(scores, expected)
+    np.testing.assert_array_equal(flags, [True, policy != "propagate"])
+
+
+@pytest.mark.parametrize("policy", ["pass", "fail", "omit", "propagate"])
+@pytest.mark.parametrize("dtype", [bool, np.int8, np.int64, np.uint64])
+def test_integer_attention_checks_skip_missing_scan(
+    policy: InfrequencyMissingPolicy, dtype: type
+) -> None:
+    data = np.array([[False, True], [True, False]], dtype=dtype)
+    with patch("ier.infrequency.np.isnan", side_effect=AssertionError("integers have no NaN")):
+        actual = infrequency(data, [0, 1], [0, 1], proportion=True, missing=policy)
+    np.testing.assert_array_equal(actual, [0, 1])
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [[2**1024], ["not-numeric"], [np.inf], [1 + 1j], np.array([1 + 0j]), np.array([1 + 1j])],
+)
+def test_invalid_attention_answers_raise_clear_errors(invalid: list) -> None:
+    with pytest.raises(ValueError, match="finite numeric"):
+        infrequency([[1]], [0], invalid)
+
+
+@pytest.mark.parametrize("answers", [["0", "1"], (0.0, 1.0), np.array([False, True])])
+def test_attention_answer_conversion_keeps_legacy_numeric_forms(answers: list) -> None:
+    np.testing.assert_array_equal(infrequency([[0, 1], [1, 0]], [0, 1], answers), [0, 2])
 
 
 @pytest.mark.parametrize("policy", ["pass", "fail", "omit", "propagate"])

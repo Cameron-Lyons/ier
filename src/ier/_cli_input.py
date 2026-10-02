@@ -37,7 +37,14 @@ def _row_starts_with_non_numeric_value(
 
 def _parse_numeric_cell(cell: str) -> float:
     """Parse a matrix cell, treating blank delimited fields as missing values."""
-    return float(cell) if cell.strip() else np.nan
+    if not cell:
+        return np.nan
+    try:
+        return float(cell)
+    except ValueError:
+        if not cell.strip():
+            return np.nan
+        raise
 
 
 def _parse_numeric_cell_with_missing_values(cell: str, missing_values: frozenset[str]) -> float:
@@ -56,6 +63,52 @@ def _normalize_missing_values(missing_values: list[str] | None) -> frozenset[str
     if len(set(normalized)) != len(normalized):
         raise ValueError("missing-value tokens cannot contain duplicates")
     return frozenset(normalized)
+
+
+def _fallback_delimiter(sample_lines: list[str]) -> str | None:
+    """Identify a delimited first record even when later rows are jagged.
+
+    The sniffer requires consistent widths, so malformed CSV otherwise falls
+    through to whitespace parsing. Inspect fields with CSV quoting rules rather
+    than counting punctuation inside quoted names or identifiers.
+    """
+    best_delimiter = None
+    best_score = (0, 0, 1)
+    for candidate in (",", "\t", ";"):
+        try:
+            reader = csv.reader(sample_lines, delimiter=candidate, strict=True)
+            first = next(
+                (row for row in reader if len(row) > 1 or any(cell.strip() for cell in row)), []
+            )
+        except csv.Error:
+            continue
+        if candidate == "\t":
+            # Tabs can also be part of an ordinary whitespace numeric matrix.
+            first_line = next((line for line in sample_lines if line.strip()), "")
+            tokens = first_line.split()
+            if len(tokens) > len(first):
+                try:
+                    for token in tokens:
+                        float(token)
+                except ValueError:
+                    pass
+                else:
+                    continue
+        try:
+            following = next(
+                (row for row in reader if len(row) > 1 or any(cell.strip() for cell in row)), []
+            )
+        except csv.Error:
+            following = []
+        score = (int(len(first) == len(following)), int(len(following) > 1), len(first))
+        if len(first) > 1 and score > best_score:
+            best_delimiter = candidate
+            best_score = score
+    if best_delimiter is None and any(line.lstrip().startswith('"') for line in sample_lines):
+        # A quoted single-column CSV has no field separators to sniff. Preserve
+        # its quoting rather than passing literal quotes to whitespace parsing.
+        return ","
+    return best_delimiter
 
 
 def _iter_rows_from_stream(
@@ -85,16 +138,33 @@ def _iter_rows_from_stream(
         try:
             delimiter = csv.Sniffer().sniff(sample, delimiters=",\t;").delimiter
         except csv.Error:
+            delimiter = _fallback_delimiter(sample_lines)
+        if delimiter is None:
             for line in lines:
                 row = line.split()
                 if row:
                     yield row
             return
 
-    reader = csv.reader(lines, delimiter=delimiter)
-    for row in reader:
-        if row and any(cell.strip() for cell in row):
-            yield row
+    record_has_content = False
+
+    def record_lines() -> Iterator[str]:
+        nonlocal record_has_content
+        for line in lines:
+            record_has_content |= bool(line.strip())
+            yield line
+
+    reader = csv.reader(record_lines(), delimiter=delimiter, strict=True)
+    try:
+        for row in reader:
+            keep_record = record_has_content
+            record_has_content = False
+            if row and (keep_record or len(row) > 1):
+                yield row
+    except csv.Error as err:
+        raise ValueError(
+            f"malformed delimited input at physical line {skip_rows + reader.line_num}: {err}"
+        ) from err
 
 
 def _input_label(path: Path) -> str:

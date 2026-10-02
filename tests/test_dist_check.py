@@ -162,6 +162,9 @@ def test_distributions_reject_incorrect_metadata(
         "[unrelated]\nier = ier.cli:main\n",
         "[console_scripts]\nier = ier.cli:missing\n",
         "[console_scripts]\nIER = ier.cli:main\n",
+        "[console_scripts]\nier = ier.cli:main\nstale = ier.cli:removed\n",
+        "[DEFAULT]\nier = ier.cli:main\n[console_scripts]\n",
+        "[console_scripts]\nier: ier.cli:main\n",
     ],
 )
 def test_wheel_requires_real_console_entry_point(tmp_path: Path, entry_points: str) -> None:
@@ -172,6 +175,182 @@ def test_wheel_requires_real_console_entry_point(tmp_path: Path, entry_points: s
 
     with pytest.raises(ValueError, match="CLI entry point"):
         _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+def test_wheel_checks_all_declared_console_scripts(tmp_path: Path) -> None:
+    path = tmp_path / "extra-cli.whl"
+    project = PROJECT | {"scripts": {"ier": "ier.cli:main", "ier-extra": "ier.cli:extra"}}
+    members = _wheel_members()
+    _write_wheel(path, members)
+    with pytest.raises(ValueError, match="CLI entry points"):
+        _verify_wheel(path, project, PACKAGE_FILES)
+
+    members[f"{DIST_INFO}/entry_points.txt"] += b"ier-extra = ier.cli:extra\n"
+    _write_wheel(path, members)
+    _verify_wheel(path, project, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("kind", ["wheel", "sdist"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ier/stale.py",
+        "ier/nested/stale.py",
+        "ier/stale.pyc",
+        "IER/stale.py",
+        "ier/STALE.PY",
+        "ier/stale.so",
+        "ier/stale.pyd",
+    ],
+)
+def test_distributions_reject_removed_package_modules(tmp_path: Path, kind: str, name: str) -> None:
+    if kind == "wheel":
+        path = tmp_path / "stale-module.whl"
+        _write_wheel(path, _wheel_members() | {name: b"# leftover build module\n"})
+        verifier = _verify_wheel
+    else:
+        path = tmp_path / "stale-module.tar.gz"
+        _write_sdist(
+            path, _sdist_members() | {f"{SDIST_ROOT}/src/{name}": b"# leftover build module\n"}
+        )
+        verifier = _verify_sdist
+    with pytest.raises(ValueError, match="unexpected package files"):
+        verifier(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("source_directory", ["SRC", "Src"])
+def test_sdist_rejects_stale_modules_under_source_directory_case_aliases(
+    tmp_path: Path, source_directory: str
+) -> None:
+    path = tmp_path / "source-alias.tar.gz"
+    members = _sdist_members() | {
+        f"{SDIST_ROOT}/{source_directory}/ier/stale.py": b"# leftover build module\n"
+    }
+    _write_sdist(path, members)
+    with pytest.raises(ValueError, match="unexpected package files"):
+        _verify_sdist(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("kind", ["wheel", "sdist"])
+def test_distributions_reject_duplicate_archive_members(tmp_path: Path, kind: str) -> None:
+    if kind == "wheel":
+        path = tmp_path / "duplicate.whl"
+        _write_wheel(path, _wheel_members())
+        with zipfile.ZipFile(path, "a") as archive, pytest.warns(UserWarning, match="Duplicate"):
+            archive.writestr("ier/cli.py", PACKAGE_FILES["ier/cli.py"])
+        verifier = _verify_wheel
+    else:
+        path = tmp_path / "duplicate.tar.gz"
+        with tarfile.open(path, "w:gz") as archive:
+            members = _sdist_members()
+            for name in [*members, f"{SDIST_ROOT}/src/ier/cli.py"]:
+                member = tarfile.TarInfo(name)
+                contents = members[name]
+                member.size = len(contents)
+                archive.addfile(member, BytesIO(contents))
+        verifier = _verify_sdist
+    with pytest.raises(ValueError, match="duplicate archive members"):
+        verifier(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("kind", ["wheel", "sdist"])
+@pytest.mark.parametrize("name", ["IER/cli.py", "ier/CLI.py", "ier/cli.py ", "ier/cli.py."])
+def test_distributions_reject_windows_aliases_of_verified_sources(
+    tmp_path: Path, kind: str, name: str
+) -> None:
+    if kind == "wheel":
+        path = tmp_path / "alias.whl"
+        _write_wheel(path, _wheel_members() | {name: b"# alias of verified source\n"})
+        verifier = _verify_wheel
+    else:
+        path = tmp_path / "alias.tar.gz"
+        _write_sdist(
+            path, _sdist_members() | {f"{SDIST_ROOT}/src/{name}": b"# alias of verified source\n"}
+        )
+        verifier = _verify_sdist
+    with pytest.raises(ValueError, match="duplicate archive members"):
+        verifier(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("kind", ["wheel", "sdist"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "/escaped.py",
+        "../escaped.py",
+        "ier/../escaped.py",
+        "ier/./escaped.py",
+        "ier//escaped.py",
+        "ier\\evil.py",
+        "C:/escaped.py",
+        "C:escaped.py",
+        "ier/cli.py:evil",
+        "ier/NUL.txt",
+        "ier/CON.py",
+        "ier/lPt1.foo",
+        "ier/COM¹.txt",
+        "ier/name?.txt",
+        "ier/name\t.txt",
+        "ier/directory./resource.txt",
+    ],
+)
+def test_distributions_reject_paths_that_escape_or_depend_on_the_extractor(
+    tmp_path: Path, kind: str, name: str
+) -> None:
+    if kind == "wheel":
+        path = tmp_path / "unsafe-path.whl"
+        _write_wheel(path, _wheel_members() | {name: b"# unsafe path\n"})
+        verifier = _verify_wheel
+    else:
+        path = tmp_path / "unsafe-path.tar.gz"
+        _write_sdist(path, _sdist_members() | {name: b"# unsafe path\n"})
+        verifier = _verify_sdist
+    with pytest.raises(ValueError, match="unsafe archive paths"):
+        verifier(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("link_type", [tarfile.SYMTYPE, tarfile.LNKTYPE])
+def test_sdist_rejects_links_even_when_required_source_files_are_complete(
+    tmp_path: Path, link_type: bytes
+) -> None:
+    path = tmp_path / "linked-source.tar.gz"
+    with tarfile.open(path, "w:gz") as archive:
+        for name, contents in _sdist_members().items():
+            member = tarfile.TarInfo(name)
+            member.size = len(contents)
+            archive.addfile(member, BytesIO(contents))
+        link = tarfile.TarInfo(f"{SDIST_ROOT}/src/ier/linked.py")
+        link.type = link_type
+        link.linkname = f"{SDIST_ROOT}/src/ier/cli.py"
+        archive.addfile(link)
+    with pytest.raises(ValueError, match="archive links"):
+        _verify_sdist(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("kind", ["wheel", "sdist"])
+@pytest.mark.parametrize("header", ["Name", "Version", "License-Expression", "Requires-Python"])
+def test_distributions_reject_ambiguous_single_value_metadata(
+    tmp_path: Path, kind: str, header: str
+) -> None:
+    from email.parser import BytesParser
+
+    metadata = _metadata()
+    value = BytesParser().parsebytes(metadata)[header]
+    metadata = metadata.rstrip(b"\n") + f"\n{header}: {value}\n\n".encode()
+    if kind == "wheel":
+        path = tmp_path / "duplicate-header.whl"
+        members = _wheel_members()
+        members[f"{DIST_INFO}/METADATA"] = metadata
+        _write_wheel(path, members)
+        verifier = _verify_wheel
+    else:
+        path = tmp_path / "duplicate-header.tar.gz"
+        members = _sdist_members()
+        members[f"{SDIST_ROOT}/PKG-INFO"] = metadata
+        _write_sdist(path, members)
+        verifier = _verify_sdist
+    with pytest.raises(ValueError, match=header):
+        verifier(path, PROJECT, PACKAGE_FILES)
 
 
 def test_sdist_rejects_bundled_project_version_drift(tmp_path: Path) -> None:
@@ -388,12 +567,16 @@ def test_optional_dependencies_keep_their_constraints_and_extra_marker(requireme
         "benchmarks/_measurement.py",
         "benchmarks/bench_screen.py",
         "uv.lock",
+        "pyproject.toml",
+        "MANIFEST.in",
+        "README.md",
+        "LICENSE",
     ],
 )
 def test_sdist_requires_original_test_support(tmp_path: Path, support: str) -> None:
     path = tmp_path / "test-support.tar.gz"
-    expected = {support: b"test support"}
     members = _sdist_members()
+    expected = {support: members.pop(f"{SDIST_ROOT}/{support}", b"test support")}
     _write_sdist(path, members)
     with pytest.raises(ValueError, match="missing required files"):
         _verify_sdist_with_support(path, PROJECT, PACKAGE_FILES, support_files=expected)

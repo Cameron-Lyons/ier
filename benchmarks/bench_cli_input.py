@@ -12,6 +12,7 @@ import tempfile
 from functools import partial
 from pathlib import Path
 
+import numpy as np
 from _measurement import measure
 
 from ier._cli_input import _load_input
@@ -24,13 +25,15 @@ def _write_fixture(
     preamble_rows: int,
 ) -> None:
     header = ",".join(f"item_{index}" for index in range(n_items))
-    row = ",".join(str(index % 5 + 1) for index in range(n_items))
+    rows = [
+        ",".join(str((index + offset) % 5 + 1) for index in range(n_items)) for offset in range(5)
+    ]
     with path.open(mode="w", encoding="utf-8", newline="") as handle:
         for index in range(preamble_rows):
             handle.write(f"survey metadata line {index + 1}\n")
         handle.write(f"{header}\n")
-        for _ in range(n_respondents):
-            handle.write(f"{row}\n")
+        for respondent in range(n_respondents):
+            handle.write(f"{rows[respondent % 5]}\n")
 
 
 def main() -> None:
@@ -58,6 +61,10 @@ def main() -> None:
             matrix, identifiers = measured.result
             if identifiers is not None or matrix.shape != (args.respondents, args.items):
                 raise RuntimeError("benchmark fixture loaded incorrectly")
+            for offset in range(min(5, args.respondents)):
+                observed = matrix[offset::5]
+                expected = (np.arange(args.items) + offset) % 5 + 1
+                np.testing.assert_array_equal(observed, np.broadcast_to(expected, observed.shape))
             print(f"{name}: median={measured.median_seconds:.4f}s peak={measured.peak_mib:.3f} MiB")
 
 

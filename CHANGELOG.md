@@ -5,16 +5,45 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.10.0] - 2026-10-02
+
+### Added
+
+- Reusable screening and composite APIs accept retained `errors` mappings to
+  preserve failed selections, coverage requirements, and audit provenance.
+  Saved-score CLI commands apply the same behavior automatically, including
+  cutoffs and weights configured for failed indices.
 
 ### Fixed
 
+- Attention-check scoring compares integer response categories and expected
+  answers exactly, including adjacent int64 and uint64 endpoints, without
+  accepting rounded neighboring categories. CLI expected-answer lists also
+  preserve integer tokens. Missing-response policies retain their existing behavior.
+- Delimited CLI input rejects malformed quoted records and reports their
+  physical line number before writing output. Delimiter fallback respects quoted
+  punctuation and retains useful width errors for jagged survey exports.
+- Entirely missing delimited respondents retain their rows and alignment;
+  physically blank lines remain skippable. This includes quoted empty
+  single-column records and all-empty tab-delimited records.
+- Distribution validation rejects duplicate members, unsafe paths, source
+  distribution links, stale package modules, and ambiguous metadata. Console
+  scripts and bundled build configuration must match the project exactly.
 - Updated locked development and documentation dependencies to urllib3 2.8.0,
   addressing HTTPS proxy TLS verification and chunked streaming vulnerabilities
   reported by the dependency audit.
 
 ### Changed
 
+- CI runs the entire bundled source-distribution test suite against the installed
+  wheel outside the checkout, with locked tools, warnings as errors, and the
+  existing 95% coverage gate.
+- Integer attention checks skip unavailable NaN scans. Local 100,000 × 80 runs
+  with 40 checks reduce runtime by 8–15% and peak traced allocation from
+  3.77–3.82 MiB to 3.27 MiB across pass, omit, and propagate policies.
+- Numeric CSV parsing handles empty fields directly and strips only after
+  failed numeric conversion. Input and response-check
+  benchmarks now verify respondent values against independent expected answers.
 - All performance benchmarks now share timing and allocation measurement,
   keeping allocation tracing out of timed calls and preserving measured results
   for correctness checks. Paired comparisons alternate operation order, and

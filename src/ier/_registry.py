@@ -1,6 +1,6 @@
 """Central registry for IER index orchestration APIs."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -427,6 +427,30 @@ def validate_index_names(indices: list[str], allowed: set[str] | None = None) ->
         if name in seen:
             raise ValueError(f"duplicate index '{name}' is not supported")
         seen.add(name)
+
+
+def validate_index_errors(
+    errors: Mapping[str, str] | None,
+    score_names: list[str],
+    allowed: set[str] | None = None,
+) -> dict[str, str]:
+    """Copy reusable failure provenance, keeping failed indices unavailable."""
+    if errors is None:
+        return {}
+    if not isinstance(errors, Mapping):
+        raise TypeError("errors must be a mapping of registered index names to messages")
+    names = list(errors)
+    if any(not isinstance(name, str) or not name.strip() for name in names):
+        raise ValueError("error index names must be nonblank strings")
+    validate_index_names(names, allowed)
+    if set(score_names).intersection(names):
+        raise ValueError("indices cannot contain both scores and errors")
+    messages = list(errors.values())
+    if any(not isinstance(message, str) for message in messages):
+        raise ValueError("error messages must be strings")
+    if any(not message.strip() for message in messages):
+        raise ValueError("error messages must be nonblank")
+    return dict(zip(names, messages, strict=True))
 
 
 IndexScoreResult = tuple[np.ndarray | None, str | None, Exception | None]

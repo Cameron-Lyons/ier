@@ -77,7 +77,14 @@ def _parse_float_list(raw: str | None) -> list[float] | None:
     parts = [part.strip() for part in raw.split(",") if part.strip()]
     if not parts:
         return None
-    return [float(part) for part in parts]
+    values: list[float] = []
+    for part in parts:
+        try:
+            value: float = int(part)
+        except ValueError:
+            value = float(part)
+        values.append(value)
+    return values
 
 
 def _parse_name_list(raw: list[str] | None) -> list[str] | None:
@@ -722,8 +729,8 @@ def _run_command(args: argparse.Namespace) -> int:
                 min_valid_indices=args.min_valid_indices,
                 thresholds=_parse_thresholds(args.threshold),
                 percentiles=_parse_percentiles(args.index_percentile),
+                errors=archive_errors,
             )
-            result["errors"] = archive_errors
         else:
             assert matrix is not None
             result = screen(
@@ -773,6 +780,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 standardize=args.standardize,
                 weights=weights,
                 min_valid_indices=args.min_valid_indices,
+                errors=archive_errors,
             )
             scores = details["composite"]
             component_scores = details["indices"]
@@ -784,6 +792,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 standardize=args.standardize,
                 weights=weights,
                 min_valid_indices=args.min_valid_indices,
+                errors=archive_errors,
             )
         errors = archive_errors
     elif args.include_components:

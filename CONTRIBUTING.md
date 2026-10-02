@@ -91,6 +91,7 @@ uv run python benchmarks/bench_guttman.py --respondents 1000 --items 1000 --stru
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
 uv run python benchmarks/bench_response_checks.py --checks 40
+uv run python benchmarks/bench_response_checks.py --checks 40 --dtype int64 --integer-offset 1152921504606846976 --missing-rate 0
 uv run python benchmarks/bench_response_time.py --operation median --order F
 uv run python benchmarks/bench_row_reductions.py --order F --missing-rate 0.1
 uv run python benchmarks/bench_pair_differences.py --scale 2.5e307 --offset 2.5e307
@@ -175,7 +176,12 @@ to compare small response scales with its sparse high-cardinality path.
 The response-check benchmark measures missing-response and attention-check
 scoring, including applicability masks and all attention-check missing policies.
 Use `--checks` to vary the number of selected items and `--order F` to compare
-column-contiguous inputs.
+column-contiguous inputs. Add `--dtype int64|uint64 --missing-rate 0` and
+`--integer-offset` to exercise exact category comparisons near 64-bit limits.
+Offsets that move the five response categories outside the selected dtype are
+rejected. Every operation checks sampled results against a direct Python
+reference outside measurement, including missing policies and unavailable
+applicability denominators.
 For the person-fit benchmark, use
 `--missing-rate 0` for complete responses, `--order F` for column-contiguous
 inputs, `--categories 5` for polytomous responses instead of binary data, and
@@ -262,12 +268,24 @@ tools.
 Package sources must match the checkout byte for byte, and the source
 distribution's entire bundled project table must match the current project,
 including runtime dependencies, optional dependencies, and entry points.
+The source distribution also preserves the complete build configuration,
+manifest, README, and license byte for byte. Artifacts with stale package
+modules, duplicate members, ambiguous metadata headers, or unsafe archive paths
+are rejected; source distributions cannot contain links. Wheel console scripts
+must match the complete declared script table, including additional commands.
 Both artifacts are installed into isolated environments
 with only runtime dependencies, then tested with known screening scores,
 compressed CSV input, JSON and NPZ CLI output, respondent IDs, and archive
 reload/reflagging. Timing smoke checks also remove the original input, re-export
 saved medians, and reflag them in place, preserving IDs and missing scores while
 checking fixed-cutoff equality and percentile ties independently.
+CI also downloads the built artifacts into a job with no repository checkout,
+extracts the bundled source-distribution tests and their support files, and
+installs locked integration tools without installing the source project. It
+installs the wheel, verifies the package imports from that isolated environment,
+then runs the complete bundled suite against the installed wheel with the same
+warnings and coverage gates. This checks packaging omissions that an editable
+checkout can hide.
 Release and publish workflows reuse these tested artifacts.
 Both workflows also require lint, type, docs, and dependency-audit checks to pass
 before creating a release or publishing a package.

@@ -31,6 +31,7 @@ from ier._registry import (
     default_composite_indices,
     resolve_index_options,
     score_registered_indices,
+    validate_index_errors,
     validate_index_names,
     validate_min_valid_indices,
     validate_worker_count,
@@ -150,6 +151,7 @@ def composite_scores(
     *,
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
+    errors: Mapping[str, str] | None = None,
 ) -> np.ndarray:
     """
     Combine already-computed registered-index score vectors.
@@ -171,6 +173,8 @@ def composite_scores(
     - standardize: Standardize each index before applying direction and weights.
     - weights: Optional positive finite per-index weight overrides.
     - min_valid_indices: Optional minimum available component count per respondent.
+    - errors: Optional retained per-index soft failures. Failed indices remain
+              selected for weight and completeness validation, with no available scores.
 
     Returns:
     - A respondent-aligned NumPy array of composite scores.
@@ -187,14 +191,14 @@ def composite_scores(
         ...     weights={"irv": 2.0, "longstring": 0.5},
         ... )
     """
-    validated_scores, resolved_weights, min_valid_indices = _prepare_composite_scores(
-        scores, method, standardize, weights, min_valid_indices
+    validated_scores, retained_errors, resolved_weights, min_valid_indices = (
+        _prepare_composite_scores(scores, method, standardize, weights, min_valid_indices, errors)
     )
     multipliers = {name: INDEX_REGISTRY[name].composite_multiplier for name in validated_scores}
 
     return _combine_scores(
         validated_scores,
-        {},
+        retained_errors,
         method,
         standardize,
         resolved_weights if weights is not None else None,
@@ -209,17 +213,20 @@ def _prepare_composite_scores(
     standardize: bool,
     weights: Mapping[str, float] | None,
     min_valid_indices: int | None,
-) -> tuple[dict[str, np.ndarray], dict[str, float], int | None]:
+    errors: Mapping[str, str] | None,
+) -> tuple[dict[str, np.ndarray], dict[str, str], dict[str, float], int | None]:
     """Validate one precomputed request before reducing or summarizing it."""
     validated_scores, _ = validate_score_vectors(scores)
-    indices = list(validated_scores)
-    validate_index_names(indices, composite_index_names())
+    allowed = composite_index_names()
+    validate_index_names(list(validated_scores), allowed)
+    retained_errors = validate_index_errors(errors, list(validated_scores), allowed)
+    indices = [*validated_scores, *retained_errors]
     if method not in {"mean", "sum", "max"}:
         raise ValueError("method must be 'mean', 'sum', or 'max' for precomputed scores")
     _validate_standardize(standardize)
     resolved_weights = _resolve_composite_weights(weights, indices)
     min_valid_indices = validate_min_valid_indices(min_valid_indices, len(indices))
-    return validated_scores, resolved_weights, min_valid_indices
+    return validated_scores, retained_errors, resolved_weights, min_valid_indices
 
 
 def composite_scores_summary(
@@ -229,6 +236,7 @@ def composite_scores_summary(
     *,
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
+    errors: Mapping[str, str] | None = None,
 ) -> CompositeSummary:
     """Combine reusable scores with component coverage and summary statistics.
 
@@ -236,17 +244,19 @@ def composite_scores_summary(
     the same directions, calibration, weights, and completeness rules as
     :func:`composite_scores`, and reports availability after calibration. Input
     arrays are never mutated; compatible arrays are retained in ``indices``.
-    ``errors`` is empty because no index calculation is attempted.
+    Optional ``errors`` retains original soft failures without recalculating
+    indices. Failed indices remain selected for weight and completeness
+    validation but never contribute to coverage or scores.
     """
-    validated_scores, resolved_weights, min_valid_indices = _prepare_composite_scores(
-        scores, method, standardize, weights, min_valid_indices
+    validated_scores, retained_errors, resolved_weights, min_valid_indices = (
+        _prepare_composite_scores(scores, method, standardize, weights, min_valid_indices, errors)
     )
     n_respondents = len(next(iter(validated_scores.values())))
     valid_index_counts = np.zeros(n_respondents, dtype=np.int_)
     multipliers = {name: INDEX_REGISTRY[name].composite_multiplier for name in validated_scores}
     combined_scores = _combine_scores(
         validated_scores,
-        {},
+        retained_errors,
         method,
         standardize,
         resolved_weights if weights is not None else None,
@@ -257,7 +267,7 @@ def composite_scores_summary(
     return _summarize_composite_result(
         combined_scores,
         validated_scores,
-        {},
+        retained_errors,
         method,
         standardize,
         resolved_weights,
