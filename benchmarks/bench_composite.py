@@ -29,10 +29,7 @@ def _direct_composite(
     options: IndexOptions,
     weights: dict[str, float],
 ) -> np.ndarray:
-    result = composite(data, options=options, weights=weights)
-    if isinstance(result, tuple):
-        raise TypeError("unexpected diagnostics tuple from default composite scoring")
-    return result
+    return composite(data, options=options, weights=weights)
 
 
 def main() -> None:

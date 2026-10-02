@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import sys
 from array import array
+from decimal import Decimal, InvalidOperation
 from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TextIO
@@ -65,7 +66,20 @@ def _normalize_missing_values(missing_values: list[str] | None) -> frozenset[str
     return frozenset(normalized)
 
 
-def _fallback_delimiter(sample_lines: list[str]) -> str | None:
+def _uses_mixed_numeric_whitespace(line: str) -> bool:
+    """Recognize extra space-separated numeric cells inside tab-separated fields."""
+    tokens = line.split()
+    if len(tokens) <= len(line.rstrip("\r\n").split("\t")):
+        return False
+    try:
+        for token in tokens:
+            float(token)
+    except ValueError:
+        return False
+    return True
+
+
+def _fallback_delimiter(sample_lines: list[str], *, header_expected: bool = False) -> str | None:
     """Identify a delimited first record even when later rows are jagged.
 
     The sniffer requires consistent widths, so malformed CSV otherwise falls
@@ -82,18 +96,11 @@ def _fallback_delimiter(sample_lines: list[str]) -> str | None:
             )
         except csv.Error:
             continue
-        if candidate == "\t":
+        if candidate == "\t" and not header_expected:
             # Tabs can also be part of an ordinary whitespace numeric matrix.
             first_line = next((line for line in sample_lines if line.strip()), "")
-            tokens = first_line.split()
-            if len(tokens) > len(first):
-                try:
-                    for token in tokens:
-                        float(token)
-                except ValueError:
-                    pass
-                else:
-                    continue
+            if _uses_mixed_numeric_whitespace(first_line):
+                continue
         try:
             following = next(
                 (row for row in reader if len(row) > 1 or any(cell.strip() for cell in row)), []
@@ -115,6 +122,8 @@ def _iter_rows_from_stream(
     handle: TextIO,
     delimiter: str | None,
     skip_rows: int = 0,
+    *,
+    header_expected: bool = False,
 ) -> Iterator[list[str]]:
     """Yield non-empty rows from a forward-only text stream."""
     for _ in range(skip_rows):
@@ -138,7 +147,11 @@ def _iter_rows_from_stream(
         try:
             delimiter = csv.Sniffer().sniff(sample, delimiters=",\t;").delimiter
         except csv.Error:
-            delimiter = _fallback_delimiter(sample_lines)
+            delimiter = _fallback_delimiter(sample_lines, header_expected=header_expected)
+        if delimiter == "\t" and not header_expected:
+            first_line = next((line for line in sample_lines if line.strip()), "")
+            if _uses_mixed_numeric_whitespace(first_line):
+                delimiter = None
         if delimiter is None:
             for line in lines:
                 row = line.split()
@@ -210,6 +223,8 @@ def _iter_rows(
     path: Path,
     delimiter: str | None,
     skip_rows: int = 0,
+    *,
+    header_expected: bool = False,
 ) -> Iterator[list[str]]:
     """Yield plain, compressed, or standard-input delimited rows."""
     if delimiter is not None and (len(delimiter) != 1 or delimiter in "\r\n"):
@@ -217,12 +232,16 @@ def _iter_rows(
 
     found = False
     if path == Path("-"):
-        for row in _iter_rows_from_stream(sys.stdin, delimiter, skip_rows):
+        for row in _iter_rows_from_stream(
+            sys.stdin, delimiter, skip_rows, header_expected=header_expected
+        ):
             found = True
             yield row
     else:
         with _open_text_path(path, "r") as handle:
-            for row in _iter_rows_from_stream(handle, delimiter, skip_rows):
+            for row in _iter_rows_from_stream(
+                handle, delimiter, skip_rows, header_expected=header_expected
+            ):
                 found = True
                 yield row
 
@@ -257,7 +276,8 @@ def _load_input(
         return _load_npy_input(path, delimiter, id_column, item_columns, header_mode)
 
     source = _input_label(path)
-    row_iterator = iter(_iter_rows(path, delimiter, skip_rows))
+    header_expected = id_column is not None or item_columns is not None or header_mode == "present"
+    row_iterator = iter(_iter_rows(path, delimiter, skip_rows, header_expected=header_expected))
     first_row = next(row_iterator)
 
     selected_names: list[str] | None = None
@@ -271,7 +291,7 @@ def _load_input(
     id_index: int | None = None
     item_indices: list[int] | None = None
     header: list[str] | None = None
-    if id_column is not None or selected_names is not None or header_mode == "present":
+    if header_expected:
         header = [cell.strip() for cell in first_row]
         data_rows: Iterator[list[str]] = row_iterator
         expected_width = len(header)
@@ -368,3 +388,59 @@ def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
     """Load a respondent × item matrix from delimited text or NumPy binary."""
     matrix, _ = _load_input(path, delimiter)
     return matrix
+
+
+def _parse_applicable_cell(cell: str) -> bool:
+    """Require exactly zero or one without rounding nonbinary decimal tokens."""
+    stripped = cell.strip()
+    if stripped == "0":
+        return False
+    if stripped == "1":
+        return True
+    try:
+        value = Decimal(stripped)
+    except InvalidOperation as err:
+        raise ValueError("mask values must be numeric 0 or 1") from err
+    if not value.is_finite() or value not in (0, 1):
+        raise ValueError("mask values must be numeric 0 or 1")
+    return bool(value)
+
+
+def _load_applicable_mask(path: Path, shape: tuple[int, int]) -> np.ndarray:
+    """Load a Boolean matrix matching the selected response axes, without coercion."""
+    try:
+        if _is_compressed_npy_path(path):
+            raise ValueError("compressed .npy masks are not supported; use uncompressed .npy")
+        if path.suffix.casefold() == ".npz":
+            raise ValueError("NumPy mask archives are not supported; use one Boolean .npy array")
+        if path.suffix.casefold() == ".npy":
+            loaded = np.load(path, allow_pickle=False, mmap_mode="r")
+            if not isinstance(loaded, np.ndarray):
+                loaded.close()
+                raise ValueError("expected one Boolean NumPy array, not an archive")
+            if loaded.dtype.kind != "b":
+                raise ValueError(f"expected a Boolean NumPy mask, got {loaded.dtype}")
+            if loaded.shape != shape:
+                raise ValueError(f"mask must have shape {shape}, got {loaded.shape}")
+            return loaded
+
+        n_rows, n_items = shape
+        values = bytearray()
+        found_rows = 0
+        for found_rows, row in enumerate(_iter_rows(path, None), start=1):
+            if found_rows > n_rows:
+                raise ValueError(f"mask must have shape {shape}; contains more than {n_rows} rows")
+            if len(row) != n_items:
+                raise ValueError(
+                    f"mask must have shape {shape}; row {found_rows} has {len(row)} columns"
+                )
+            for column, cell in enumerate(row, start=1):
+                try:
+                    values.append(_parse_applicable_cell(cell))
+                except ValueError as err:
+                    raise ValueError(f"row {found_rows}, column {column}: {err}") from err
+        if found_rows != n_rows:
+            raise ValueError(f"mask must have shape {shape}, got {(found_rows, n_items)}")
+        return np.frombuffer(values, dtype=np.bool_).reshape(shape)
+    except (OSError, EOFError, ValueError) as err:
+        raise ValueError(f"invalid --missing-applicable-mask {path}: {err}") from err

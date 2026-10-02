@@ -79,8 +79,10 @@ save_score_archive(
     {"irv": [0.1, 0.7], "longstring": [3.0, 8.0]},
     respondent_ids=["case-1", "case-2"],
 )
-saved = load_score_archive("screening.npz")
-updated = screen_scores(saved["scores"], percentile=99)
+saved = load_score_archive("raw-scores.npz")
+updated = screen_scores(
+    saved["scores"], errors=saved["errors"], n_respondents=saved["n_respondents"], percentile=99
+)
 print(saved["respondent_ids"])
 print(saved["errors"])
 ```
@@ -94,6 +96,14 @@ schema. It accepts compact public archives, screen CLI archives, and composite
 CLI archives written with `--include-components`. Aggregate-only composite and
 response-time archives do not contain reusable registered-index vectors and are
 rejected with a contextual error.
+
+Screen archives can also retain a run where every selected index failed. The
+stored respondent count, identifiers, and nonblank failure messages remain
+available even though `scores` is empty. Supply `n_respondents` explicitly to
+`save_score_archive()` and `screen_scores()` for this case. `screen-scores` uses
+the archived count automatically and emits aligned zero-coverage results in every
+format; `--strict` still rejects retained failures. Composite reuse requires
+at least one available component vector.
 
 Reuse those scores directly from the CLI for sensitivity analysis:
 

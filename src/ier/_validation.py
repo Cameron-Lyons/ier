@@ -82,23 +82,40 @@ def validate_score_array(values: ArrayLike, *, name: str = "scores") -> np.ndarr
 
 def validate_score_vectors(
     scores: Mapping[str, ArrayLike],
+    *,
+    n_respondents: int | None = None,
 ) -> tuple[dict[str, np.ndarray], int]:
-    """Validate a non-empty, respondent-aligned mapping of reusable score vectors."""
+    """Validate aligned vectors, using an explicit count when none are available."""
     if not isinstance(scores, Mapping):
         raise TypeError("scores must be a mapping of registered index names to score arrays")
-    if not scores:
+    if n_respondents is not None:
+        if (
+            isinstance(n_respondents, bool)
+            or not isinstance(n_respondents, (int, np.integer))
+            or n_respondents < 1
+            or n_respondents > np.iinfo(np.intp).max
+        ):
+            raise ValueError(
+                "n_respondents must be a positive integer within the platform index range or None"
+            )
+        n_respondents = int(n_respondents)
+    if not scores and n_respondents is None:
         raise ValueError("scores must contain at least one registered index")
 
     validated: dict[str, np.ndarray] = {}
-    n_respondents: int | None = None
+    actual_respondents: int | None = None
     for name, values in scores.items():
         score_arr = validate_score_array(values, name=f"scores for {name}")
-        if n_respondents is None:
-            n_respondents = len(score_arr)
-        elif len(score_arr) != n_respondents:
+        if actual_respondents is None:
+            actual_respondents = len(score_arr)
+        elif len(score_arr) != actual_respondents:
             raise ValueError("all score arrays must have the same respondent count")
+        if n_respondents is not None and len(score_arr) != n_respondents:
+            raise ValueError("score arrays must match n_respondents")
         validated[name] = score_arr
 
+    if n_respondents is None:
+        n_respondents = actual_respondents
     assert n_respondents is not None
     return validated, n_respondents
 

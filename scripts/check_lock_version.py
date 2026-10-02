@@ -6,8 +6,9 @@ import argparse
 import sys
 import tomllib
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-if __package__:
+if TYPE_CHECKING or __package__:
     from .check_version import normalized_distribution_version, read_project_version
 else:
     from check_version import normalized_distribution_version, read_project_version

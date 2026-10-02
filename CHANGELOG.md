@@ -5,6 +5,56 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-10-02
+
+### Added
+
+- Fresh CLI screening and composite commands accept `--missing-applicable-mask`
+  for respondent-specific skip logic. Masks support headerless 0/1 text,
+  compressed text, standard input, and read-only Boolean `.npy` matrices, with
+  exact value and selected-response shape validation before scoring.
+- Repeatable `--item-column NAME` selects exact header names, including commas.
+  It can be interleaved with `--item-columns` while preserving selection order.
+
+### Fixed
+
+- Response-time coefficients of variation and semantic consistency scores
+  preserve dimensionless ratios for varying responses near floating-point
+  underflow. Bounded row repairs use power-of-two scaling and retain missing,
+  constant, and non-finite response behavior.
+- Public composite type annotations now distinguish default array or flag
+  returns from diagnostic tuples, including dynamically selected diagnostics.
+- Screening archives can be replayed when every selected index soft-failed.
+  Explicit `n_respondents` support in `screen_scores()` and `save_score_archive()`
+  preserves respondent rows, identifiers, failure provenance, and zero coverage.
+  Saved-score CLI commands carry the count automatically, including in-place
+  archive replacement. Empty mappings without failure provenance remain invalid.
+- Corrupt or truncated gzip, bzip2, and xz survey exports report their input path
+  through the normal CLI error handler and preserve previous output files.
+- Numeric whitespace matrices mixing spaces and tabs are detected even when
+  delimiter sniffing initially selects tabs. Explicit tab delimiters, named
+  metadata columns, quoted fields, and missing TSV cells retain their behavior.
+- Screening heatmaps use fixed flag colors so fully flagged and wholly
+  unflagged cohorts remain distinct. Missing scores appear gray while absent
+  onset detections stay unflagged. Automatic figure dimensions are bounded so
+  large surveys can render and export without creating enormous canvases.
+
+### Changed
+
+- The existing CI artifact gate verifies wheel `RECORD` inventories, secure
+  content hashes, and recorded sizes, and requires both `WHEEL` and `RECORD`.
+  Real setuptools wheel regressions verify corruption whose ZIP checksums remain
+  valid, missing manifests, malformed entries, and inconsistent file inventories.
+  Wheel format, pure-Python tags, and build metadata must also agree with the
+  artifact filename.
+- Strict type checks include release scripts and benchmarks. A separate public
+  consumer gate verifies valid API calls and requires specific failures for
+  invalid return assignments and method choices.
+- Flag-count chart aggregation uses one histogram pass. A local one-million-row,
+  21-bin comparison reduced aggregation from 11.1 to 1.3 ms and peak traced
+  allocation from 1.02 MiB to less than 1 KiB, with identical bin counts. Heatmaps
+  also retain Boolean flags instead of constructing an extra float matrix.
+
 ## [1.10.0] - 2026-10-02
 
 ### Added

@@ -25,7 +25,7 @@ from ier import (
     screen,
     screen_scores,
 )
-from ier._cli_input import _load_input
+from ier._cli_input import _load_applicable_mask, _load_input
 from ier._cli_npz import (
     _require_npz_output_path,
     _write_composite_npz,
@@ -87,12 +87,32 @@ def _parse_float_list(raw: str | None) -> list[float] | None:
     return values
 
 
+class _ItemColumnAction(argparse.Action):
+    """Append exact names or comma-separated lists in command-line order."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: object,
+        option_string: str | None = None,
+    ) -> None:
+        assert isinstance(values, str)
+        previous: list[str] | None = getattr(namespace, self.dest, None)
+        names = (
+            [name.strip() for name in values.split(",") if name.strip()]
+            if option_string == "--item-columns"
+            else [values.strip()]
+        )
+        setattr(namespace, self.dest, [*(previous or []), *names])
+
+
 def _parse_name_list(raw: list[str] | None) -> list[str] | None:
-    """Parse repeated comma-separated column-name arguments."""
+    """Validate names collected by the exact and shorthand column options."""
     if raw is None:
         return None
-    names = [name.strip() for entry in raw for name in entry.split(",") if name.strip()]
-    if not names:
+    names = [name.strip() for name in raw]
+    if not names or any(not name for name in names):
         raise ValueError("--item-columns must include at least one column name")
     return names
 
@@ -158,7 +178,9 @@ def _report_soft_errors(errors: dict[str, str]) -> None:
         print(f"warning: index '{name}' was skipped: {message}", file=sys.stderr)
 
 
-def _options_from_args(args: argparse.Namespace) -> IndexOptions:
+def _options_from_args(
+    args: argparse.Namespace, *, missing_applicable_mask: np.ndarray | None = None
+) -> IndexOptions:
     return IndexOptions(
         na_rm=args.na_rm,
         scale_min=args.scale_min,
@@ -191,6 +213,7 @@ def _options_from_args(args: argparse.Namespace) -> IndexOptions:
         infrequency_proportion=args.infrequency_proportion,
         infrequency_missing=args.infrequency_missing,
         missing_item_indices=_parse_int_list(args.missing_item_indices),
+        missing_applicable_mask=missing_applicable_mask,
     )
 
 
@@ -230,10 +253,18 @@ def _add_matrix_input_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--item-columns",
-        action="append",
+        action=_ItemColumnAction,
         default=None,
         metavar="NAME[,NAME...]",
         help="Named header columns to score, in order; comma-separate or repeat",
+    )
+    parser.add_argument(
+        "--item-column",
+        action=_ItemColumnAction,
+        dest="item_columns",
+        default=None,
+        metavar="NAME",
+        help="One exact header name to score, including commas; repeat to select in order",
     )
 
 
@@ -337,6 +368,16 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         "--missing-item-indices",
         default=None,
         help="Comma-separated required item indices for missing-rate scoring",
+    )
+    parser.add_argument(
+        "--missing-applicable-mask",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Boolean .npy or headerless 0/1 text mask for missing-rate scoring; "
+            "must match selected response rows and columns in order"
+        ),
     )
     _add_output_options(parser)
 
@@ -592,7 +633,7 @@ def _score_response_times(
 
 def _load_reusable_scores(
     path: Path, indices: list[str] | None, strict: bool
-) -> tuple[dict[str, np.ndarray], dict[str, str], list[str] | None]:
+) -> tuple[dict[str, np.ndarray], dict[str, str], list[str] | None, int]:
     """Select saved raw scores while retaining relevant archive provenance."""
     archive = load_score_archive(path)
     scores = archive["scores"]
@@ -608,7 +649,7 @@ def _load_reusable_scores(
     if strict and errors:
         name, message = next(iter(errors.items()))
         raise ValueError(f"archive index '{name}' failed: {message}")
-    return scores, errors, archive["respondent_ids"]
+    return scores, errors, archive["respondent_ids"], archive["n_respondents"]
 
 
 def _run_response_time_command(args: argparse.Namespace) -> int:
@@ -704,12 +745,15 @@ def _run_command(args: argparse.Namespace) -> int:
     precomputed = args.command in {"screen-scores", "composite-scores"}
     saved_scores: dict[str, np.ndarray] = {}
     archive_errors: dict[str, str] = {}
+    saved_n_respondents: int | None = None
     if precomputed:
-        saved_scores, archive_errors, respondent_ids = _load_reusable_scores(
+        saved_scores, archive_errors, respondent_ids, saved_n_respondents = _load_reusable_scores(
             args.data, args.indices, args.strict
         )
         matrix = None
     else:
+        if args.data == Path("-") and args.missing_applicable_mask == Path("-"):
+            raise ValueError("response data and --missing-applicable-mask cannot both use stdin")
         matrix, respondent_ids = _load_input(
             args.data,
             args.delimiter,
@@ -719,7 +763,15 @@ def _run_command(args: argparse.Namespace) -> int:
             args.missing_values,
             args.skip_rows,
         )
-    options = None if precomputed else _options_from_args(args)
+    applicable_mask = None
+    if not precomputed and args.missing_applicable_mask is not None:
+        assert matrix is not None
+        applicable_mask = _load_applicable_mask(
+            args.missing_applicable_mask, (matrix.shape[0], matrix.shape[1])
+        )
+    options = (
+        None if precomputed else _options_from_args(args, missing_applicable_mask=applicable_mask)
+    )
     if args.command in {"screen", "screen-scores"}:
         if precomputed:
             result = screen_scores(
@@ -730,6 +782,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 thresholds=_parse_thresholds(args.threshold),
                 percentiles=_parse_percentiles(args.index_percentile),
                 errors=archive_errors,
+                n_respondents=saved_n_respondents,
             )
         else:
             assert matrix is not None
@@ -826,9 +879,6 @@ def _run_command(args: argparse.Namespace) -> int:
             strict=args.strict,
             workers=args.workers,
         )
-        if not isinstance(scores_result, tuple):
-            print("error: unexpected composite return type", file=sys.stderr)
-            return 1
         scores, errors = scores_result
     _report_soft_errors(errors)
 

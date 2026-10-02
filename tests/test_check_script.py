@@ -75,7 +75,8 @@ class TestCheckScript(unittest.TestCase):
             "run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing",
             commands,
         )
-        self.assertIn("run --no-sync mypy src/ier benchmarks", commands)
+        self.assertIn("run --no-sync mypy src/ier benchmarks scripts", commands)
+        self.assertIn("run --no-sync python scripts/check_public_typing.py", commands)
         self.assertIn("run --no-sync mkdocs build --strict", commands)
 
     def test_failed_sync_or_quality_gate_stops_later_checks(self) -> None:
@@ -84,7 +85,8 @@ class TestCheckScript(unittest.TestCase):
             "run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing",
             "run --no-sync ruff check .",
             "run --no-sync ruff format --check .",
-            "run --no-sync mypy src/ier benchmarks",
+            "run --no-sync mypy src/ier benchmarks scripts",
+            "run --no-sync python scripts/check_public_typing.py",
             "run --no-sync mkdocs build --strict",
         ):
             with self.subTest(command=command):
@@ -105,6 +107,7 @@ class TestCheckScript(unittest.TestCase):
         result, commands = self._run_checks(skip_docs=True)
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(commands), 5)
-        self.assertEqual(commands[-1], "run --no-sync mypy src/ier benchmarks")
+        self.assertEqual(len(commands), 6)
+        self.assertEqual(commands[-2], "run --no-sync mypy src/ier benchmarks scripts")
+        self.assertEqual(commands[-1], "run --no-sync python scripts/check_public_typing.py")
         self.assertNotIn("run --no-sync mkdocs build --strict", commands)

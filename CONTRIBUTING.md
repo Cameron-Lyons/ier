@@ -47,7 +47,8 @@ Or run checks individually:
 uv run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing
 uv run --no-sync ruff check .
 uv run --no-sync ruff format --check .
-uv run --no-sync mypy src/ier benchmarks
+uv run --no-sync mypy src/ier benchmarks scripts
+uv run --no-sync python scripts/check_public_typing.py
 uv run --no-sync mkdocs build --strict
 ```
 
@@ -65,7 +66,11 @@ cancelled and jobs have time limits.
 - **Ruff** is the linter, formatter, and static security scanner. The selected
   rules include pycodestyle, Pyflakes, isort, pyupgrade, Bugbear, simplify,
   type-checking, flake8-bandit security checks, and Pylint error/convention/warning rules.
-- **mypy** performs strict static type checking for the public and internal source.
+- **mypy** performs strict static type checking for source, benchmarks, and
+  release scripts. The public consumer gate checks valid calls in
+  `tests/typing/composite_valid.py` and exact expected diagnostic codes and
+  locations in `tests/typing/composite_invalid.py`; an unrelated failure cannot
+  satisfy the negative checks.
 
 Pre-commit hooks use isolated tool environments and do not need a project
 dependency. Install them with `uvx pre-commit install` when desired.
@@ -91,6 +96,7 @@ uv run python benchmarks/bench_guttman.py --respondents 1000 --items 1000 --stru
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
 uv run python benchmarks/bench_response_checks.py --checks 40
+uv run python benchmarks/bench_cli_input.py --masks
 uv run python benchmarks/bench_response_checks.py --checks 40 --dtype int64 --integer-offset 1152921504606846976 --missing-rate 0
 uv run python benchmarks/bench_response_time.py --operation median --order F
 uv run python benchmarks/bench_row_reductions.py --order F --missing-rate 0.1
@@ -273,6 +279,12 @@ manifest, README, and license byte for byte. Artifacts with stale package
 modules, duplicate members, ambiguous metadata headers, or unsafe archive paths
 are rejected; source distributions cannot contain links. Wheel console scripts
 must match the complete declared script table, including additional commands.
+Wheel validation also requires `WHEEL` and `RECORD` and verifies the complete
+integrity inventory, secure hashes, and any recorded sizes against the ZIP
+payloads. Alterations with valid ZIP checksums still fail when their recorded
+digests disagree; hashes are checked in bounded chunks.
+`WHEEL` must declare supported wheel format 1.0 and pure-Python tags matching
+the filename, with consistent build metadata.
 Both artifacts are installed into isolated environments
 with only runtime dependencies, then tested with known screening scores,
 compressed CSV input, JSON and NPZ CLI output, respondent IDs, and archive

@@ -225,15 +225,26 @@ it later:
 ```python
 from ier import load_score_archive, save_score_archive, screen_scores
 
-save_score_archive("screening-scores.npz", result["scores"], errors=result["errors"])
+save_score_archive(
+    "screening-scores.npz", result["scores"], errors=result["errors"],
+    n_respondents=result["n_respondents"],
+)
 saved = load_score_archive("screening-scores.npz")
 revised = screen_scores(
-    saved["scores"], errors=saved["errors"], percentile=99, min_flags=3
+    saved["scores"], errors=saved["errors"], n_respondents=saved["n_respondents"],
+    percentile=99, min_flags=3,
 )
 ```
 
 The public writer can also store aligned respondent IDs. The loader returns
 those identifiers and any recorded soft failures.
+
+The explicit `n_respondents` count is optional when score vectors are available,
+and is checked against their lengths. If every selected index failed, the empty
+score mapping and retained errors can still be saved and replayed by supplying
+the count. Respondents retain zero flags and zero available scores; a positive
+`min_valid_indices` makes them ineligible for consensus. Empty mappings without
+failure provenance are rejected.
 
 ## Missing responses
 
@@ -274,6 +285,16 @@ result = screen(data, indices=["missing_rate"], options=options, min_flags=1)
 Rows without any applicable selected items receive `NaN` and are not flagged.
 `missing_rate_flag()` accepts the same `applicable_mask` argument for direct
 flagging.
+
+The CLI equivalent is `--missing-applicable-mask PATH`. Use a headerless numeric
+0/1 matrix, optionally gzip-, bzip2-, or xz-compressed, or an uncompressed Boolean
+`.npy` matrix that is memory-mapped read-only. A mask must match the response
+matrix's rows and selected item columns in order, excluding IDs and metadata.
+It can be combined with `--missing-item-indices` to restrict the required subset.
+Invalid values or dimensions fail before scoring and preserve existing output.
+Use `-` for mask standard input when responses come from a file; both inputs
+cannot consume standard input together. Response header, delimiter, preamble,
+and missing-token options apply only to the response file.
 
 ## Flagging
 
@@ -369,6 +390,7 @@ ier screen data.csv --indices irv mad --strict
 ier screen data.csv --format json --output screen.json
 ier screen data.csv --format csv --evenodd-factors 5,5 --indices evenodd irv
 ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
+ier screen data.csv --indices missing_rate --missing-applicable-mask applicable.npy
 ier screen data.csv --indices infrequency \
   --infrequency-item-indices 3,7 \
   --infrequency-expected-responses 5,1 --infrequency-missing fail
@@ -384,8 +406,10 @@ ier --version
 
 `--item-columns` accepts comma-separated header names and may be repeated. It
 lets screen and composite commands ignore unselected metadata columns while
-preserving the requested item order. Any item-index options refer to that
-selected order.
+preserving the requested item order. Repeatable `--item-column NAME` accepts one
+exact header name, including commas; mix both forms to retain command-line
+selection order. Any item-index options and applicability-mask columns refer to
+that selected order.
 
 Header detection defaults to `--header auto`. Use `--header present` when the
 first row contains ambiguous names such as numeric item codes, or `--header absent`
@@ -410,7 +434,7 @@ content.
 
 Uncompressed `.npy` input is memory-mapped read-only and must contain one
 non-empty, two-dimensional, real numeric array. It has no headers, so
-`--id-column`, `--item-columns`, `--missing-value`, and `--delimiter` do not
+`--id-column`, `--item-column`, `--item-columns`, `--missing-value`, and `--delimiter` do not
 apply. Compressed `.npy` input is not supported because it cannot be memory-mapped.
 
 Use `-` as the data path to read a forward-only standard-input stream, and use

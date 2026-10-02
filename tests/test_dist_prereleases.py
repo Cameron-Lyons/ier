@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import csv
+import hashlib
 import tarfile
 import zipfile
 from functools import partial
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -76,6 +80,60 @@ def test_real_prerelease_artifact_rejects_wrong_metadata_version(tmp_path: Path,
 
     with pytest.raises(ValueError, match=r"Version=.*1\.2\.3rc2.*expected.*1\.2\.3rc1"):
         verifier(corrupt, project, SOURCES)
+
+
+def test_real_setuptools_wheel_rejects_content_corruption_with_valid_zip_checksums(
+    tmp_path: Path,
+) -> None:
+    original = FIXTURES / "insufficient_effort-1.2.3-py3-none-any.whl"
+    corrupt = tmp_path / original.name
+    with zipfile.ZipFile(original) as archive, zipfile.ZipFile(corrupt, "w") as output:
+        for member in archive.infolist():
+            contents = archive.read(member)
+            if member.filename.endswith("/licenses/LICENSE"):
+                contents = b"X" + contents[1:]
+            output.writestr(member, contents)
+    with zipfile.ZipFile(corrupt) as archive:
+        assert archive.testzip() is None
+
+    with pytest.raises(ValueError, match="RECORD hash does not match .*licenses/LICENSE"):
+        _verify_wheel(corrupt, PROJECT | {"version": "1.2.3"}, SOURCES)
+
+
+@pytest.mark.parametrize(
+    "before,after,error",
+    [
+        (b"Wheel-Version: 1.0", b"Wheel-Version: 999.0", "Wheel-Version"),
+        (b"Root-Is-Purelib: true", b"Root-Is-Purelib: false", "Root-Is-Purelib"),
+        (b"Tag: py3-none-any", b"Tag: cp311-cp311-win_amd64", "WHEEL Tag"),
+    ],
+)
+def test_real_setuptools_wheel_rejects_invalid_installation_metadata_after_rehashing(
+    tmp_path: Path, before: bytes, after: bytes, error: str
+) -> None:
+    original = FIXTURES / "insufficient_effort-1.2.3-py3-none-any.whl"
+    corrupt = tmp_path / original.name
+    dist_info = "insufficient_effort-1.2.3.dist-info"
+    record_name = f"{dist_info}/RECORD"
+    with zipfile.ZipFile(original) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    wheel_metadata = members[f"{dist_info}/WHEEL"]
+    assert before in wheel_metadata
+    members[f"{dist_info}/WHEEL"] = wheel_metadata.replace(before, after)
+    record = StringIO(newline="")
+    writer = csv.writer(record)
+    for name, contents in members.items():
+        if name != record_name:
+            digest = base64.urlsafe_b64encode(hashlib.sha256(contents).digest()).rstrip(b"=")
+            writer.writerow((name, f"sha256={digest.decode('ascii')}", len(contents)))
+    writer.writerow((record_name, "", ""))
+    members[record_name] = record.getvalue().encode()
+    with zipfile.ZipFile(corrupt, "w") as output:
+        for name, contents in members.items():
+            output.writestr(name, contents)
+
+    with pytest.raises(ValueError, match=error):
+        _verify_wheel(corrupt, PROJECT | {"version": "1.2.3"}, SOURCES)
 
 
 def _rewrite_sdist(original: Path, output: Path, name: str, before: bytes, after: bytes) -> None:

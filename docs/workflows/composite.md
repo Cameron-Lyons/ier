@@ -263,6 +263,12 @@ must succeed. For probability output, pass `return_diagnostics=True` to receive
 `(probabilities, diagnostics)`; omitting it retains the established array-only
 return value.
 
+Public type annotations preserve these return shapes: `composite()` returns an
+array by default and `(scores, diagnostics)` with `return_diagnostics=True`;
+`composite_flag()` returns `(scores, flags)` by default and adds diagnostics as a
+third element when requested. A dynamic Boolean option returns the corresponding
+union for explicit narrowing.
+
 The CLI does not discard these soft failures. Every format writes a warning to
 standard error, text output includes an `errors` section, JSON includes an
 `errors` object, and NPZ stores aligned `error_names` and `error_messages`
@@ -289,6 +295,7 @@ ier composite data.csv --indices irv longstring markov --min-valid-indices 2
 ier composite data.csv --indices irv longstring --include-components --format json
 ier composite data.csv --indices irv mad --strict
 ier composite data.csv --indices irv longstring --workers 4
+ier composite data.csv --indices irv missing_rate --missing-applicable-mask applicable.npy
 ier composite data.csv --format json --output composite.json
 ier composite data.csv --format csv --evenodd-factors 5,5 --indices irv evenodd
 ier composite data.npy --indices irv longstring --format json
@@ -298,6 +305,14 @@ ier composite data.npy --indices irv longstring --format npz --output composite.
 Uncompressed `.npy` matrices are memory-mapped read-only. They must be non-empty,
 two-dimensional, and real numeric; header selection and delimiter options do not
 apply to this binary format.
+
+Named item selection supports grouped `--item-columns q1,q2` and repeatable
+exact `--item-column NAME`, including names containing commas. Their combined
+order defines the response matrix and all item-index positions.
+For skip logic, `--missing-applicable-mask PATH` accepts headerless 0/1 text or
+an uncompressed Boolean `.npy` file aligned to that selected matrix. See
+[missing-response screening](screening.md#missing-responses) for transports
+and validation rules.
 
 CSV rows and JSON respondent arrays are written forward-only to plain files,
 gzip-, bzip2-, or XZ-compressed files, or standard output without retaining the

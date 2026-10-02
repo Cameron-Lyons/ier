@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import configparser
+import csv
+import hashlib
 import tarfile
 import tomllib
 import zipfile
 from collections import Counter
 from email.parser import BytesParser
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from packaging.markers import Marker
 from packaging.requirements import InvalidRequirement, Requirement
-from packaging.utils import canonicalize_name
+from packaging.utils import InvalidWheelFilename, canonicalize_name, parse_wheel_filename
+from packaging.version import Version
 
-if __package__:
+if TYPE_CHECKING or __package__:
     from .check_version import normalized_distribution_version
 else:
     from check_version import normalized_distribution_version
@@ -191,6 +196,119 @@ def _verify_package_members(path: Path, members: set[str], package_files: dict[s
     _require(not unexpected, f"{path.name} has unexpected package files: {unexpected}")
 
 
+def _verify_record(path: Path, archive: zipfile.ZipFile, dist_info: str, members: set[str]) -> None:
+    """Check the wheel's complete integrity manifest before publication."""
+    record_name = f"{dist_info}/RECORD"
+    signatures = {f"{record_name}.jws", f"{record_name}.p7s"}
+    try:
+        record = archive.read(record_name).decode("utf-8")
+        rows = list(csv.reader(StringIO(record, newline=""), strict=True))
+    except (UnicodeDecodeError, csv.Error) as error:
+        raise ValueError(f"{path.name} has invalid RECORD: {error}") from error
+    entries: dict[str, tuple[str, str]] = {}
+    for row in rows:
+        _require(len(row) == 3, f"{path.name} RECORD rows must have three columns: {row!r}")
+        name, digest, size = row
+        _require(name not in entries, f"{path.name} RECORD has duplicate entries: {name!r}")
+        entries[name] = (digest, size)
+    expected = members - signatures
+    _require(
+        entries.keys() == expected,
+        f"{path.name} RECORD does not match archive members: "
+        f"missing {sorted(expected - entries.keys())}; "
+        f"unexpected {sorted(entries.keys() - expected)}",
+    )
+    for name, (digest, size) in entries.items():
+        if name == record_name:
+            _require(
+                not digest and not size,
+                f"{path.name} RECORD cannot hash or size itself",
+            )
+            continue
+        algorithm, separator, encoded_digest = digest.partition("=")
+        _require(
+            bool(separator and encoded_digest),
+            f"{path.name} RECORD is missing a secure hash for {name}",
+        )
+        _require(
+            algorithm in hashlib.algorithms_guaranteed,
+            f"{path.name} RECORD has unsupported hash algorithm {algorithm!r} for {name}",
+        )
+        try:
+            hasher = hashlib.new(algorithm)
+        except ValueError as error:
+            raise ValueError(
+                f"{path.name} RECORD has unsupported hash algorithm {algorithm!r} for {name}"
+            ) from error
+        _require(
+            hasher.digest_size >= 32,
+            f"{path.name} RECORD requires sha256 or stronger hashes for {name}",
+        )
+        _require(
+            not size or (size.isascii() and size.isdecimal()),
+            f"{path.name} RECORD has invalid file size for {name}: {size!r}",
+        )
+        _require(
+            not size or int(size) == archive.getinfo(name).file_size,
+            f"{path.name} RECORD size does not match {name}",
+        )
+        with archive.open(name) as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                hasher.update(chunk)
+        expected_digest = base64.urlsafe_b64encode(hasher.digest()).rstrip(b"=").decode("ascii")
+        _require(
+            encoded_digest == expected_digest,
+            f"{path.name} RECORD hash does not match {name}",
+        )
+
+
+def _verify_wheel_format(
+    path: Path, archive: zipfile.ZipFile, dist_info: str, project: dict[str, object]
+) -> None:
+    """Ensure installers see the same version and compatibility as the filename."""
+    try:
+        distribution, version, build, tags = parse_wheel_filename(path.name)
+    except InvalidWheelFilename as error:
+        raise ValueError(f"{path.name} has an invalid wheel filename: {error}") from error
+    _require(
+        distribution == canonicalize_name(_project_value(project, "name")),
+        f"{path.name} wheel filename distribution does not match project.name",
+    )
+    _require(
+        version == Version(normalized_distribution_version(_project_value(project, "version"))),
+        f"{path.name} wheel filename version does not match project.version",
+    )
+    metadata = BytesParser().parsebytes(archive.read(f"{dist_info}/WHEEL"))
+    wheel_versions = metadata.get_all("Wheel-Version", [])
+    _require(
+        wheel_versions == ["1.0"],
+        f"{path.name} has unsupported or ambiguous Wheel-Version={wheel_versions!r}; "
+        "expected '1.0'",
+    )
+    purelib = metadata.get_all("Root-Is-Purelib", [])
+    _require(
+        purelib == ["true"],
+        f"{path.name} has Root-Is-Purelib={purelib!r}; expected pure Python package metadata",
+    )
+    declared_tags = metadata.get_all("Tag", [])
+    _require(
+        Counter(declared_tags) == Counter(str(tag) for tag in tags),
+        f"{path.name} WHEEL Tag={declared_tags!r} does not match filename tags "
+        f"{sorted(str(tag) for tag in tags)!r}",
+    )
+    _require(
+        all(tag.abi == "none" and tag.platform == "any" for tag in tags),
+        f"{path.name} wheel filename tags must describe a platform-independent Python package",
+    )
+    declared_build = metadata.get_all("Build", [])
+    expected_build = [path.stem.split("-")[-4]] if build else []
+    _require(
+        declared_build == expected_build,
+        f"{path.name} WHEEL Build={declared_build!r} does not match filename build "
+        f"{expected_build!r}",
+    )
+
+
 def _verify_wheel(
     path: Path, project: dict[str, object], package_files: dict[str, bytes] | None = None
 ) -> None:
@@ -210,6 +328,8 @@ def _verify_wheel(
         members = {member.filename for member in archive.infolist() if not member.is_dir()}
         required_members = package_files.keys() | {
             f"{dist_info}/METADATA",
+            f"{dist_info}/WHEEL",
+            f"{dist_info}/RECORD",
             f"{dist_info}/entry_points.txt",
             f"{dist_info}/licenses/LICENSE",
         }
@@ -250,6 +370,8 @@ def _verify_wheel(
             f"{path.name} CLI entry points {actual_scripts!r} do not match "
             f"project.scripts {expected_scripts!r}",
         )
+        _verify_record(path, archive, dist_info, members)
+        _verify_wheel_format(path, archive, dist_info, project)
 
 
 def _verify_sdist(

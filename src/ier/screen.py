@@ -36,9 +36,10 @@ def _validate_min_flags(min_flags: int) -> int:
 
 def _validate_screen_scores(
     scores: Mapping[str, ArrayLike],
+    n_respondents: int | None = None,
 ) -> tuple[dict[str, np.ndarray], int]:
     """Validate reusable scores and restrict them to registered indices."""
-    validated, n_respondents = validate_score_vectors(scores)
+    validated, n_respondents = validate_score_vectors(scores, n_respondents=n_respondents)
     validate_index_names(list(validated))
     return validated, n_respondents
 
@@ -219,6 +220,7 @@ def screen_scores(
     thresholds: Mapping[str, float] | None = None,
     percentiles: Mapping[str, float] | None = None,
     errors: Mapping[str, str] | None = None,
+    n_respondents: int | None = None,
 ) -> ScreenResult:
     """
     Apply screening decisions to already-computed registered-index scores.
@@ -243,6 +245,9 @@ def screen_scores(
     - percentiles: Optional per-index tail-percentile overrides.
     - errors: Optional retained per-index soft failures. Failed indices count as
               selected for validation but never as available respondent scores.
+    - n_respondents: Optional positive respondent count, checked against any score
+                     vectors. Required with an empty score mapping when every
+                     selected index failed; provide the retained errors as well.
 
     Returns:
     - The same structured ``ScreenResult`` contract as :func:`screen`, with an
@@ -256,8 +261,10 @@ def screen_scores(
         ...     percentiles={"irv": 99, "longstring": 99},
         ... )
     """
-    validated_scores, n_respondents = _validate_screen_scores(scores)
+    validated_scores, n_respondents = _validate_screen_scores(scores, n_respondents)
     retained_errors = validate_index_errors(errors, list(validated_scores))
+    if not validated_scores and not retained_errors:
+        raise ValueError("screening requires at least one scored or failed index")
     indices = [*validated_scores, *retained_errors]
     percentile = validate_percentile(percentile)
     min_flags = _validate_min_flags(min_flags)

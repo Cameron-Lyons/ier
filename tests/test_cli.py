@@ -998,9 +998,16 @@ class TestCli(unittest.TestCase):
     def test_matrix_loader_converts_rows_incrementally(self) -> None:
         converted_cells = 0
 
-        def iter_rows(path: Path, delimiter: str | None, skip_rows: int = 0) -> object:
+        def iter_rows(
+            path: Path,
+            delimiter: str | None,
+            skip_rows: int = 0,
+            *,
+            header_expected: bool = False,
+        ) -> object:
             del path, delimiter
             self.assertEqual(skip_rows, 0)
+            self.assertFalse(header_expected)
             yield ["1", "2"]
             self.assertEqual(converted_cells, 2)
             yield ["3", "4"]
@@ -2302,7 +2309,7 @@ class TestCli(unittest.TestCase):
         self.assertIsNone(_parse_float_list(" , "))
         self.assertEqual(_parse_float_list("1.5,2"), [1.5, 2.0])
         self.assertIsNone(_parse_name_list(None))
-        self.assertEqual(_parse_name_list(["i1, i2", "i3"]), ["i1", "i2", "i3"])
+        self.assertEqual(_parse_name_list([" i1 ", "i2", "i3"]), ["i1", "i2", "i3"])
         self.assertIsNone(_parse_pair_list(None))
         self.assertEqual(_parse_pair_list("0,1;2,3"), [(0, 1), (2, 3)])
         self.assertIsNone(_parse_pair_list(";;"))
@@ -2324,7 +2331,7 @@ class TestCli(unittest.TestCase):
         with self.assertRaises(ValueError):
             _parse_percentiles(["irv=90", "irv=95"])
         with self.assertRaises(ValueError):
-            _parse_name_list([" , "])
+            _parse_name_list([" "])
         self.assertIsNone(_parse_weights(None))
         self.assertEqual(
             _parse_weights(["irv=2", "longstring = 0.5"]),

@@ -16,7 +16,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ier._flagging import threshold_flags
-from ier._row_statistics import row_mean, row_mean_std, row_median, row_std
+from ier._row_statistics import (
+    _scaled_subnormal_moment_rows,
+    row_mean,
+    row_mean_std,
+    row_median,
+    row_slices,
+    row_std,
+)
 from ier._validation import MatrixLike, validate_matrix_input, validate_score_array
 
 if TYPE_CHECKING:
@@ -180,8 +187,19 @@ def response_time_consistency(
 
     means, stds = row_mean_std(times_array, ignore_nan=True)
 
-    with np.errstate(invalid="ignore", divide="ignore"):
+    with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
         cv: np.ndarray = stds / means
+
+    for start, stop in row_slices(len(times_array), times_array.shape[1]):
+        scaled = _scaled_subnormal_moment_rows(
+            times_array[start:stop], means[start:stop], stds[start:stop], repair_mean=True
+        )
+        if scaled is None:
+            continue
+        positions, values, _ = scaled
+        scaled_means, scaled_stds = row_mean_std(values, ignore_nan=True)
+        with np.errstate(invalid="ignore", divide="ignore", over="ignore"):
+            cv[start + positions] = scaled_stds / scaled_means
 
     return cv
 

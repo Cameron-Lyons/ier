@@ -53,7 +53,10 @@ jobs:
         run: uv python install 3.14
 
       - name: Install dependencies
-        run: uv sync --locked --group lint --python 3.14
+        run: uv sync --locked --group lint --group artifact --python 3.14
 
       - name: Run mypy
-        run: uv run --no-sync mypy src/ier benchmarks
+        run: uv run --no-sync mypy src/ier benchmarks scripts
+
+      - name: Verify public consumer type contracts
+        run: uv run --no-sync python scripts/check_public_typing.py

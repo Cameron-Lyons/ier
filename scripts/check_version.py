@@ -66,9 +66,9 @@ def _prerelease_is_lower(
     for left_part, right_part in zip(left, right, strict=False):
         if left_part == right_part:
             continue
-        if isinstance(left_part, int) and isinstance(right_part, str):
-            return True
-        if isinstance(left_part, str) and isinstance(right_part, int):
+        if isinstance(left_part, int):
+            return left_part < right_part if isinstance(right_part, int) else True
+        if isinstance(right_part, int):
             return False
         return left_part < right_part
     return len(left) < len(right)
