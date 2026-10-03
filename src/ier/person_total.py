@@ -8,7 +8,7 @@ careless or random responding.
 
 import numpy as np
 
-from ier._column_statistics import column_mean
+from ier._column_statistics import column_mean_profile
 from ier._correlation import row_correlations
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -52,11 +52,16 @@ def person_total(
             if np.isnan(x_array[start : start + batch_rows]).any():
                 return np.full(n_rows, np.nan)
 
-    item_means = column_mean(x_array, ignore_nan=na_rm, center_integers=True)
+    item_means, transform = column_mean_profile(x_array, ignore_nan=na_rm)
     correlations = np.empty(n_rows)
     for start in range(0, n_rows, batch_rows):
         stop = min(start + batch_rows, n_rows)
         block = x_array[start:stop]
+        if transform is not None:
+            block = np.array(block, dtype=item_means.dtype, copy=True)
+            with np.errstate(under="ignore"):
+                np.ldexp(block, transform[0], out=block)
+            block -= transform[1]
         correlations[start:stop] = row_correlations(
             block,
             np.broadcast_to(item_means, block.shape),

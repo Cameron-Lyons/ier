@@ -286,6 +286,11 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--compress",
+        action="store_true",
+        help="Compress NPZ members to reduce file size (requires --format npz)",
+    )
+    parser.add_argument(
         "--top",
         type=int,
         default=10,
@@ -706,7 +711,14 @@ def _run_response_time_command(args: argparse.Namespace) -> int:
             _write_response_time_csv(handle, scores, flags, respondent_ids)
     elif args.format == "npz":
         _write_response_time_npz(
-            args.output, scores, flags, metric, direction, cutoff, respondent_ids
+            args.output,
+            scores,
+            flags,
+            metric,
+            direction,
+            cutoff,
+            respondent_ids,
+            compressed=args.compress,
         )
     else:
         _write_output(
@@ -736,6 +748,8 @@ def _run_command(args: argparse.Namespace) -> int:
     if args.command in {"screen", "composite"}:
         validate_worker_count(args.workers)
 
+    if args.compress and args.format != "npz":
+        raise ValueError("--compress requires --format npz")
     if args.format == "npz":
         _require_npz_output_path(args.output)
 
@@ -810,7 +824,7 @@ def _run_command(args: argparse.Namespace) -> int:
                 _write_screen_csv(handle, result, respondent_ids)
             return 0
         elif args.format == "npz":
-            _write_screen_npz(args.output, result, respondent_ids)
+            _write_screen_npz(args.output, result, respondent_ids, compressed=args.compress)
             return 0
         else:
             text = _emit_screen_text(result, args.top, respondent_ids)
@@ -946,6 +960,7 @@ def _run_command(args: argparse.Namespace) -> int:
             flag_threshold=flag_threshold,
             flag_percentile=flag_percentile,
             probabilities=probabilities,
+            compressed=args.compress,
         )
         return 0
     else:

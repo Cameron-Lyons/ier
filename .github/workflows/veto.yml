@@ -38,18 +38,10 @@ jobs:
     needs: [ci, lint, security, docs, version-check]
     if: always()
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: Check results
-        run: |
-          if [[ "${{ needs.ci.result }}" != "success" ]] || \
-             [[ "${{ needs.lint.result }}" != "success" ]] || \
-             [[ "${{ needs.security.result }}" != "success" ]] || \
-             [[ "${{ needs.docs.result }}" != "success" ]] || \
-             [[ "${{ needs.version-check.result }}" != "success" && "${{ needs.version-check.result }}" != "skipped" ]]; then
-            echo "CI: ${{ needs.ci.result }}"
-            echo "Lint: ${{ needs.lint.result }}"
-            echo "Security: ${{ needs.security.result }}"
-            echo "Docs: ${{ needs.docs.result }}"
-            echo "Version Check: ${{ needs.version-check.result }}"
-            exit 1
-          fi
-          echo "All checks passed"
+        env:
+          CI_JOB_RESULTS: ${{ toJSON(needs) }}
+        run: python3 scripts/check_ci_results.py --allow-skipped version-check <<< "$CI_JOB_RESULTS"

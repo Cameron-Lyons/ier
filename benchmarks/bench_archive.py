@@ -45,6 +45,8 @@ def _raw_response_time_save(
     scores: np.ndarray,
     flags: np.ndarray,
     threshold: float,
+    *,
+    compressed: bool = False,
 ) -> None:
     _stream_npz_archive(
         path,
@@ -58,10 +60,11 @@ def _raw_response_time_save(
             "scores": scores,
             "flags": flags,
         },
+        compressed=compressed,
     )
 
 
-def _raw_save(path: Path, scores: dict[str, np.ndarray]) -> None:
+def _raw_save(path: Path, scores: dict[str, np.ndarray], *, compressed: bool = False) -> None:
     payload = {
         "schema_version": np.asarray(1, dtype=np.int64),
         "result_type": np.asarray("screen", dtype=np.str_),
@@ -72,7 +75,7 @@ def _raw_save(path: Path, scores: dict[str, np.ndarray]) -> None:
     }
     for name, values in scores.items():
         payload[f"score__{name}"] = values
-    _stream_npz_archive(path, payload)
+    _stream_npz_archive(path, payload, compressed=compressed)
 
 
 def main() -> None:
@@ -82,6 +85,9 @@ def main() -> None:
     parser.add_argument("--repeats", type=int, default=7)
     parser.add_argument("--write-repeats", type=int, default=3)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--compress", action="store_true", help="Use DEFLATE-compressed NPZ members"
+    )
     args = parser.parse_args()
 
     available_names = list(index_catalog())
@@ -102,19 +108,21 @@ def main() -> None:
         validated_path = Path(directory) / "validated-scores.npz"
         raw_timing_path = Path(directory) / "raw-timing.npz"
         timing_path = Path(directory) / "validated-timing.npz"
-        _raw_save(raw_path, scores)
-        save_score_archive(validated_path, scores)
+        _raw_save(raw_path, scores, compressed=args.compress)
+        save_score_archive(validated_path, scores, compressed=args.compress)
         _raw_response_time_save(
             raw_timing_path,
             timing_scores,
             timing_flags,
             timing_threshold,
+            compressed=args.compress,
         )
         save_response_time_archive(
             timing_path,
             timing_scores,
             timing_flags,
             threshold=timing_threshold,
+            compressed=args.compress,
         )
 
         loads = measure_many(
@@ -128,17 +136,29 @@ def main() -> None:
         )
         writes = measure_many(
             {
-                "raw": lambda: _raw_save(raw_path, scores),
-                "validated": lambda: save_score_archive(validated_path, scores),
+                "raw": lambda: _raw_save(raw_path, scores, compressed=args.compress),
+                "validated": lambda: save_score_archive(
+                    validated_path, scores, compressed=args.compress
+                ),
                 "raw_timing": lambda: _raw_response_time_save(
-                    raw_timing_path, timing_scores, timing_flags, timing_threshold
+                    raw_timing_path,
+                    timing_scores,
+                    timing_flags,
+                    timing_threshold,
+                    compressed=args.compress,
                 ),
                 "validated_timing": lambda: save_response_time_archive(
-                    timing_path, timing_scores, timing_flags, threshold=timing_threshold
+                    timing_path,
+                    timing_scores,
+                    timing_flags,
+                    threshold=timing_threshold,
+                    compressed=args.compress,
                 ),
             },
             args.write_repeats,
         )
+        score_bytes = validated_path.stat().st_size
+        timing_bytes = timing_path.stat().st_size
 
     for name in names:
         np.testing.assert_array_equal(loads["validated"].result[name], loads["raw"].result[name])
@@ -149,8 +169,10 @@ def main() -> None:
 
     print(
         f"respondents={args.respondents} indices={args.indices} "
-        f"load_repeats={args.repeats} write_repeats={args.write_repeats}"
+        f"load_repeats={args.repeats} write_repeats={args.write_repeats} "
+        f"compressed={args.compress}"
     )
+    print(f"score_bytes={score_bytes} response_time_bytes={timing_bytes}")
     for label, measurements in (("load", loads), ("save", writes)):
         for prefix, raw_name, validated_name in (
             ("", "raw", "validated"),

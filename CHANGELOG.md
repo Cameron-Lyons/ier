@@ -5,6 +5,45 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-10-03
+
+### Added
+
+- Optional streamed NPZ compression through `compressed=True` on both public
+  archive writers and `--compress` on all six CLI scoring/replay commands.
+  Compressed output preserves the existing pickle-free schema, decisions,
+  identifiers, and atomic replacement behavior. Repeated-score archives in a
+  local 100,000-respondent comparison used 92% less storage; continuous scores
+  saved about 4%. Compression costs additional CPU and remains opt-in.
+
+### Fixed
+
+- Person-total correlations retain item-mean differences at subnormal response
+  scales and near large common baselines. Independent exact-rational means and
+  Decimal correlation tests cover these cases, missing data, layouts, and batch
+  boundaries.
+- Archive writers reject trailing NULs in respondent IDs and failure messages
+  before NumPy can silently truncate them. Embedded NULs remain supported.
+  Archive readers reject invalid UTF-32 codepoints with contextual errors,
+  including metadata whose conversion could otherwise fail inside NumPy.
+
+### Changed
+
+- Streaming CSV conversion removes two generator layers while preserving
+  quoting, column selection, missing tokens, and forward-only input. Seven
+  alternating local comparisons of 100,000-by-20 matrices showed 7–13% higher
+  throughput with unchanged peak allocation.
+- CI validates GitHub Actions workflows and embedded shell/Python scripts with
+  actionlint, ShellCheck, and pyflakes through the reusable lint workflow.
+- The aggregate Veto check evaluates every prerequisite dynamically, including
+  new jobs. Tests exercise all 1,024 prerequisite outcome combinations and
+  executable failure behavior for malformed, cancelled, and skipped results.
+- Archive benchmarks accept `--compress` and report file sizes alongside
+  runtime and peak allocation to make storage/CPU tradeoffs reproducible.
+- Person-total benchmarks exercise categorical, constant, and nearby-baseline
+  responses with scale/offset controls and exact arithmetic checks outside the
+  timed region.
+
 ## [1.11.0] - 2026-10-02
 
 ### Added
