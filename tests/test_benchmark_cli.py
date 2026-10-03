@@ -17,6 +17,7 @@ _CASES = [
         ["--respondents", "64", "--indices", "3", "--repeats", "1", "--write-repeats", "1"],
     ),
     ("cli_input", ["--respondents", "32", "--items", "6", "--repeats", "1"]),
+    ("cli_input", ["--respondents", "33", "--items", "7", "--repeats", "1", "--masks"]),
     ("cli_output", ["--respondents", "32", "--indices", "3", "--repeats", "1"]),
     (
         "cli_output",
@@ -521,3 +522,6 @@ def test_performance_benchmark_cli(name: str, arguments: list[str]) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
     assert "median=" in result.stdout or "full=" in result.stdout
     assert "peak=" in result.stdout
+    if name == "cli_input" and "--masks" in arguments:
+        assert "mask.csv: median=" in result.stdout
+        assert "mask.npy: median=" in result.stdout

@@ -118,11 +118,13 @@ ier screen data.csv --workers 4
 ier screen data.csv --indices acquiescence --scale-min 1 --scale-max 5 \
   --acquiescence-positive-items 0,2 --acquiescence-negative-items 1,3
 ier screen data.csv --indices missing_rate --missing-item-indices 0,1,4
+ier screen data.csv --indices missing_rate --missing-applicable-mask applicable.csv
 ier screen data.csv --indices infrequency \
   --infrequency-item-indices 3,7 \
   --infrequency-expected-responses 5,1 --infrequency-missing fail
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
+ier screen data.csv --id-column participant_id --item-column 'Q1, agreement' --item-column Q2
 ier screen data.csv --format npz --output screening.npz
 ier composite data.csv --indices irv longstring
 ier composite data.csv --indices irv longstring --no-standardize
@@ -160,7 +162,9 @@ names or `--header absent` to require every row to be numeric. Use `--id-column 
 remove a named header column from scoring and preserve its unique, nonblank values
 in text, JSON, CSV, and NPZ output. Use `--item-columns q1,q2,...` to select and order
 the numeric item matrix while ignoring unselected metadata columns; repeat the
-option to build the selection in groups.
+option to build the selection in groups. Use repeatable `--item-column NAME` for
+an exact header name containing a comma. Both forms can be mixed, retaining their
+command-line order.
 Quoted delimiters, escaped quotes, and multiline identifiers are preserved.
 Entirely missing delimited records retain their respondent position; physically
 blank lines are skipped.
@@ -170,10 +174,14 @@ report the actual and expected column counts.
 
 Missing-response scoring is opt-in because planned omissions are often valid.
 Use `IndexOptions(missing_item_indices=[...])` or CLI
-`--missing-item-indices 0,1,...` for a fixed required-item subset. Python
-workflows can additionally provide a respondent-by-item Boolean
-`missing_applicable_mask`; false cells are excluded from the missing-rate
-denominator.
+`--missing-item-indices 0,1,...` for a fixed required-item subset. Supply a
+respondent-by-item Boolean `missing_applicable_mask` in Python, or
+`--missing-applicable-mask PATH` on fresh CLI screening and composite commands;
+false cells are excluded from the missing-rate denominator. CLI masks accept
+headerless 0/1 text (plain, gzip, bzip2, xz, or `-` for standard input) or an
+uncompressed Boolean `.npy` file. Their shape and order must match the response
+matrix after item selection, excluding identifiers and metadata. Response data
+and a mask cannot both use standard input.
 
 `screen()` and all composite helpers accept `workers=N`; the corresponding CLI
 commands use `--workers N`. The default is sequential (`1`) for predictable
@@ -207,6 +215,10 @@ Pass `errors=result["errors"]` alongside retained scores to preserve soft-failur
 provenance and the original selected-index count when reapplying completeness
 rules. Failed indices remain unavailable; they never contribute to respondent
 coverage or decisions.
+
+If every selected index failed, also pass `n_respondents=result["n_respondents"]`
+to `screen_scores()` and `save_score_archive()`. Saved-screen CLI commands retain
+that count automatically so respondent rows and identifiers survive replay.
 
 Set `screen(..., min_valid_indices=N)` or CLI `--min-valid-indices N` to require
 at least `N` available index scores before a respondent is eligible for a
@@ -284,7 +296,8 @@ per-respondent valid-index counts used by the rule.
 
 Uncompressed `.npy` files are memory-mapped read-only for fast, low-overhead
 loading of large headerless real numeric matrices. Because binary arrays have no
-column headers, `--id-column`, `--item-columns`, and `--delimiter` do not apply.
+column headers, `--id-column`, `--item-column`, `--item-columns`, and `--delimiter`
+do not apply.
 Use an uncompressed `.npy` file rather than a compressed `.npy` file to preserve
 memory mapping.
 

@@ -164,6 +164,9 @@ Large integer pairs preserve differences before floating-point conversion.
 Floating pairs preserve the rounding residual of reverse scoring, so swapping
 pair endpoints does not erase a small difference. Semantic normalization happens
 before exceptionally small means receive their final rounding.
+When row variation approaches underflow, bounded power-of-two scaling preserves
+the ratio of paired differences to standard deviation, including inferred
+antonym bounds. Constant and unavailable rows retain their existing behavior.
 
 `missing_rate` is opt-in because planned skip logic and matrix preprocessing can
 create legitimate omissions. Use `IndexOptions.missing_item_indices` to restrict
@@ -172,7 +175,8 @@ registry scoring to a fixed required-item subset, or pass the same subset as
 provide a Boolean `missing_applicable_mask` through `IndexOptions` or
 `applicable_mask` directly. False cells are excluded from both the numerator and
 denominator; rows without applicable selected items return `NaN` and are not
-flagged. The CLI exposes fixed subsets through `--missing-item-indices`.
+flagged. The CLI exposes fixed subsets through `--missing-item-indices` and
+respondent-specific masks through `--missing-applicable-mask PATH`.
 
 `infrequency` preserves its historical missing-response behavior with
 `missing="pass"`: unanswered checks do not count as failures and remain in a
@@ -202,6 +206,12 @@ respondents. Middle pairs preserve finite medians at very large or small scales;
 `float32` pairs are averaged in double precision and integer pairs are averaged
 before rounding the result to a float.
 
+Response-time coefficients of variation preserve dimensionless ratios even for
+varying subnormal observations, avoiding a zero or undefined result caused only
+by separately rounding the mean and standard deviation. Positive constant rows
+still have zero variation; zero means and unavailable observations retain their
+documented arithmetic behavior.
+
 `response_time_mixture()` uses positive, finite respondent medians and leaves
 other respondents' probabilities `NaN`. Its `n_components` must be an integer
 of at least two, including NumPy integer scalars, and cannot exceed the number
@@ -221,3 +231,10 @@ Requires `insufficient-effort[plot]`:
 - `plot_flag_counts(screen_result)`
 - `plot_flagged_heatmap(screen_result)`
 - `mahad_qqplot(...)`
+
+Heatmaps use a fixed flag color scale, so fully flagged and wholly unflagged
+cohorts remain visually distinct. Unavailable scores appear gray with a legend.
+For onset, an absent detection remains unflagged because NaN represents no
+detected event. Automatic heatmap dimensions are capped at 18 × 12 inches for
+large surveys; pass `figsize` to choose different dimensions. Flag-count charts
+aggregate respondents in a single pass and retain bins for every selected index.

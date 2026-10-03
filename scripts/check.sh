@@ -25,7 +25,10 @@ echo "==> ruff format"
 "${RUN[@]}" ruff format --check .
 
 echo "==> mypy"
-"${RUN[@]}" mypy src/ier benchmarks
+"${RUN[@]}" mypy src/ier benchmarks scripts
+
+echo "==> public consumer typing"
+"${RUN[@]}" python scripts/check_public_typing.py
 
 if [[ "${SKIP_DOCS:-0}" != "1" ]]; then
   echo "==> mkdocs"

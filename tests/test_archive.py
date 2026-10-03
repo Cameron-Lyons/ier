@@ -57,6 +57,40 @@ def test_screen_archive_round_trip_supports_reuse(tmp_path: Path) -> None:
     np.testing.assert_array_equal(reused["consensus_flags"], result["consensus_flags"])
 
 
+def test_screen_archive_retains_all_failed_indices_for_reuse(tmp_path: Path) -> None:
+    options = {
+        "min_flags": 1,
+        "min_valid_indices": 2,
+        "thresholds": {"mad": 0.25},
+        "percentiles": {"evenodd": 99.0},
+    }
+    original = screen(
+        [[1.0, 2.0, 3.0], [3.0, 3.0, 3.0]],
+        indices=["mad", "evenodd"],
+        **options,  # type: ignore[arg-type]
+    )
+    assert original["scores"] == {}
+    assert list(original["errors"]) == ["mad", "evenodd"]
+    destination = tmp_path / "failed-screen.npz"
+    _write_screen_npz(destination, original, ["case-1", "case-2"])
+
+    loaded = load_score_archive(destination)
+    reused = screen_scores(
+        loaded["scores"],
+        errors=loaded["errors"],
+        n_respondents=loaded["n_respondents"],
+        **options,  # type: ignore[arg-type]
+    )
+
+    assert loaded["n_respondents"] == 2
+    assert loaded["respondent_ids"] == ["case-1", "case-2"]
+    assert loaded["errors"] == original["errors"]
+    assert reused["errors"] == original["errors"]
+    assert reused["n_respondents"] == original["n_respondents"]
+    for name in ("flag_counts", "valid_index_counts", "consensus_eligible", "consensus_flags"):
+        np.testing.assert_array_equal(reused[name], original[name])  # type: ignore[literal-required]
+
+
 def test_detailed_composite_archive_round_trip_supports_reuse(tmp_path: Path) -> None:
     data = np.array(
         [
@@ -421,7 +455,7 @@ def _base_payload() -> dict[str, np.ndarray]:
         ({"schema_version": np.asarray([1])}, "integer scalar"),
         ({"result_type": np.asarray("unknown")}, "result_type"),
         ({"n_respondents": np.asarray(0)}, "must be positive"),
-        ({"index_names": np.asarray([], dtype=np.str_)}, "does not contain reusable"),
+        ({"index_names": np.asarray([], dtype=np.str_)}, "undeclared score member"),
         ({"index_names": np.asarray(["irv", "irv"])}, "must be unique"),
         ({"index_names": np.asarray(["unknown"])}, "invalid index"),
         ({"score__irv": np.asarray([0.1])}, "must match n_respondents"),
@@ -539,6 +573,118 @@ def test_public_writer_round_trip_preserves_order_and_metadata(tmp_path: Path) -
     assert loaded["errors"] == errors
     for name, values in scores.items():
         np.testing.assert_array_equal(loaded["scores"][name], values)
+
+
+def test_public_writer_retains_failed_screen_and_explicit_count(tmp_path: Path) -> None:
+    destination = tmp_path / "failed-screen.npz"
+    errors = {"mad": "item pairs were not configured", "evenodd": "subscales were not configured"}
+    save_score_archive(
+        destination,
+        {},
+        n_respondents=np.int64(3),
+        errors=errors,
+        respondent_ids=["A", "B", "C"],
+    )
+
+    loaded = load_score_archive(destination)
+    assert loaded["scores"] == {}
+    assert loaded["n_respondents"] == 3
+    assert loaded["respondent_ids"] == ["A", "B", "C"]
+    assert loaded["errors"] == errors
+    assert list(loaded["errors"]) == ["mad", "evenodd"]
+    reused = screen_scores(
+        loaded["scores"],
+        errors=loaded["errors"],
+        n_respondents=loaded["n_respondents"],
+        min_valid_indices=1,
+    )
+    np.testing.assert_array_equal(reused["flag_counts"], [0, 0, 0])
+    np.testing.assert_array_equal(reused["valid_index_counts"], [0, 0, 0])
+    np.testing.assert_array_equal(reused["consensus_eligible"], [False, False, False])
+    np.testing.assert_array_equal(reused["consensus_flags"], [False, False, False])
+
+
+@pytest.mark.parametrize("n_respondents", [0, -1, True, np.bool_(True), 2.0, "2"])
+def test_public_writer_rejects_invalid_explicit_respondent_count(
+    tmp_path: Path, n_respondents: object
+) -> None:
+    destination = tmp_path / "existing.npz"
+    destination.write_bytes(b"existing-content")
+    with pytest.raises(ValueError, match="n_respondents must be a positive integer"):
+        save_score_archive(
+            destination,
+            {},
+            errors={"mad": "unconfigured item pairs"},
+            n_respondents=n_respondents,  # type: ignore[arg-type]
+        )
+    assert destination.read_bytes() == b"existing-content"
+
+
+def test_public_writer_checks_explicit_count_against_available_scores(tmp_path: Path) -> None:
+    destination = tmp_path / "scores.npz"
+    save_score_archive(destination, {"irv": [0.1, 0.2]}, n_respondents=2)
+    original = destination.read_bytes()
+    with pytest.raises(ValueError, match="must match n_respondents"):
+        save_score_archive(destination, {"irv": [0.1, 0.2]}, n_respondents=3)
+    assert destination.read_bytes() == original
+
+
+@pytest.mark.parametrize("errors", [None, {}])
+def test_public_writer_rejects_empty_screen_without_failure_provenance(
+    tmp_path: Path, errors: dict[str, str] | None
+) -> None:
+    destination = tmp_path / "scores.npz"
+    with pytest.raises(ValueError, match="must contain reusable index scores or failures"):
+        save_score_archive(destination, {}, n_respondents=2, errors=errors)
+    assert not destination.exists()
+
+
+def test_public_writer_rejects_empty_composite_even_with_failures(tmp_path: Path) -> None:
+    destination = tmp_path / "composite.npz"
+    with pytest.raises(ValueError, match="does not contain reusable index scores"):
+        save_score_archive(
+            destination,
+            {},
+            result_type="composite",
+            n_respondents=2,
+            errors={"mad": "unconfigured item pairs"},
+        )
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("errors", "message"),
+    [
+        ({}, "does not contain reusable index scores or failures"),
+        ({"mad": " "}, "error messages must be nonblank"),
+        ({"unknown": "failed"}, "invalid index"),
+    ],
+)
+def test_empty_screen_archive_still_validates_failure_provenance(
+    tmp_path: Path, errors: dict[str, str], message: str
+) -> None:
+    payload = _base_payload()
+    payload.pop("score__irv")
+    payload["index_names"] = np.asarray([], dtype=np.str_)
+    payload["error_names"] = np.asarray(list(errors), dtype=np.str_)
+    payload["error_messages"] = np.asarray(list(errors.values()), dtype=np.str_)
+    destination = tmp_path / "empty-screen.npz"
+    np.savez(destination, **payload)
+    with pytest.raises(ValueError, match=message):
+        load_score_archive(destination)
+
+
+def test_empty_composite_archive_still_requires_component_scores(tmp_path: Path) -> None:
+    payload = _base_payload()
+    payload.pop("score__irv")
+    payload["result_type"] = np.asarray("composite")
+    payload["index_names"] = np.asarray([], dtype=np.str_)
+    payload["error_names"] = np.asarray(["mad"])
+    payload["error_messages"] = np.asarray(["unconfigured item pairs"])
+    destination = tmp_path / "empty-composite.npz"
+    np.savez(destination, **payload)
+    with pytest.raises(ValueError, match="does not contain reusable index scores"):
+        load_score_archive(destination)
 
 
 def test_public_writer_composite_round_trip_supports_reuse(tmp_path: Path) -> None:

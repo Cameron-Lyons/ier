@@ -22,5 +22,6 @@ repos:
         additional_dependencies:
           - numpy>=1.26.0
           - matplotlib>=3.8.0
+          - packaging>=24.0,<27
         args: [--config-file=pyproject.toml]
         exclude: ^tests/

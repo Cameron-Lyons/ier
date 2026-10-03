@@ -276,6 +276,54 @@ def composite_scores_summary(
     )
 
 
+@overload
+def composite(
+    x: MatrixLike,
+    indices: list[str] | None = None,
+    method: CompositeMethod = "mean",
+    standardize: bool = True,
+    *,
+    options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+    return_diagnostics: Literal[False] = False,
+    strict: bool = False,
+    workers: int = 1,
+) -> np.ndarray: ...
+
+
+@overload
+def composite(
+    x: MatrixLike,
+    indices: list[str] | None = None,
+    method: CompositeMethod = "mean",
+    standardize: bool = True,
+    *,
+    options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+    return_diagnostics: Literal[True],
+    strict: bool = False,
+    workers: int = 1,
+) -> tuple[np.ndarray, dict[str, str]]: ...
+
+
+@overload
+def composite(
+    x: MatrixLike,
+    indices: list[str] | None = None,
+    method: CompositeMethod = "mean",
+    standardize: bool = True,
+    *,
+    options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+    return_diagnostics: bool,
+    strict: bool = False,
+    workers: int = 1,
+) -> np.ndarray | tuple[np.ndarray, dict[str, str]]: ...
+
+
 def composite(
     x: MatrixLike,
     indices: list[str] | None = None,
@@ -374,6 +422,60 @@ def composite(
     if return_diagnostics:
         return result, diagnostics
     return result
+
+
+@overload
+def composite_flag(
+    x: MatrixLike,
+    indices: list[str] | None = None,
+    method: CompositeMethod = "mean",
+    threshold: float | None = None,
+    percentile: float = 95.0,
+    standardize: bool = True,
+    *,
+    options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+    return_diagnostics: Literal[False] = False,
+    strict: bool = False,
+    workers: int = 1,
+) -> tuple[np.ndarray, np.ndarray]: ...
+
+
+@overload
+def composite_flag(
+    x: MatrixLike,
+    indices: list[str] | None = None,
+    method: CompositeMethod = "mean",
+    threshold: float | None = None,
+    percentile: float = 95.0,
+    standardize: bool = True,
+    *,
+    options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+    return_diagnostics: Literal[True],
+    strict: bool = False,
+    workers: int = 1,
+) -> tuple[np.ndarray, np.ndarray, dict[str, str]]: ...
+
+
+@overload
+def composite_flag(
+    x: MatrixLike,
+    indices: list[str] | None = None,
+    method: CompositeMethod = "mean",
+    threshold: float | None = None,
+    percentile: float = 95.0,
+    standardize: bool = True,
+    *,
+    options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+    return_diagnostics: bool,
+    strict: bool = False,
+    workers: int = 1,
+) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, dict[str, str]]: ...
 
 
 def composite_flag(
@@ -563,6 +665,21 @@ def composite_probability(
     strict: bool = False,
     workers: int = 1,
 ) -> tuple[np.ndarray, dict[str, str]]: ...
+
+
+@overload
+def composite_probability(
+    x: MatrixLike,
+    indices: list[str] | None = None,
+    method: CompositeMethod = "mean",
+    *,
+    options: IndexOptions | None = None,
+    weights: Mapping[str, float] | None = None,
+    min_valid_indices: int | None = None,
+    return_diagnostics: bool,
+    strict: bool = False,
+    workers: int = 1,
+) -> np.ndarray | tuple[np.ndarray, dict[str, str]]: ...
 
 
 def composite_probability(

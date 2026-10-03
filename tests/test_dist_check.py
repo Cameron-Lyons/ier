@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import csv
+import hashlib
 import struct
 import tarfile
 import zipfile
-from io import BytesIO
+from io import BytesIO, StringIO
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from zlib import crc32
@@ -33,6 +36,7 @@ PACKAGE_FILES = {
 }
 DIST_INFO = "insufficient_effort-1.2.3.dist-info"
 SDIST_ROOT = "insufficient_effort-1.2.3"
+WHEEL_FILENAME = "insufficient_effort-1.2.3-py3-none-any.whl"
 
 
 def _verify_sdist(path: Path, project: dict[str, object], package_files: dict[str, bytes]) -> None:
@@ -53,16 +57,37 @@ def _metadata(**overrides: str) -> bytes:
     return ("\n".join(f"{name}: {value}" for name, value in headers.items()) + "\n\n").encode()
 
 
+def _record(members: dict[str, bytes], *, algorithm: str = "sha256") -> bytes:
+    output = StringIO(newline="")
+    writer = csv.writer(output)
+    record_name = f"{DIST_INFO}/RECORD"
+    for name, contents in members.items():
+        if not name.endswith("/") and name not in {
+            record_name,
+            f"{record_name}.jws",
+            f"{record_name}.p7s",
+        }:
+            digest = hashlib.new(algorithm, contents).digest()
+            encoded = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+            writer.writerow((name, f"{algorithm}={encoded}", len(contents)))
+    writer.writerow((record_name, "", ""))
+    return output.getvalue().encode("utf-8")
+
+
 def _wheel_members() -> dict[str, bytes]:
-    return {
+    members = {
         **PACKAGE_FILES,
         f"{DIST_INFO}/METADATA": _metadata(),
+        f"{DIST_INFO}/WHEEL": (b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n"),
         f"{DIST_INFO}/entry_points.txt": b"[console_scripts]\nier = ier.cli:main\n",
         f"{DIST_INFO}/licenses/LICENSE": b"MIT license",
     }
+    return members | {f"{DIST_INFO}/RECORD": _record(members)}
 
 
-def _write_wheel(path: Path, members: dict[str, bytes]) -> None:
+def _write_wheel(path: Path, members: dict[str, bytes], *, update_record: bool = True) -> None:
+    if update_record and f"{DIST_INFO}/RECORD" in members:
+        members = members | {f"{DIST_INFO}/RECORD": _record(members)}
     with zipfile.ZipFile(path, "w") as archive:
         for name, contents in members.items():
             member = zipfile.ZipInfo(name)
@@ -100,13 +125,265 @@ def _write_sdist(path: Path, members: dict[str, bytes], *, directory: str | None
 
 
 def test_complete_distributions_pass(tmp_path: Path) -> None:
-    wheel = tmp_path / "example.whl"
+    wheel = tmp_path / WHEEL_FILENAME
     sdist = tmp_path / "example.tar.gz"
     _write_wheel(wheel, _wheel_members())
     _write_sdist(sdist, _sdist_members())
 
     _verify_wheel(wheel, PROJECT, PACKAGE_FILES)
     _verify_sdist(sdist, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("algorithm", ["sha256", "sha512", "sha3_256", "blake2s"])
+def test_wheel_verifies_secure_record_hashes_and_csv_quoted_resource_names(
+    tmp_path: Path, algorithm: str
+) -> None:
+    path = tmp_path / WHEEL_FILENAME
+    members = _wheel_members() | {"ier/data/entrée,values.csv": b"1,2\n"}
+    members[f"{DIST_INFO}/RECORD"] = _record(members, algorithm=algorithm)
+    _write_wheel(path, members, update_record=False)
+
+    _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+def test_wheel_record_excludes_directories_and_legacy_signature_files(tmp_path: Path) -> None:
+    path = tmp_path / WHEEL_FILENAME
+    members = _wheel_members() | {
+        "ier/data/": b"",
+        f"{DIST_INFO}/RECORD.jws": b"legacy signature",
+        f"{DIST_INFO}/RECORD.p7s": b"legacy signature",
+    }
+    _write_wheel(path, members)
+
+    _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize(
+    "record,error",
+    [
+        (b"\xff", "invalid RECORD"),
+        (b'"unterminated', "invalid RECORD"),
+        (b"one,two\n", "three columns"),
+        (b"one,two,three,four\n", "three columns"),
+        (b"\n", "three columns"),
+        (b"same,,\nsame,,\n", "duplicate entries"),
+    ],
+)
+def test_wheel_rejects_malformed_integrity_manifest(
+    tmp_path: Path, record: bytes, error: str
+) -> None:
+    path = tmp_path / "malformed-record.whl"
+    members = _wheel_members() | {f"{DIST_INFO}/RECORD": record}
+    _write_wheel(path, members, update_record=False)
+
+    with pytest.raises(ValueError, match=error):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra", "self-missing", "signature"])
+def test_wheel_requires_record_to_describe_exactly_the_installed_files(
+    tmp_path: Path, mutation: str
+) -> None:
+    path = tmp_path / "incomplete-record.whl"
+    members = _wheel_members()
+    record_name = f"{DIST_INFO}/RECORD"
+    if mutation == "missing":
+        members[record_name] = b"\n".join(
+            row
+            for row in members[record_name].splitlines()
+            if not row.startswith(f"{DIST_INFO}/licenses/LICENSE,".encode())
+        )
+    elif mutation == "self-missing":
+        members[record_name] = b"\n".join(
+            row
+            for row in members[record_name].splitlines()
+            if not row.startswith(f"{record_name},".encode())
+        )
+    else:
+        name = "ier/ghost.txt" if mutation == "extra" else f"{record_name}.jws"
+        if mutation == "signature":
+            members[name] = b"legacy signature"
+        members[record_name] += f"{name},sha256=hash,4\n".encode()
+    _write_wheel(path, members, update_record=False)
+
+    with pytest.raises(ValueError, match="RECORD does not match archive members"):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize(
+    "digest,size,error",
+    [
+        ("", "11", "missing a secure hash"),
+        ("sha256", "11", "missing a secure hash"),
+        ("sha256=", "11", "missing a secure hash"),
+        ("not-a-hash=value", "11", "unsupported hash algorithm"),
+        ("md5=value", "11", "sha256 or stronger"),
+        ("sha1=value", "11", "sha256 or stronger"),
+        ("sha224=value", "11", "sha256 or stronger"),
+        ("shake_256=value", "11", "sha256 or stronger"),
+        ("sha256=wrong-hash", "11", "hash does not match"),
+        ("sha256=hash", "-11", "invalid file size"),
+        ("sha256=hash", "11.0", "invalid file size"),
+        ("sha256=hash", " 11", "invalid file size"),
+        ("sha256=hash", "１１", "invalid file size"),
+        ("sha256=hash", "12", "size does not match"),
+    ],
+)
+def test_wheel_rejects_unusable_hashes_and_false_record_sizes(
+    tmp_path: Path, digest: str, size: str, error: str
+) -> None:
+    path = tmp_path / "false-integrity.whl"
+    members = _wheel_members()
+    record_name = f"{DIST_INFO}/RECORD"
+    target = f"{DIST_INFO}/licenses/LICENSE"
+    record = members[record_name].decode()
+    lines = record.splitlines(keepends=True)
+    members[record_name] = "".join(
+        f"{target},{digest},{size}\n" if line.startswith(f"{target},") else line for line in lines
+    ).encode()
+    _write_wheel(path, members, update_record=False)
+
+    with pytest.raises(ValueError, match=error):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("suffix", [",sha256=hash,\n", ",,1\n"])
+def test_wheel_record_does_not_hash_or_size_itself(tmp_path: Path, suffix: str) -> None:
+    path = tmp_path / "self-record.whl"
+    members = _wheel_members()
+    name = f"{DIST_INFO}/RECORD"
+    members[name] = members[name].replace(f"{name},,\r\n".encode(), f"{name}{suffix}".encode())
+    _write_wheel(path, members, update_record=False)
+
+    with pytest.raises(ValueError, match="cannot hash or size itself"):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+def test_wheel_accepts_record_with_optional_sizes_omitted(tmp_path: Path) -> None:
+    path = tmp_path / WHEEL_FILENAME
+    members = _wheel_members()
+    name = f"{DIST_INFO}/RECORD"
+    rows = list(csv.reader(StringIO(members[name].decode())))
+    output = StringIO(newline="")
+    csv.writer(output).writerows((entry, digest, "") for entry, digest, _ in rows)
+    members[name] = output.getvalue().encode()
+    _write_wheel(path, members, update_record=False)
+
+    _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+def test_wheel_hashes_all_resource_chunks_even_when_sizes_and_zip_checksums_match(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / WHEEL_FILENAME
+    name = "ier/data/resource.bin"
+    members = _wheel_members() | {name: b"x" * (2 * 1024 * 1024 + 1)}
+    members[f"{DIST_INFO}/RECORD"] = _record(members)
+    _write_wheel(path, members, update_record=False)
+    _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+    members[name] = members[name][:-1] + b"y"
+    _write_wheel(path, members, update_record=False)
+    with zipfile.ZipFile(path) as archive:
+        assert archive.testzip() is None
+    with pytest.raises(ValueError, match="RECORD hash does not match ier/data/resource.bin"):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize(
+    "metadata,error",
+    [
+        (b"not wheel metadata", "Wheel-Version"),
+        (b"Root-Is-Purelib: true\nTag: py3-none-any\n", "Wheel-Version"),
+        (b"Wheel-Version: 2.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n", "Wheel-Version"),
+        (
+            b"Wheel-Version: 1.0\nWheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+            "Wheel-Version",
+        ),
+        (b"Wheel-Version: 1.0\nTag: py3-none-any\n", "Root-Is-Purelib"),
+        (b"Wheel-Version: 1.0\nRoot-Is-Purelib: false\nTag: py3-none-any\n", "Root-Is-Purelib"),
+        (
+            b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\n"
+            b"Root-Is-Purelib: true\nTag: py3-none-any\n",
+            "Root-Is-Purelib",
+        ),
+        (b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\n", "WHEEL Tag"),
+        (b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: malformed\n", "WHEEL Tag"),
+        (
+            b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: cp311-cp311-win_amd64\n",
+            "WHEEL Tag",
+        ),
+        (
+            b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\nTag: py3-none-any\n",
+            "WHEEL Tag",
+        ),
+        (
+            b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\nBuild: 1\n",
+            "WHEEL Build",
+        ),
+    ],
+)
+def test_wheel_rejects_invalid_installation_metadata_even_with_matching_record(
+    tmp_path: Path, metadata: bytes, error: str
+) -> None:
+    path = tmp_path / WHEEL_FILENAME
+    members = _wheel_members() | {f"{DIST_INFO}/WHEEL": metadata}
+    _write_wheel(path, members)
+
+    with pytest.raises(ValueError, match=error):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize(
+    "filename,error",
+    [
+        ("example.whl", "invalid wheel filename"),
+        ("different_name-1.2.3-py3-none-any.whl", "distribution does not match project.name"),
+        ("insufficient_effort-1.2.4-py3-none-any.whl", "version does not match project.version"),
+        ("insufficient_effort-1.2.3-py311-none-any.whl", "WHEEL Tag"),
+    ],
+)
+def test_wheel_filename_must_match_its_contents(tmp_path: Path, filename: str, error: str) -> None:
+    path = tmp_path / filename
+    _write_wheel(path, _wheel_members())
+
+    with pytest.raises(ValueError, match=error):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+def test_wheel_rejects_platform_specific_tags_for_this_pure_python_package(tmp_path: Path) -> None:
+    path = tmp_path / "insufficient_effort-1.2.3-cp311-cp311-win_amd64.whl"
+    members = _wheel_members()
+    members[f"{DIST_INFO}/WHEEL"] = members[f"{DIST_INFO}/WHEEL"].replace(
+        b"py3-none-any", b"cp311-cp311-win_amd64"
+    )
+    _write_wheel(path, members)
+
+    with pytest.raises(ValueError, match="platform-independent Python package"):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+def test_wheel_expands_filename_tags_and_preserves_build_identifiers(tmp_path: Path) -> None:
+    path = tmp_path / "insufficient_effort-1.2.3-002abc-py3.py311-none-any.whl"
+    metadata = (
+        b"Wheel-Version: 1.0\nRoot-Is-Purelib: true\n"
+        b"Tag: py3-none-any\nTag: py311-none-any\nBuild: 002abc\n"
+    )
+    members = _wheel_members() | {f"{DIST_INFO}/WHEEL": metadata}
+    _write_wheel(path, members)
+
+    _verify_wheel(path, PROJECT, PACKAGE_FILES)
+
+
+@pytest.mark.parametrize("build", [b"", b"Build: 2abc\n", b"Build: 002abc\nBuild: 002abc\n"])
+def test_wheel_build_metadata_must_match_filename(tmp_path: Path, build: bytes) -> None:
+    path = tmp_path / "insufficient_effort-1.2.3-002abc-py3-none-any.whl"
+    members = _wheel_members()
+    members[f"{DIST_INFO}/WHEEL"] += build
+    _write_wheel(path, members)
+
+    with pytest.raises(ValueError, match="WHEEL Build"):
+        _verify_wheel(path, PROJECT, PACKAGE_FILES)
 
 
 @pytest.mark.parametrize("missing", sorted(_wheel_members()))
@@ -185,7 +462,7 @@ def test_wheel_requires_real_console_entry_point(tmp_path: Path, entry_points: s
 
 
 def test_wheel_checks_all_declared_console_scripts(tmp_path: Path) -> None:
-    path = tmp_path / "extra-cli.whl"
+    path = tmp_path / WHEEL_FILENAME
     project = PROJECT | {"scripts": {"ier": "ier.cli:main", "ier-extra": "ier.cli:extra"}}
     members = _wheel_members()
     _write_wheel(path, members)

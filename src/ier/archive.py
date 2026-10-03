@@ -251,7 +251,7 @@ def _load_score_members(
         raise ValueError("screen archive is missing required member: index_names")
 
     names = _string_vector(archive, "index_names")
-    _validate_archive_index_names(names, result_type)
+    _validate_archive_index_names(names, result_type, allow_empty=result_type == "screen")
 
     expected_members = {f"score__{name}" for name in names}
     actual_members = {name for name in archive.files if name.startswith("score__")}
@@ -263,9 +263,7 @@ def _load_score_members(
         raise ValueError(f"score archive contains undeclared score member: {min(extra)}")
 
     raw_scores = {name: _require_member(archive, f"score__{name}") for name in names}
-    scores, actual_respondents = validate_score_vectors(raw_scores)
-    if actual_respondents != n_respondents:
-        raise ValueError("score archive vectors must match n_respondents")
+    scores, _ = validate_score_vectors(raw_scores, n_respondents=n_respondents)
     return scores
 
 
@@ -289,6 +287,8 @@ def _read_score_archive(archive: NpzFile) -> ScoreArchive:
 
     scores = _load_score_members(archive, result_type, n_respondents)
     errors = _load_errors(archive, set(scores), result_type)
+    if not scores and not errors:
+        raise ValueError("score archive does not contain reusable index scores or failures")
     respondent_ids = _load_respondent_ids(archive, n_respondents)
     return {
         "schema_version": schema_version,
@@ -444,14 +444,16 @@ def save_score_archive(
     result_type: ScoreArchiveResultType = "screen",
     respondent_ids: Sequence[str] | None = None,
     errors: Mapping[str, str] | None = None,
+    n_respondents: int | None = None,
 ) -> None:
     """
     Save reusable registered-index scores as a versioned, pickle-free NPZ archive.
 
     Score and metadata validation completes before the destination is opened.
     Compatible float64 arrays are streamed without an intermediate score matrix,
-    and mapping insertion order is preserved. Composite archives accept only
-    indices supported by ``composite_scores()``.
+    and mapping insertion order is preserved. Screen archives may retain only
+    failed indices when ``n_respondents`` is supplied explicitly. Composite
+    archives require component scores supported by ``composite_scores()``.
 
     Parameters:
     - path: Explicit destination ending in ``.npz``.
@@ -459,6 +461,8 @@ def save_score_archive(
     - result_type: ``"screen"`` or ``"composite"``.
     - respondent_ids: Optional aligned, unique, nonblank string identifiers.
     - errors: Optional ordered mapping of failed index names to nonblank messages.
+    - n_respondents: Optional positive respondent count, checked against score
+      vectors. Required for a screen archive containing only failed indices.
 
     Example:
         >>> from ier import load_score_archive, save_score_archive, screen_scores
@@ -476,8 +480,18 @@ def save_score_archive(
         raise TypeError("scores must be a mapping of registered index names to score arrays")
     score_items = list(scores.items())
     score_names = [name for name, _ in score_items]
-    _validate_archive_index_names(score_names, validated_result_type)
-    validated_scores, n_respondents = validate_score_vectors(dict(score_items))
+    _validate_archive_index_names(
+        score_names,
+        validated_result_type,
+        allow_empty=validated_result_type == "screen",
+    )
+    if not score_items and n_respondents is None:
+        raise ValueError(
+            "score archive does not contain reusable index scores; n_respondents is required"
+        )
+    validated_scores, respondent_count = validate_score_vectors(
+        dict(score_items), n_respondents=n_respondents
+    )
 
     if errors is None:
         validated_errors: dict[str, str] = {}
@@ -491,17 +505,19 @@ def save_score_archive(
             set(score_names),
             validated_result_type,
         )
+    if not validated_scores and not validated_errors:
+        raise ValueError("score archive must contain reusable index scores or failures")
 
     validated_ids: list[str] | None = None
     if respondent_ids is not None:
         if isinstance(respondent_ids, (str, bytes)):
             raise TypeError("respondent_ids must be a sequence of strings")
-        validated_ids = _validate_respondent_ids(list(respondent_ids), n_respondents)
+        validated_ids = _validate_respondent_ids(list(respondent_ids), respondent_count)
 
     payload = {
         "schema_version": np.asarray(_ARCHIVE_SCHEMA_VERSION, dtype=np.int64),
         "result_type": np.asarray(validated_result_type, dtype=np.str_),
-        "n_respondents": np.asarray(n_respondents, dtype=np.int64),
+        "n_respondents": np.asarray(respondent_count, dtype=np.int64),
         "index_names": np.asarray(score_names, dtype=np.str_),
         "error_names": np.asarray(list(validated_errors), dtype=np.str_),
         "error_messages": np.asarray(list(validated_errors.values()), dtype=np.str_),
@@ -591,8 +607,10 @@ def load_score_archive(path: str | Path) -> ScoreArchive:
 
     The loader always disables pickling and validates schema version, result type,
     member names, registry membership, vector shape, respondent alignment,
-    optional identifiers, and soft-failure metadata. Screen archives are reusable
-    directly. Full composite CLI archives must have been written with
+    optional identifiers, and soft-failure metadata. Screen archives retaining
+    only failed indices preserve their explicit respondent count; pass it to
+    ``screen_scores()`` as ``n_respondents`` when reusing an empty score mapping.
+    Full composite CLI archives must have been written with
     ``--include-components`` so their raw public index scores are present;
     compact archives from ``save_score_archive()`` are directly compatible.
 

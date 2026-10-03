@@ -1,6 +1,7 @@
 """Native paired arithmetic retains residuals before mean and ratio rounding."""
 
 import math
+from decimal import Decimal, localcontext
 from fractions import Fraction
 
 import numpy as np
@@ -78,9 +79,19 @@ def test_native_pair_means_round_after_normalization(
 
 
 def test_semantic_synonyms_preserve_subnormal_normalized_mean() -> None:
+    # In smallest-float units, the exact variance is 27/16 and pair mean is 1/2.
+    observed = [Fraction(value) for value in (3, 2, 0, 0)]
+    mean = sum(observed) / len(observed)
+    variance = sum((value - mean) ** 2 for value in observed) / len(observed)
+    pair_mean = (abs(observed[0] - observed[1]) + abs(observed[2] - observed[3])) / 2
+    with localcontext() as context:
+        context.prec = 80
+        deviation = (Decimal(variance.numerator) / Decimal(variance.denominator)).sqrt()
+        normalized = (Decimal(pair_mean.numerator) / Decimal(pair_mean.denominator)) / deviation
+        expected = float(Decimal(1) - normalized)
     with np.errstate(all="raise"):
         actual = semantic_syn([[3 * _MIN, 2 * _MIN, 0.0, 0.0]], [(0, 1), (2, 3)])
-    np.testing.assert_array_equal(actual, [0.5])
+    np.testing.assert_array_equal(actual, [expected])
 
 
 @pytest.mark.parametrize("swap", [False, True])

@@ -62,6 +62,58 @@ def row_mean_std(x: np.ndarray, *, ignore_nan: bool) -> tuple[np.ndarray, np.nda
     return means, deviations
 
 
+def _scaled_subnormal_moment_rows(
+    x: np.ndarray,
+    means: np.ndarray,
+    deviations: np.ndarray,
+    *,
+    repair_mean: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Retain a safe scale for dimensionless ratios of exceptionally small moments.
+
+    Call with one bounded row block. Constant rows keep their existing policy;
+    normal constant baselines are excluded before copying any response values.
+    """
+    tiny = np.finfo(float).tiny
+    minimum_deviation = np.fmin.reduce(deviations, initial=np.inf)
+    if minimum_deviation >= tiny and (
+        not repair_mean or np.fmin.reduce(np.abs(means), initial=np.inf) >= tiny
+    ):
+        return None
+    zero_deviation_limit = tiny * (2 * np.sqrt(x.shape[1]))
+    if (
+        minimum_deviation == 0
+        and np.fmax.reduce(deviations, initial=0.0) == 0
+        and np.fmin.reduce(np.abs(means), initial=np.inf) > zero_deviation_limit
+    ):
+        return None
+    candidate = np.isfinite(deviations) & (
+        ((deviations > 0) & (deviations < tiny))
+        | ((deviations == 0) & (np.abs(means) <= zero_deviation_limit))
+        | ((np.abs(means) < tiny) if repair_mean else False)
+    )
+    if not np.any(candidate):
+        return None
+    positions = np.flatnonzero(candidate)
+    values = np.array(x[candidate], dtype=np.result_type(x.dtype, float), copy=True)
+    observed = ~np.isnan(values)
+    lower = np.min(values, axis=1, where=observed, initial=np.inf)
+    upper = np.max(values, axis=1, where=observed, initial=-np.inf)
+    varying = lower < upper
+    if repair_mean:
+        # An extended-precision constant can have a mean below float64 range.
+        varying |= (lower == upper) & (lower != 0) & (means[positions] == 0)
+    varying &= np.isfinite(lower) & np.isfinite(upper)
+    if not np.any(varying):
+        return None
+    positions, values, observed = positions[varying], values[varying], observed[varying]
+    magnitudes = np.max(np.abs(values), axis=1, where=observed, initial=0.0)
+    _, exponents = np.frexp(magnitudes)
+    with np.errstate(under="ignore"):
+        np.ldexp(values, -exponents[:, None], out=values)
+    return positions, values, exponents
+
+
 def _row_mean_block(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
     """Reduce one bounded block to its row means."""
     means, _, _ = _row_mean_counts_block(x, ignore_nan=ignore_nan)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import gzip
 import json
 import shutil
@@ -221,6 +222,100 @@ def _check_response_times(executable: str) -> None:
             raise RuntimeError("installed timing replay changed saved percentile tie decisions")
 
 
+def _check_planned_omissions(executable: str) -> None:
+    """Check exact survey names and skip masks through installed scoring and replay."""
+    identifiers = ["planned, branch", "omitted", "complete", "inapplicable"]
+    expected_scores = [0.0, 1.0, 0.0, np.nan]
+    expected_flags = [False, True, False, False]
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        source = root / "branching.csv"
+        with source.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["id", "q1", "Question, skipped", "q2", "notes"])
+            writer.writerows(
+                [
+                    [identifiers[0], 1, "", "", "unselected metadata"],
+                    [identifiers[1], "", "", "", "unselected metadata"],
+                    [identifiers[2], 3, 3, 3, "unselected metadata"],
+                    [identifiers[3], "", "", "", "unselected metadata"],
+                ]
+            )
+        # Masks match selected q2, q1, Question axes, rather than file column order.
+        # The first row has one observed applicable response, the second has two
+        # omissions, and the last row has no applicable responses at all.
+        mask = np.array(
+            [[False, True, False], [True, False, True], [True, True, False], [False] * 3]
+        )
+        binary_mask = root / "applicable.npy"
+        np.save(binary_mask, mask)
+        text_mask = root / "applicable.csv.gz"
+        with gzip.open(text_mask, "wt", encoding="utf-8", newline="") as handle:
+            csv.writer(handle).writerows(mask.astype(np.uint8))
+
+        archived: list[tuple[str, Path, list[str], dict[str, object]]] = []
+        for command, mask_path in (("screen", binary_mask), ("composite", text_mask)):
+            decisions = (
+                ["--threshold", "missing_rate=0.6", "--min-flags", "1"]
+                if command == "screen"
+                else ["--threshold", "0.6", "--no-standardize", "--include-components"]
+            )
+            arguments = [
+                command,
+                str(source),
+                "--id-column",
+                "id",
+                "--item-columns",
+                "q2,q1",
+                "--item-column",
+                "Question, skipped",
+                "--missing-applicable-mask",
+                str(mask_path),
+                "--indices",
+                "missing_rate",
+                "--strict",
+                *decisions,
+            ]
+            payload = json.loads(_run_cli(executable, *arguments, "--format", "json"))
+            if payload["respondent_ids"] != identifiers or payload["errors"]:
+                raise RuntimeError("installed skip-mask scoring lost IDs or failed scoring")
+            score_values = (
+                payload["scores"]["missing_rate"] if command == "screen" else payload["scores"]
+            )
+            np.testing.assert_allclose(
+                np.asarray(score_values, dtype=float), expected_scores, equal_nan=True
+            )
+            actual_flags = payload["consensus_flags"] if command == "screen" else payload["flags"]
+            if actual_flags != expected_flags:
+                raise RuntimeError("installed skip-mask scoring flagged planned omissions")
+            archive_path = root / f"{command}-branching.npz"
+            _run_cli(executable, *arguments, "--format", "npz", "--output", str(archive_path))
+            saved = ier.load_score_archive(archive_path)
+            np.testing.assert_allclose(
+                saved["scores"]["missing_rate"], expected_scores, equal_nan=True
+            )
+            if saved["respondent_ids"] != identifiers:
+                raise RuntimeError("installed skip-mask archive lost respondent identifiers")
+            archived.append((command, archive_path, decisions, payload))
+
+        source.unlink()
+        binary_mask.unlink()
+        text_mask.unlink()
+        for command, archive_path, decisions, payload in archived:
+            replayed = json.loads(
+                _run_cli(
+                    executable,
+                    f"{command}-scores",
+                    str(archive_path),
+                    *decisions,
+                    "--format",
+                    "json",
+                )
+            )
+            if replayed != payload:
+                raise RuntimeError("installed skip-mask archive replay changed scores or decisions")
+
+
 def main() -> int:
     """Verify metadata and real workflows using only runtime dependencies."""
     distribution_version = version("insufficient-effort")
@@ -241,6 +336,7 @@ def main() -> int:
 
     _check_scoring(executable)
     _check_response_times(executable)
+    _check_planned_omissions(executable)
     print(f"verified installed insufficient-effort {distribution_version}")
     return 0
 
