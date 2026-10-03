@@ -75,6 +75,11 @@ _validation / _flagging    ← shared input checks and threshold helpers
   magnitudes. Missing pairs and zero-variance policies remain distinct.
   Complete person-total batches reuse a single centered item-mean profile and
   its norm instead of allocating the same profile for every respondent.
+  Exceptional floating profiles are shifted and scaled before averaging;
+  severe cancellation uses exact Decimal means. Missing respondents that select
+  a narrowly separated part of a wider profile receive a separately repaired
+  profile with the original item observation counts. Identical missing masks
+  reuse a capped cache, and all response workspaces remain bounded.
 - **Reusable decisions.** `screen_scores()` reapplies direction-aware flagging,
   completeness, consensus, and summaries to retained registered score vectors.
   `composite_scores()` reuses raw composite-enabled vectors for alternative

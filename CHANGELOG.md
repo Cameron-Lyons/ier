@@ -19,9 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Person-total correlations retain item-mean differences at subnormal response
-  scales and near large common baselines. Independent exact-rational means and
-  Decimal correlation tests cover these cases, missing data, layouts, and batch
-  boundaries.
+  scales and near large common baselines, including mixed respondent scales and
+  narrowly separated item groups selected by missing responses. Equal exact
+  item means remain constant despite different cancellation orders. Independent
+  exact-rational means and Decimal correlation tests cover missing data, layouts,
+  batch boundaries, and bounded profile caching.
 - Archive writers reject trailing NULs in respondent IDs and failure messages
   before NumPy can silently truncate them. Embedded NULs remain supported.
   Archive readers reject invalid UTF-32 codepoints with contextual errors,

@@ -84,7 +84,8 @@ def test_streamed_numeric_cells_match_known_matrix_beyond_the_sniffing_sample(
             handle.write(text)
     else:
         path = tmp_path / "survey.csv"
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline="")
+        assert path.read_bytes() == text.encode("utf-8")
 
     actual, actual_ids = _load_input(
         path,

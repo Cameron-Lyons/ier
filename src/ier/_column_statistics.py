@@ -86,10 +86,8 @@ def column_mean_order(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
     return np.argsort(column_mean(x, ignore_nan=ignore_nan))
 
 
-def column_mean_profile(
-    x: np.ndarray, *, ignore_nan: bool
-) -> tuple[np.ndarray, tuple[int, float] | None]:
-    """Return an item profile and its optional common affine response transform.
+def column_mean_profile(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
+    """Retain item-mean differences without restoring the original response units.
 
     Correlations tolerate a common shift and positive scale. Exceptional floating
     profiles need that transformation before averaging: rounding their means in
@@ -97,36 +95,37 @@ def column_mean_profile(
     """
     means = column_mean(x, ignore_nan=ignore_nan, center_integers=True)
     if x.dtype.kind != "f":
-        return means, None
+        return means
     columns = np.flatnonzero(np.isfinite(means))
     if len(columns) < 2:
-        return means, None
+        return means
     observed_means = means[columns]
     precision = np.finfo(means.dtype)
     magnitude = np.max(np.abs(observed_means))
     with np.errstate(over="ignore"):
         span = np.max(observed_means) - np.min(observed_means)
     if span > precision.tiny and span >= magnitude * np.sqrt(precision.eps):
-        return means, None
+        return means
 
     scales, usable, _ = _column_scales(x, columns, ignore_nan=ignore_nan)
     columns = columns[usable]
     if len(columns) < 2:
-        return means, None
+        return means
     magnitude = np.max(scales[usable])
     if magnitude == 0:
-        return means, None
+        return means
     if means.dtype.itemsize <= 8 and np.max(np.abs(observed_means)) < magnitude * np.sqrt(
         precision.eps
     ):
         # A small profile after cancellation can coexist with enormous individual
         # responses. A common float scale would erase the small residual responses.
         _exact_mean_profile(x, means, columns, ignore_nan=ignore_nan)
-        return means, None
+        return means
     _, exponent = np.frexp(magnitude)
     anchor = np.ldexp(means[columns[0]], -exponent)
     totals = np.zeros(len(columns), dtype=means.dtype)
     counts = np.zeros(len(columns), dtype=np.intp)
+    centered_minimum, centered_maximum = float("inf"), -float("inf")
     all_columns = len(columns) == x.shape[1]
     for start, stop in row_slices(len(x), len(columns)):
         block = (
@@ -137,6 +136,12 @@ def column_mean_profile(
         with np.errstate(under="ignore"):
             np.ldexp(block, -exponent, out=block)
         block -= anchor
+        centered_minimum = min(
+            centered_minimum, float(np.fmin.reduce(block, axis=None, initial=float("inf")))
+        )
+        centered_maximum = max(
+            centered_maximum, float(np.fmax.reduce(block, axis=None, initial=-float("inf")))
+        )
         if ignore_nan:
             valid = ~np.isnan(block)
             totals += np.sum(block, axis=0, where=valid)
@@ -147,7 +152,14 @@ def column_mean_profile(
             counts += len(block)
         del block
     means[columns] = totals / counts
-    return means, (-int(exponent), float(anchor))
+    span = np.max(means[columns]) - np.min(means[columns])
+    response_span = centered_maximum - centered_minimum
+    if means.dtype.itemsize <= 8 and span < response_span * np.sqrt(precision.eps):
+        # Differently ordered cancellation can manufacture item differences,
+        # even when every exact sample mean is identical. Resolve small profile
+        # residuals against the actual centered response scale before correlating.
+        _exact_mean_profile(x, means, columns, ignore_nan=ignore_nan)
+    return means
 
 
 def _exact_mean_profile(
