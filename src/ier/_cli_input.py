@@ -360,7 +360,7 @@ def _load_input(
             seen_identifiers.add(identifier)
 
         selected_cells = (
-            (row[index] for index in item_indices) if item_indices is not None else iter(row)
+            map(row.__getitem__, item_indices) if item_indices is not None else iter(row)
         )
         try:
             if missing_value_tokens:
@@ -369,7 +369,7 @@ def _load_input(
                     for cell in selected_cells
                 )
             else:
-                numeric_values.extend(_parse_numeric_cell(cell) for cell in selected_cells)
+                numeric_values.extend(map(_parse_numeric_cell, selected_cells))
         except ValueError as err:
             raise ValueError(f"failed to parse numeric matrix from {source}: {err}") from err
 

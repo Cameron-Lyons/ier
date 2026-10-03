@@ -14,6 +14,7 @@ For a comprehensive methods review, see
 - Saved-score CLI screening and composites with reusable coverage summaries
 - Saved response-time CLI reflagging and lossless result conversion
 - Validated, pickle-free score and response-time archive persistence
+- Optional streamed NPZ compression for compact saved scores and result archives
 - Atomic result-file replacement across text, CSV, JSON, and NPZ output
 - Validated per-index weights across all composite scoring helpers
 - Standardized or raw-score composite combination from Python and the CLI
@@ -126,6 +127,7 @@ ier screen data.csv --id-column participant_id --format csv --output screening.c
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --id-column participant_id --item-column 'Q1, agreement' --item-column Q2
 ier screen data.csv --format npz --output screening.npz
+ier screen data.csv --format npz --compress --output compact-screening.npz
 ier composite data.csv --indices irv longstring
 ier composite data.csv --indices irv longstring --no-standardize
 ier composite data.csv --indices irv longstring --percentile 95 --format csv
@@ -334,6 +336,13 @@ structured metadata without adding a dependency. Writers stage a complete
 archive beside the destination and replace it atomically, so an interrupted
 write cannot truncate an existing result. See
 [CLI output formats](docs/cli-output.md) for the versioned schema and loading examples.
+
+Add `--compress` to any fresh or saved-score command using `--format npz` to
+compress the archive's members. Python writers accept `compressed=True` in
+`save_score_archive()` and `save_response_time_archive()`. Compression can save
+substantial storage for repeated scores, flags, and identifiers, but costs extra
+CPU when writing and reading; uncompressed output remains the default. Both
+forms load and replay through the same APIs, with identical scores and decisions.
 
 `ier response-time` accepts a separate respondent-by-timing matrix and supports
 mean, median, standard-deviation, minimum, consistency, and Gaussian-mixture

@@ -46,6 +46,7 @@ Write archives from any scoring command:
 
 ```bash
 ier screen responses.npy --indices irv longstring --format npz --output screening.npz
+ier screen responses.npy --indices irv longstring --format npz --compress --output compact.npz
 ier composite responses.csv --format npz --output composite.npz
 ier response-time timings.csv --format npz --output timing.npz
 ```
@@ -53,6 +54,12 @@ ier response-time timings.csv --format npz --output timing.npz
 NPZ output requires `--output` with a `.npz` suffix. It cannot target standard
 output or an additional compression layer; the NPZ container is already a ZIP
 archive.
+Members are uncompressed by default for speed. Add `--compress` to any fresh or
+saved-score command to use streaming DEFLATE compression inside the NPZ
+container; this option requires `--format npz`. Compression preserves every
+array and metadata field and requires no schema change or special loading
+option. Repeated scores, flags, and IDs can become much smaller, while
+continuous scores often compress modestly and take more CPU to write and load.
 Archives use the same atomic file replacement as the text formats.
 Load every archive with pickling disabled:
 
@@ -78,6 +85,7 @@ save_score_archive(
     "raw-scores.npz",
     {"irv": [0.1, 0.7], "longstring": [3.0, 8.0]},
     respondent_ids=["case-1", "case-2"],
+    compressed=True,
 )
 saved = load_score_archive("raw-scores.npz")
 updated = screen_scores(
@@ -91,6 +99,11 @@ print(saved["errors"])
 names, aligned vectors, optional IDs, and soft failures before opening the file.
 It streams compatible arrays without constructing a respondent-by-index matrix;
 the shared atomic boundary protects the destination from later I/O failures.
+Both `save_score_archive()` and `save_response_time_archive()` accept the Boolean
+`compressed` option, which defaults to `False`. Archive respondent IDs and error
+messages cannot end with a NUL character because fixed-width NumPy Unicode
+would silently truncate that character; embedded NULs are preserved. Invalid
+Unicode codepoints in external archive metadata produce a contextual error.
 `load_score_archive()` always disables pickling and validates the complete
 schema. It accepts compact public archives, screen CLI archives, and composite
 CLI archives written with `--include-components`. Aggregate-only composite and

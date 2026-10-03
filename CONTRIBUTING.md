@@ -60,6 +60,9 @@ Project/lock version consistency is checked even when the PR has the
 `no-version-bump` label. Every test environment enforces warnings as errors and
 the 95% coverage floor with branch measurement enabled. Superseded PR runs are
 cancelled and jobs have time limits.
+The aggregate Veto check evaluates every prerequisite in GitHub's `needs`
+payload, including newly added jobs. Failures, cancellations, and skipped
+required jobs block it; the version comparison retains its explicit skip rule.
 
 ### Lint roles
 
@@ -71,6 +74,10 @@ cancelled and jobs have time limits.
   `tests/typing/composite_valid.py` and exact expected diagnostic codes and
   locations in `tests/typing/composite_invalid.py`; an unrelated failure cannot
   satisfy the negative checks.
+- **actionlint** validates workflow definitions, expressions, matrix references,
+  reusable workflow calls, and embedded scripts in CI. Its versioned container
+  includes ShellCheck and pyflakes, and the reusable lint workflow makes this
+  gate apply to pull requests and releases.
 
 Pre-commit hooks use isolated tool environments and do not need a project
 dependency. Install them with `uvx pre-commit install` when desired.
@@ -97,6 +104,10 @@ OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --miss
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
 uv run python benchmarks/bench_response_checks.py --checks 40
 uv run python benchmarks/bench_cli_input.py --masks
+uv run python benchmarks/bench_archive.py --respondents 100000 --indices 10
+uv run python benchmarks/bench_archive.py --respondents 100000 --indices 10 --compress
+uv run python benchmarks/bench_person_total.py --structure near-constant --order F
+uv run python benchmarks/bench_person_total.py --structure categorical --scale 5e-324
 uv run python benchmarks/bench_response_checks.py --checks 40 --dtype int64 --integer-offset 1152921504606846976 --missing-rate 0
 uv run python benchmarks/bench_response_time.py --operation median --order F
 uv run python benchmarks/bench_row_reductions.py --order F --missing-rate 0.1
@@ -196,8 +207,11 @@ Use `--operation discrimination` to isolate 2PL item-discrimination estimation;
 that measurement excludes binary-response preparation. The default `lz`
 operation includes preprocessing, calibration, and respondent scoring.
 The person-total benchmark supports `--order F`, `--missing-rate 1`, and
-`--strict` for missing propagation. Its correctness checks compare sampled
-respondents with direct paired correlations against the sample item means.
+`--strict` for missing propagation. Use `--structure` to select continuous,
+categorical, constant, or nearby-baseline responses, and `--scale`/`--offset`
+to exercise extreme response units. Noncontinuous structures and transformed
+response units use exact rational sample item means and Decimal Pearson
+correlations for correctness checks outside measurement.
 For Mahalanobis scoring, use `--na-rm` to measure complete-case handling on
 complete data, `--missing-row-rate`
 to mark a fraction of rows as incomplete, and `--order F` to compare layouts.

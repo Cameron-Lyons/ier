@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-from zipfile import ZIP_STORED, BadZipFile, ZipFile
+from zipfile import ZIP_DEFLATED, ZIP_STORED, BadZipFile, ZipFile
 from zlib import error as ZlibError
 
 import numpy as np
@@ -74,11 +74,19 @@ def _validate_error_metadata(
     if len(names) != len(messages):
         raise ValueError("score archive error names and messages must have equal lengths")
     _validate_archive_index_names(names, result_type, allow_empty=True, label="error")
-    return validate_index_errors(
+    validated = validate_index_errors(
         dict(zip(names, messages, strict=True)),
         list(score_names),
         composite_index_names() if result_type == "composite" else None,
     )
+    _validate_archive_strings(list(validated.values()), name="archive error messages")
+    return validated
+
+
+def _validate_archive_strings(values: Sequence[str], *, name: str) -> None:
+    """Reject text that NumPy's fixed-width Unicode format silently truncates."""
+    if any(value.endswith("\0") for value in values):
+        raise ValueError(f"{name} cannot end with a NUL character")
 
 
 def _validate_respondent_ids(values: list[str], n_respondents: int) -> list[str]:
@@ -91,24 +99,32 @@ def _validate_respondent_ids(values: list[str], n_respondents: int) -> list[str]
         raise ValueError("archive respondent IDs must be nonblank")
     if len(values) != len(set(values)):
         raise ValueError("archive respondent IDs must be unique")
+    _validate_archive_strings(values, name="archive respondent IDs")
     return values
 
 
-def _stream_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
-    """Stream typed arrays directly into one uncompressed NPZ archive."""
-    with ZipFile(path, mode="w", compression=ZIP_STORED, allowZip64=True) as archive:
+def _stream_npz_archive(
+    path: Path, payload: dict[str, np.ndarray], *, compressed: bool = False
+) -> None:
+    """Stream typed arrays directly into one stored or DEFLATE-compressed archive."""
+    compression = ZIP_DEFLATED if compressed else ZIP_STORED
+    with ZipFile(path, mode="w", compression=compression, allowZip64=True) as archive:
         for name, value in payload.items():
             with archive.open(f"{name}.npy", mode="w", force_zip64=True) as member:
                 np.save(member, value, allow_pickle=False)
 
 
-def _write_npz_archive(path: Path, payload: dict[str, np.ndarray]) -> None:
+def _write_npz_archive(
+    path: Path, payload: dict[str, np.ndarray], *, compressed: bool = False
+) -> None:
     """Atomically stream one typed, pickle-free NPZ archive into place."""
+    if not isinstance(compressed, bool):
+        raise ValueError("compressed must be a boolean")
     if any(value.dtype.hasobject for value in payload.values()):
         raise ValueError("NPZ archive cannot contain object arrays")
 
     with atomic_output_path(path) as staged_path:
-        _stream_npz_archive(staged_path, payload)
+        _stream_npz_archive(staged_path, payload, compressed=compressed)
 
 
 def _require_member(archive: NpzFile, name: str) -> np.ndarray:
@@ -160,6 +176,7 @@ def _string_scalar(archive: NpzFile, name: str) -> str:
     value = _require_member(archive, name)
     if value.shape != () or value.dtype.kind != "U":
         raise ValueError(f"NPZ archive member {name} must be a Unicode string scalar")
+    _validate_unicode_codepoints(value, name=name)
     return str(value.item())
 
 
@@ -167,7 +184,19 @@ def _string_vector(archive: NpzFile, name: str) -> list[str]:
     value = _require_member(archive, name)
     if value.ndim != 1 or value.dtype.kind != "U":
         raise ValueError(f"NPZ archive member {name} must be a Unicode string vector")
+    _validate_unicode_codepoints(value, name=name)
     return cast("list[str]", value.tolist())
+
+
+def _validate_unicode_codepoints(value: np.ndarray, *, name: str) -> None:
+    """Check UTF-32 storage before NumPy creates Python strings from archive text."""
+    # Depending on the NumPy conversion path, invalid codepoints can raise a
+    # SystemError or even create invalid Python strings. Check in bounded slices
+    # so a large ID vector does not need a full-size codepoint mask.
+    codepoints = value.reshape(-1).view(np.dtype(f"{value.dtype.byteorder}u4"))
+    for start in range(0, codepoints.size, 65_536):
+        if np.any(codepoints[start : start + 65_536] > 0x10FFFF):
+            raise ValueError(f"NPZ archive member {name} contains invalid Unicode")
 
 
 def _numeric_scalar(archive: NpzFile, name: str) -> float:
@@ -445,6 +474,7 @@ def save_score_archive(
     respondent_ids: Sequence[str] | None = None,
     errors: Mapping[str, str] | None = None,
     n_respondents: int | None = None,
+    compressed: bool = False,
 ) -> None:
     """
     Save reusable registered-index scores as a versioned, pickle-free NPZ archive.
@@ -459,10 +489,14 @@ def save_score_archive(
     - path: Explicit destination ending in ``.npz``.
     - scores: Ordered mapping of registered index names to aligned score vectors.
     - result_type: ``"screen"`` or ``"composite"``.
-    - respondent_ids: Optional aligned, unique, nonblank string identifiers.
-    - errors: Optional ordered mapping of failed index names to nonblank messages.
+    - respondent_ids: Optional aligned, unique, nonblank string identifiers,
+      with no trailing NUL character.
+    - errors: Optional ordered mapping of failed index names to nonblank messages,
+      with no trailing NUL character.
     - n_respondents: Optional positive respondent count, checked against score
       vectors. Required for a screen archive containing only failed indices.
+    - compressed: Use streaming DEFLATE compression to reduce storage, at the
+      cost of extra CPU when writing and loading. Defaults to ``False``.
 
     Example:
         >>> from ier import load_score_archive, save_score_archive, screen_scores
@@ -526,7 +560,7 @@ def save_score_archive(
         payload[f"score__{name}"] = values
     if validated_ids is not None:
         payload["respondent_ids"] = np.asarray(validated_ids, dtype=np.str_)
-    _write_npz_archive(destination, payload)
+    _write_npz_archive(destination, payload, compressed=compressed)
 
 
 def save_response_time_archive(
@@ -538,6 +572,7 @@ def save_response_time_archive(
     metric: ResponseTimeMetric = "median",
     flag_direction: ResponseTimeFlagDirection = "low",
     respondent_ids: Sequence[str] | None = None,
+    compressed: bool = False,
 ) -> None:
     """
     Save reusable response-time results as a versioned, pickle-free NPZ archive.
@@ -554,7 +589,10 @@ def save_response_time_archive(
     - threshold: Resolved finite cutoff in the score's units.
     - metric: Timing metric represented by the score vector.
     - flag_direction: Suspicious tail, ``"low"`` or ``"high"``.
-    - respondent_ids: Optional aligned, unique, nonblank string identifiers.
+    - respondent_ids: Optional aligned, unique, nonblank string identifiers,
+      with no trailing NUL character.
+    - compressed: Use streaming DEFLATE compression to reduce storage, at the
+      cost of extra CPU when writing and loading. Defaults to ``False``.
 
     Example:
         >>> from ier import response_time_score_flags, save_response_time_archive
@@ -598,7 +636,7 @@ def save_response_time_archive(
     }
     if validated_ids is not None:
         payload["respondent_ids"] = np.asarray(validated_ids, dtype=np.str_)
-    _write_npz_archive(destination, payload)
+    _write_npz_archive(destination, payload, compressed=compressed)
 
 
 def load_score_archive(path: str | Path) -> ScoreArchive:

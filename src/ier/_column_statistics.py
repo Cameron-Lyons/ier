@@ -1,5 +1,7 @@
 """Bounded column-wise statistical reductions."""
 
+from decimal import Decimal, localcontext
+
 import numpy as np
 
 from ier._row_statistics import (
@@ -82,6 +84,104 @@ def column_mean_order(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
         _, keys = np.unique(_integer_column_totals(x), return_inverse=True)
         return np.argsort(keys.astype(float))
     return np.argsort(column_mean(x, ignore_nan=ignore_nan))
+
+
+def column_mean_profile(x: np.ndarray, *, ignore_nan: bool) -> np.ndarray:
+    """Retain item-mean differences without restoring the original response units.
+
+    Correlations tolerate a common shift and positive scale. Exceptional floating
+    profiles need that transformation before averaging: rounding their means in
+    the original units can erase subnormal or small baseline-relative differences.
+    """
+    means = column_mean(x, ignore_nan=ignore_nan, center_integers=True)
+    if x.dtype.kind != "f":
+        return means
+    columns = np.flatnonzero(np.isfinite(means))
+    if len(columns) < 2:
+        return means
+    observed_means = means[columns]
+    precision = np.finfo(means.dtype)
+    magnitude = np.max(np.abs(observed_means))
+    with np.errstate(over="ignore"):
+        span = np.max(observed_means) - np.min(observed_means)
+    if span > precision.tiny and span >= magnitude * np.sqrt(precision.eps):
+        return means
+
+    scales, usable, _ = _column_scales(x, columns, ignore_nan=ignore_nan)
+    columns = columns[usable]
+    if len(columns) < 2:
+        return means
+    magnitude = np.max(scales[usable])
+    if magnitude == 0:
+        return means
+    if means.dtype.itemsize <= 8 and np.max(np.abs(observed_means)) < magnitude * np.sqrt(
+        precision.eps
+    ):
+        # A small profile after cancellation can coexist with enormous individual
+        # responses. A common float scale would erase the small residual responses.
+        _exact_mean_profile(x, means, columns, ignore_nan=ignore_nan)
+        return means
+    _, exponent = np.frexp(magnitude)
+    anchor = np.ldexp(means[columns[0]], -exponent)
+    totals = np.zeros(len(columns), dtype=means.dtype)
+    counts = np.zeros(len(columns), dtype=np.intp)
+    centered_minimum, centered_maximum = float("inf"), -float("inf")
+    all_columns = len(columns) == x.shape[1]
+    for start, stop in row_slices(len(x), len(columns)):
+        block = (
+            np.array(x[start:stop], dtype=means.dtype, copy=True)
+            if all_columns
+            else np.asarray(x[start:stop, columns], dtype=means.dtype)
+        )
+        with np.errstate(under="ignore"):
+            np.ldexp(block, -exponent, out=block)
+        block -= anchor
+        centered_minimum = min(
+            centered_minimum, float(np.fmin.reduce(block, axis=None, initial=float("inf")))
+        )
+        centered_maximum = max(
+            centered_maximum, float(np.fmax.reduce(block, axis=None, initial=-float("inf")))
+        )
+        if ignore_nan:
+            valid = ~np.isnan(block)
+            totals += np.sum(block, axis=0, where=valid)
+            counts += np.count_nonzero(valid, axis=0)
+            del valid
+        else:
+            totals += np.sum(block, axis=0)
+            counts += len(block)
+        del block
+    means[columns] = totals / counts
+    span = np.max(means[columns]) - np.min(means[columns])
+    response_span = centered_maximum - centered_minimum
+    if means.dtype.itemsize <= 8 and span < response_span * np.sqrt(precision.eps):
+        # Differently ordered cancellation can manufacture item differences,
+        # even when every exact sample mean is identical. Resolve small profile
+        # residuals against the actual centered response scale before correlating.
+        _exact_mean_profile(x, means, columns, ignore_nan=ignore_nan)
+    return means
+
+
+def _exact_mean_profile(
+    x: np.ndarray, means: np.ndarray, columns: np.ndarray, *, ignore_nan: bool
+) -> None:
+    """Retain finite item-mean residuals across the complete float64 exponent range."""
+    with localcontext() as context:
+        context.prec = 800
+        totals = [Decimal(0) for _ in columns]
+        counts = np.zeros(len(columns), dtype=np.intp)
+        for start, stop in row_slices(len(x), len(columns)):
+            block = x[start:stop, columns]
+            for position, column in enumerate(block.T):
+                observed = column[~np.isnan(column)] if ignore_nan else column
+                totals[position] += sum(
+                    (Decimal.from_float(float(value)) for value in observed), start=Decimal(0)
+                )
+                counts[position] += len(observed)
+        averages = [total / int(count) for total, count in zip(totals, counts, strict=True)]
+        offsets = [value - averages[0] for value in averages]
+        scale = max(abs(value) for value in offsets)
+        means[columns] = [float(value / scale) if scale else 0.0 for value in offsets]
 
 
 def column_correlations(x: np.ndarray) -> np.ndarray:

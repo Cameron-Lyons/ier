@@ -9,6 +9,20 @@ on:
   workflow_call:
 
 jobs:
+  workflows:
+    name: GitHub Actions workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate workflow definitions and embedded scripts
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
   ruff:
     name: Ruff
     runs-on: ubuntu-latest

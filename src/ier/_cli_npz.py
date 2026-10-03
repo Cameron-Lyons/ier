@@ -12,8 +12,12 @@ from ier._cli_composite import (
     validate_composite_flags,
     validate_composite_probabilities,
 )
+from ier.archive import (
+    _validate_archive_strings,
+    _validate_respondent_ids,
+    save_response_time_archive,
+)
 from ier.archive import _write_npz_archive as _stream_npz_archive
-from ier.archive import save_response_time_archive
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -36,9 +40,8 @@ def _add_respondent_ids(
 ) -> None:
     if respondent_ids is None:
         return
-    if len(respondent_ids) != n_respondents:
-        raise ValueError("respondent ID count must match result length")
-    payload["respondent_ids"] = np.asarray(respondent_ids, dtype=np.str_)
+    values = _validate_respondent_ids(respondent_ids, n_respondents)
+    payload["respondent_ids"] = np.asarray(values, dtype=np.str_)
 
 
 def _add_errors(
@@ -47,6 +50,7 @@ def _add_errors(
 ) -> None:
     """Add aligned, pickle-free error metadata to a result payload."""
     items = list((errors or {}).items())
+    _validate_archive_strings([message for _, message in items], name="archive error messages")
     payload["error_names"] = np.asarray([name for name, _ in items], dtype=np.str_)
     payload["error_messages"] = np.asarray([message for _, message in items], dtype=np.str_)
 
@@ -60,16 +64,20 @@ def _require_npz_output_path(path: Path | None) -> Path:
     return path
 
 
-def _write_npz_archive(path: Path | None, payload: dict[str, np.ndarray]) -> None:
+def _write_npz_archive(
+    path: Path | None, payload: dict[str, np.ndarray], *, compressed: bool = False
+) -> None:
     """Write one pickle-free NumPy result archive to an explicit file path."""
     destination = _require_npz_output_path(path)
-    _stream_npz_archive(destination, payload)
+    _stream_npz_archive(destination, payload, compressed=compressed)
 
 
 def _write_screen_npz(
     path: Path | None,
     result: ScreenResult,
     respondent_ids: list[str] | None = None,
+    *,
+    compressed: bool = False,
 ) -> None:
     """Write complete screening results as a versioned NumPy archive."""
     names = result["indices_used"]
@@ -150,7 +158,7 @@ def _write_screen_npz(
         payload[f"score__{name}"] = np.asarray(result["scores"][name], dtype=np.float64)
         payload[f"flag__{name}"] = np.asarray(result["flags"][name], dtype=np.bool_)
     _add_respondent_ids(payload, result["n_respondents"], respondent_ids)
-    _write_npz_archive(path, payload)
+    _write_npz_archive(path, payload, compressed=compressed)
 
 
 def _write_composite_npz(
@@ -168,6 +176,8 @@ def _write_composite_npz(
     flag_threshold: float | None = None,
     flag_percentile: float | None = None,
     probabilities: np.ndarray | None = None,
+    *,
+    compressed: bool = False,
 ) -> None:
     """Write composite results as a versioned NumPy archive."""
     validate_composite_components(len(scores), component_scores, valid_index_counts)
@@ -208,7 +218,7 @@ def _write_composite_npz(
             payload[f"score__{name}"] = np.asarray(values, dtype=np.float64)
     _add_errors(payload, errors)
     _add_respondent_ids(payload, len(scores), respondent_ids)
-    _write_npz_archive(path, payload)
+    _write_npz_archive(path, payload, compressed=compressed)
 
 
 def _write_response_time_npz(
@@ -219,6 +229,8 @@ def _write_response_time_npz(
     direction: ResponseTimeFlagDirection,
     cutoff: float,
     respondent_ids: list[str] | None = None,
+    *,
+    compressed: bool = False,
 ) -> None:
     """Write response-time results as a versioned NumPy archive."""
     destination = _require_npz_output_path(path)
@@ -230,4 +242,5 @@ def _write_response_time_npz(
         metric=metric,
         flag_direction=direction,
         respondent_ids=respondent_ids,
+        compressed=compressed,
     )
