@@ -11,16 +11,27 @@ References:
   Psychological Methods, 17(3), 437-455.
 """
 
+import math
 from typing import Any
 
 import numpy as np
 
 from ier._flagging import threshold_flags
-from ier._response_sequences import sequence_batches
+from ier._response_sequences import sequence_batches, true_run_lengths
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
 
 _MAX_DENSE_STATES = 64
+# Dense tables cost a state square per row; sorting a row of k items costs about
+# k log2 k steps. Up to 64 states, sort only once the square exceeds this many
+# cells per sort step. On an AVX2 machine, sorting overtook dense tables at about
+# 0.2-0.4 cells per step with NumPy 2's vectorized sorts and 0.55-1.3 with NumPy
+# 1.26's scalar sorts. At these constants, sorting measured 10-45% faster at the
+# boundary (about even only for 3-5 items with NumPy 2), with or without missing
+# responses. Rows of at least 843 items (NumPy 2) or 327 items (NumPy 1.x) keep
+# dense tables for every state count up to 64. Faster sorts, such as NumPy 1.26
+# with AVX-512, only widen the margin.
+_DENSE_CELLS_PER_SORT_STEP = 0.5 if np.lib.NumpyVersion(np.__version__) >= "2.0.0" else 1.5
 _TRANSITION_BATCH_WORKSPACE_BYTES = 64 * 1024 * 1024
 
 
@@ -47,11 +58,11 @@ def markov(
     - ValueError: If data has fewer than 3 columns.
 
     Example:
-        >>> data = [[1, 2, 1, 2, 1, 2], [1, 3, 5, 2, 4, 1]]
-        >>> markov(data)
-        array([0.  , 1.56])
+        >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 1, 3, 1, 2]]
+        >>> np.round(markov(data), 2).tolist()
+        [0.0, 0.55]
     """
-    x_array = validate_matrix_input(x, min_columns=3, check_type=False)
+    x_array = validate_matrix_input(x, min_columns=3)
 
     result = np.full(len(x_array), np.nan)
     for start, stop, block, counts in sequence_batches(x_array, na_rm=na_rm):
@@ -68,13 +79,13 @@ def markov(
 
 
 def _markov_complete(x: np.ndarray, *, counts: np.ndarray | None = None) -> np.ndarray:
-    """Score complete or padded rows with bounded dense batches or a sparse fallback."""
-    state_batch = _encode_states(x)
-    if state_batch is None:
-        return _transition_entropies_sparse(x, counts=counts)
-
-    encoded, n_states = state_batch
+    """Score complete or padded rows with bounded dense batches or sorted transitions."""
+    encoded, n_states = _encode_states(x)
     n_items = x.shape[1]
+    sort_cells = _DENSE_CELLS_PER_SORT_STEP * n_items * math.log2(n_items)
+    if n_states > _MAX_DENSE_STATES or n_states * n_states > sort_cells:
+        return _transition_entropies_from_codes(encoded, n_states, counts=counts)
+
     integer_bytes = np.dtype(np.intp).itemsize
     float_bytes = np.dtype(float).itemsize
     bytes_per_row = integer_bytes * (2 * n_items + n_states * n_states + n_states) + float_bytes * (
@@ -97,8 +108,8 @@ def _markov_complete(x: np.ndarray, *, counts: np.ndarray | None = None) -> np.n
     return result
 
 
-def _encode_states(x: np.ndarray) -> tuple[np.ndarray, int] | None:
-    """Encode one bounded sequence block, or use sparse scoring above 64 states."""
+def _encode_states(x: np.ndarray) -> tuple[np.ndarray, int]:
+    """Encode one bounded sequence block as consecutive category codes."""
     minimum = np.min(x)
     maximum = np.max(x)
     integral = x.dtype.kind in "iu"
@@ -120,10 +131,10 @@ def _encode_states(x: np.ndarray) -> tuple[np.ndarray, int] | None:
             np.take(mapping, encoded, out=encoded)
         return encoded, n_states
 
-    categories = np.unique(x)
-    if len(categories) > _MAX_DENSE_STATES:
-        return None
-    return np.searchsorted(categories, x), len(categories)
+    categories, inverse = np.unique(x, return_inverse=True)
+    # NumPy 2 returns the inverse in the input shape; NumPy 1.26 flattens it.
+    encoded = inverse.reshape(x.shape).astype(np.intp, copy=False)
+    return encoded, len(categories)
 
 
 def _dense_transition_counts(
@@ -145,42 +156,59 @@ def _dense_transition_counts(
     return transitions.reshape(n_rows, n_states, n_states)
 
 
-def _transition_entropies_sparse(x: np.ndarray, *, counts: np.ndarray | None = None) -> np.ndarray:
-    """Score high-cardinality complete rows without dense state-square arrays."""
-    result = np.empty(len(x), dtype=float)
-    for row_index, raw_row in enumerate(x):
-        row = raw_row if counts is None else raw_row[: counts[row_index]]
-        if len(row) < 2:
-            result[row_index] = np.nan
-            continue
-        result[row_index] = _transition_entropy_row(row)
+def _transition_entropies_from_codes(
+    codes: np.ndarray, n_categories: int, *, counts: np.ndarray | None = None
+) -> np.ndarray:
+    """Score rows from sorted source-state and transition multiplicities.
+
+    With ``n_s`` transitions leaving state ``s``, ``n_st`` transitions from ``s``
+    to ``t`` and ``T`` transitions in total, the conditional entropy equals
+    ``(sum n_s log2 n_s - sum n_st log2 n_st) / T``. Only observed states and
+    pairs contribute, so the workspace grows with the items, not the states.
+    """
+    n_rows, n_items = codes.shape
+    from_ids = codes[:, :-1].astype(np.int64)
+    # Codes are bounded by the block size, so every pair ID fits in 64 bits.
+    pair_ids = np.multiply(codes[:, :-1], n_categories, dtype=np.int64)
+    pair_ids += codes[:, 1:]
+    if counts is None:
+        totals = np.full(n_rows, n_items - 1, dtype=np.intp)
+    else:
+        # Distinct sentinels above every pair ID form singleton runs, and
+        # 1 * log2(1) = 0, so padded transitions contribute nothing.
+        positions = np.arange(n_items - 1, dtype=np.int64)
+        padded = positions >= counts[:, None] - 1
+        sentinels = n_categories * n_categories + positions
+        np.copyto(from_ids, sentinels, where=padded)
+        np.copyto(pair_ids, sentinels, where=padded)
+        totals = np.maximum(counts - 1, 0)
+
+    numerators = _sum_xlogx_multiplicities(from_ids)
+    numerators -= _sum_xlogx_multiplicities(pair_ids)
+    result = np.full(n_rows, np.nan)
+    np.divide(numerators, totals, out=result, where=totals > 0)
     return result
 
 
-def _transition_entropy_row(row: np.ndarray) -> float:
-    """Compute transition entropy from the observed counts in one row."""
-    _, encoded = np.unique(row, return_inverse=True)
-    n_states = int(np.max(encoded)) + 1
-    from_counts = np.bincount(encoded[:-1])
-    pair_ids = encoded[:-1] * n_states + encoded[1:]
-    _, pair_counts = np.unique(pair_ids, return_counts=True)
-    return _conditional_entropy_from_counts(from_counts, pair_counts, len(row) - 1)
-
-
-def _conditional_entropy_from_counts(
-    from_counts: np.ndarray,
-    pair_counts: np.ndarray,
-    total: int | float,
-) -> float:
-    """Compute conditional entropy using only positive transition counts."""
-    if total == 0:
-        return 0.0
-
-    positive_from = from_counts[from_counts > 0]
-    positive_pairs = pair_counts[pair_counts > 0]
-    from_terms = positive_from @ np.log2(positive_from)
-    pair_terms = positive_pairs @ np.log2(positive_pairs)
-    return float((from_terms - pair_terms) / total)
+def _sum_xlogx_multiplicities(ids: np.ndarray) -> np.ndarray:
+    """Sum ``c * log2(c)`` over the multiplicity ``c`` of each distinct row ID."""
+    ordered = np.sort(ids, axis=1)
+    width = ordered.shape[1]
+    run_ends = np.empty(ordered.shape, dtype=bool)
+    np.not_equal(ordered[:, 1:], ordered[:, :-1], out=run_ends[:, :-1])
+    run_ends[:, -1] = True
+    # Each sorted position stores the length of the run of equal IDs ending there.
+    lengths = np.empty(ordered.shape, dtype=np.min_scalar_type(width))
+    lengths[:, 0] = 1
+    np.add(true_run_lengths(~run_ends[:, :-1]), 1, out=lengths[:, 1:], dtype=lengths.dtype)
+    # Interior run positions select terms[0] == 0. An unmasked sum keeps NumPy's
+    # pairwise summation; a sparse where= mask would add one term at a time.
+    lengths *= run_ends
+    multiplicities = np.arange(2, width + 1, dtype=float)
+    terms = np.zeros(width + 1)
+    np.multiply(multiplicities, np.log2(multiplicities), out=terms[2:])
+    sums: np.ndarray = np.sum(terms[lengths], axis=1)
+    return sums
 
 
 def markov_flag(
@@ -202,8 +230,10 @@ def markov_flag(
     - Tuple of (entropy_scores, flags) where flags is True for flagged respondents.
 
     Example:
-        >>> data = [[1, 2, 1, 2, 1, 2], [1, 3, 5, 2, 4, 1]]
-        >>> scores, flags = markov_flag(data)
+        >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 1, 3, 1, 2]]
+        >>> scores, flags = markov_flag(data, threshold=0.1)
+        >>> flags.tolist()
+        [True, False]
     """
     scores = markov(x, na_rm=na_rm)
 
@@ -227,8 +257,10 @@ def markov_summary(
     - Dictionary with summary statistics.
 
     Example:
-        >>> data = [[1, 2, 1, 2, 1, 2], [1, 3, 5, 2, 4, 1]]
-        >>> markov_summary(data)
+        >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 1, 3, 1, 2]]
+        >>> summary = markov_summary(data)
+        >>> summary["n_valid"], round(summary["max"], 2)
+        (2, 0.55)
     """
     scores = markov(x, na_rm=na_rm)
 
@@ -241,13 +273,6 @@ def markov_summary(
         }
     )
     return summary
-
-
-def _transition_entropy(trans: np.ndarray) -> float:
-    """Compute Shannon entropy of one transition matrix, weighted by row marginals."""
-    row_sums = trans.sum(axis=1)
-    total = float(row_sums.sum())
-    return _conditional_entropy_from_counts(row_sums, trans.ravel(), total)
 
 
 def _transition_entropy_batch(transitions: np.ndarray) -> np.ndarray:

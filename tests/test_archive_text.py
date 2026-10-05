@@ -12,6 +12,7 @@ from ier import (
     save_score_archive,
     screen_scores,
 )
+from ier._cli_composite import CompositeReport, ResponseTimeReport
 from ier._cli_npz import _write_composite_npz, _write_response_time_npz, _write_screen_npz
 
 
@@ -33,9 +34,11 @@ def test_trailing_nul_ids_cannot_produce_unreloadable_archive(tmp_path: Path, wr
         elif writer == "screen-cli":
             _write_screen_npz(path, screen_scores({"irv": scores}), ids)
         elif writer == "composite-cli":
-            _write_composite_npz(path, scores, "mean", ids)
+            _write_composite_npz(path, CompositeReport(scores, "mean", ids))
         else:
-            _write_response_time_npz(path, scores, scores <= 0.15, "median", "low", 0.15, ids)
+            _write_response_time_npz(
+                path, ResponseTimeReport(scores, scores <= 0.15, "median", "low", 0.15, ids)
+            )
     assert path.read_bytes() == b"previous complete result"
     assert list(tmp_path.iterdir()) == [path]
 
@@ -53,7 +56,7 @@ def test_trailing_nul_error_messages_are_rejected_before_encoding(
         elif writer == "screen-cli":
             _write_screen_npz(path, screen_scores({"irv": scores}, errors=errors))
         else:
-            _write_composite_npz(path, scores, "mean", errors=errors)
+            _write_composite_npz(path, CompositeReport(scores, "mean", errors=errors))
     assert not path.exists()
     assert list(tmp_path.iterdir()) == []
 

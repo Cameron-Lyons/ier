@@ -3,6 +3,7 @@
 Usage:
     uv run python benchmarks/bench_archive.py
     uv run python benchmarks/bench_archive.py --respondents 500000 --indices 15
+    uv run python benchmarks/bench_archive.py --compress --compress-level 6
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from ier import (
     save_response_time_archive,
     save_score_archive,
 )
-from ier.archive import _stream_npz_archive
+from ier.archive import _DEFAULT_COMPRESSION_LEVEL, _stream_npz_members
 
 
 def _raw_load(path: Path) -> dict[str, np.ndarray]:
@@ -47,8 +48,9 @@ def _raw_response_time_save(
     threshold: float,
     *,
     compressed: bool = False,
+    compression_level: int = _DEFAULT_COMPRESSION_LEVEL,
 ) -> None:
-    _stream_npz_archive(
+    _stream_npz_members(
         path,
         {
             "schema_version": np.asarray(1, dtype=np.int64),
@@ -61,10 +63,17 @@ def _raw_response_time_save(
             "flags": flags,
         },
         compressed=compressed,
+        compression_level=compression_level,
     )
 
 
-def _raw_save(path: Path, scores: dict[str, np.ndarray], *, compressed: bool = False) -> None:
+def _raw_save(
+    path: Path,
+    scores: dict[str, np.ndarray],
+    *,
+    compressed: bool = False,
+    compression_level: int = _DEFAULT_COMPRESSION_LEVEL,
+) -> None:
     payload = {
         "schema_version": np.asarray(1, dtype=np.int64),
         "result_type": np.asarray("screen", dtype=np.str_),
@@ -75,7 +84,7 @@ def _raw_save(path: Path, scores: dict[str, np.ndarray], *, compressed: bool = F
     }
     for name, values in scores.items():
         payload[f"score__{name}"] = values
-    _stream_npz_archive(path, payload, compressed=compressed)
+    _stream_npz_members(path, payload, compressed=compressed, compression_level=compression_level)
 
 
 def main() -> None:
@@ -88,6 +97,14 @@ def main() -> None:
     parser.add_argument(
         "--compress", action="store_true", help="Use DEFLATE-compressed NPZ members"
     )
+    parser.add_argument(
+        "--compress-level",
+        type=int,
+        choices=range(1, 10),
+        default=None,
+        metavar="{1..9}",
+        help="DEFLATE level for --compress (default: the library default, 1)",
+    )
     args = parser.parse_args()
 
     available_names = list(index_catalog())
@@ -95,6 +112,10 @@ def main() -> None:
         parser.error("respondents, repeats, and write-repeats must be positive")
     if not 1 <= args.indices <= len(available_names):
         parser.error(f"indices must be between 1 and {len(available_names)}")
+    if args.compress_level is not None and not args.compress:
+        parser.error("--compress-level requires --compress")
+    # Raw writers use the level the validated writers resolve from None.
+    level = _DEFAULT_COMPRESSION_LEVEL if args.compress_level is None else args.compress_level
 
     names = available_names[: args.indices]
     rng = np.random.default_rng(args.seed)
@@ -108,14 +129,20 @@ def main() -> None:
         validated_path = Path(directory) / "validated-scores.npz"
         raw_timing_path = Path(directory) / "raw-timing.npz"
         timing_path = Path(directory) / "validated-timing.npz"
-        _raw_save(raw_path, scores, compressed=args.compress)
-        save_score_archive(validated_path, scores, compressed=args.compress)
+        _raw_save(raw_path, scores, compressed=args.compress, compression_level=level)
+        save_score_archive(
+            validated_path,
+            scores,
+            compressed=args.compress,
+            compression_level=args.compress_level,
+        )
         _raw_response_time_save(
             raw_timing_path,
             timing_scores,
             timing_flags,
             timing_threshold,
             compressed=args.compress,
+            compression_level=level,
         )
         save_response_time_archive(
             timing_path,
@@ -123,6 +150,7 @@ def main() -> None:
             timing_flags,
             threshold=timing_threshold,
             compressed=args.compress,
+            compression_level=args.compress_level,
         )
 
         loads = measure_many(
@@ -136,9 +164,14 @@ def main() -> None:
         )
         writes = measure_many(
             {
-                "raw": lambda: _raw_save(raw_path, scores, compressed=args.compress),
+                "raw": lambda: _raw_save(
+                    raw_path, scores, compressed=args.compress, compression_level=level
+                ),
                 "validated": lambda: save_score_archive(
-                    validated_path, scores, compressed=args.compress
+                    validated_path,
+                    scores,
+                    compressed=args.compress,
+                    compression_level=args.compress_level,
                 ),
                 "raw_timing": lambda: _raw_response_time_save(
                     raw_timing_path,
@@ -146,6 +179,7 @@ def main() -> None:
                     timing_flags,
                     timing_threshold,
                     compressed=args.compress,
+                    compression_level=level,
                 ),
                 "validated_timing": lambda: save_response_time_archive(
                     timing_path,
@@ -153,6 +187,7 @@ def main() -> None:
                     timing_flags,
                     threshold=timing_threshold,
                     compressed=args.compress,
+                    compression_level=args.compress_level,
                 ),
             },
             args.write_repeats,
@@ -170,7 +205,7 @@ def main() -> None:
     print(
         f"respondents={args.respondents} indices={args.indices} "
         f"load_repeats={args.repeats} write_repeats={args.write_repeats} "
-        f"compressed={args.compress}"
+        f"compressed={args.compress} compression_level={level if args.compress else None}"
     )
     print(f"score_bytes={score_bytes} response_time_bytes={timing_bytes}")
     for label, measurements in (("load", loads), ("save", writes)):

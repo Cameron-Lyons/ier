@@ -32,7 +32,28 @@ _CASES = [
     ),
     ("cli_input", ["--respondents", "32", "--items", "6", "--repeats", "1"]),
     ("cli_input", ["--respondents", "33", "--items", "7", "--repeats", "1", "--masks"]),
+    ("cli_input", ["--respondents", "33", "--items", "1", "--repeats", "1", "--id-column"]),
     ("cli_output", ["--respondents", "32", "--indices", "3", "--repeats", "1"]),
+    (
+        "cli_output",
+        ["--respondents", "2049", "--indices", "2", "--repeats", "1", "--respondent-ids"],
+    ),
+    (
+        "cli_output",
+        [
+            "--respondents",
+            "1025",
+            "--indices",
+            "2",
+            "--repeats",
+            "1",
+            "--workflow",
+            "composite",
+            "--flagged",
+            "--probability",
+            "--respondent-ids",
+        ],
+    ),
     (
         "cli_output",
         [
@@ -122,6 +143,27 @@ _CASES = [
             "0",
         ],
     ),
+    (
+        "evenodd",
+        [
+            "--respondents",
+            "64",
+            "--factors",
+            "3",
+            "--factor-items",
+            "5",
+            "--missing-rate",
+            "0.3",
+            "--method",
+            "halves",
+            "--order",
+            "F",
+            "--repeats",
+            "1",
+            "--warmup",
+            "0",
+        ],
+    ),
     ("flagging", ["--respondents", "64", "--repeats", "1", "--warmup", "0"]),
     (
         "flagging",
@@ -202,6 +244,9 @@ _CASES = [
         "onset",
         [*_MATRIX, "--dtype", "uint64", "--integer-offset", str(2**64 - 6), "--order", "F"],
     ),
+    ("person_fit", _MATRIX),
+    ("person_fit", [*_MATRIX, "--missing-rate", "0.3"]),
+    ("person_fit", [*_MATRIX, "--categories", "2", "--operations", "ht", "gpoly_raw"]),
     ("orchestration", ["--respondents", "64", "--indices", "3", "--repeats", "1"]),
     (
         "orchestration",
@@ -376,6 +421,7 @@ _CASES = [
         [*_MATRIX, "--missing-mode", "scattered", "--missing-rate", "1", "--critval", "0"],
     ),
     ("reliability", [*_MATRIX, "--splits", "2"]),
+    ("reliability", [*_MATRIX, "--splits", "2", "--factor-items", "6", "--order", "F"]),
     ("reliability", [*_MATRIX, "--splits", "2", "--structure", "constant", "--items", "14"]),
     ("reliability", [*_MATRIX, "--splits", "2", "--structure", "near-constant", "--order", "F"]),
     (
@@ -432,6 +478,7 @@ _CASES = [
         [*_MATRIX, "--structure", "near-constant", "--scale", "1e300", "--no-log-transform"],
     ),
     ("response_time", [*_MATRIX, "--items", "1", "--missing-rate", "0.5", "--order", "F"]),
+    ("response_time", [*_MATRIX, "--operation", "effort", "--missing-rate", "0.3", "--order", "F"]),
     (
         "response_time",
         [*_MATRIX, "--operation", "median", "--respondents", "1", "--missing-rate", "1"],
@@ -481,8 +528,28 @@ _CASES = [
         ["--respondents", "64", "--items", "24", "--repeats", "1", "--workflow", "response-time"],
     ),
     ("sequence_scoring", _MATRIX),
+    ("sequence_scoring", [*_MATRIX, "--operations", "autocorrelation", "--missing-rate", "0"]),
     ("lz", [*_MATRIX, "--operation", "discrimination", "--categories", "5"]),
     ("psychsyn", [*_MATRIX, "--operation", "psychsyn_critval"]),
+    ("psychsyn", [*_MATRIX, "--operation", "psychsyn_critval", "--item-correlations", "pairwise"]),
+    (
+        "psychsyn",
+        [*_MATRIX, "--missing-mode", "scattered", "--item-correlations", "pairwise"],
+    ),
+    (
+        "psychsyn",
+        [
+            *_MATRIX,
+            "--operation",
+            "correlations",
+            "--missing-mode",
+            "scattered",
+            "--missing-rate",
+            "0.02",
+            "--item-correlations",
+            "pairwise",
+        ],
+    ),
     ("psychsyn", [*_MATRIX, "--operation", "correlations", "--order", "F"]),
     ("psychsyn", [*_MATRIX, "--operation", "correlations", "--items", "1", "--missing-rate", "0"]),
     (
@@ -534,6 +601,7 @@ def test_performance_benchmark_cli(name: str, arguments: list[str]) -> None:
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.count("threads: OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=") == 1
     assert "median=" in result.stdout or "full=" in result.stdout
     assert "peak=" in result.stdout
     if name == "cli_input" and "--masks" in arguments:

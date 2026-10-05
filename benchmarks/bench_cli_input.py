@@ -4,6 +4,8 @@ Usage:
     uv run python benchmarks/bench_cli_input.py
     uv run python benchmarks/bench_cli_input.py --respondents 250000 --items 40
     uv run python benchmarks/bench_cli_input.py --masks
+    uv run python benchmarks/bench_cli_input.py --id-column
+    uv run python benchmarks/bench_cli_input.py --blank-cells
 """
 
 from __future__ import annotations
@@ -34,6 +36,9 @@ def _write_fixture(
     n_respondents: int,
     n_items: int,
     preamble_rows: int,
+    *,
+    id_column: bool = False,
+    blank_cells: bool = False,
 ) -> None:
     header = ",".join(f"item_{index}" for index in range(n_items))
     rows = [
@@ -42,9 +47,16 @@ def _write_fixture(
     with path.open(mode="w", encoding="utf-8", newline="") as handle:
         for index in range(preamble_rows):
             handle.write(f"survey metadata line {index + 1}\n")
-        handle.write(f"{header}\n")
+        handle.write(f"id,{header}\n" if id_column else f"{header}\n")
         for respondent in range(n_respondents):
-            handle.write(f"{rows[respondent % 5]}\n")
+            prefix = f"r{respondent}," if id_column else ""
+            row = rows[respondent % 5]
+            if blank_cells:
+                # Rotate one blank item through the first, middle, and last positions.
+                cells = row.split(",")
+                cells[respondent % n_items] = ""
+                row = ",".join(cells)
+            handle.write(f"{prefix}{row}\n")
 
 
 def _write_mask_fixture(path: Path, n_respondents: int, n_items: int) -> None:
@@ -80,29 +92,67 @@ def main() -> None:
     parser.add_argument(
         "--masks", action="store_true", help="Also measure 0/1 CSV and Boolean .npy masks"
     )
+    parser.add_argument(
+        "--id-column",
+        action="store_true",
+        help="Prefix a named respondent ID column and select the item columns around it",
+    )
+    parser.add_argument(
+        "--blank-cells",
+        action="store_true",
+        help="Leave one item blank in every row, rotating through the item positions",
+    )
     args = parser.parse_args()
 
     if args.respondents < 1 or args.items < 1 or args.repeats < 1:
         parser.error("respondents, items, and repeats must be positive")
     if args.preamble_rows < 1:
         parser.error("preamble rows must be positive")
+    if args.blank_cells and args.items < 2:
+        parser.error("blank cells need at least two items")
 
-    print(f"respondents={args.respondents} items={args.items} preamble_rows={args.preamble_rows}")
+    print(
+        f"respondents={args.respondents} items={args.items} "
+        f"preamble_rows={args.preamble_rows} id_column={args.id_column} "
+        f"blank_cells={args.blank_cells}"
+    )
+    id_column = "id" if args.id_column else None
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         cases = [("default", 0), ("skipped", args.preamble_rows)]
         for name, skip_rows in cases:
             path = root / f"{name}.csv"
-            _write_fixture(path, args.respondents, args.items, skip_rows)
-            operation = partial(_load_input, path, ",", skip_rows=skip_rows)
+            _write_fixture(
+                path,
+                args.respondents,
+                args.items,
+                skip_rows,
+                id_column=args.id_column,
+                blank_cells=args.blank_cells,
+            )
+            operation = partial(_load_input, path, ",", id_column, skip_rows=skip_rows)
             measured = measure(operation, args.repeats)
             matrix, identifiers = measured.result
-            if identifiers is not None or matrix.shape != (args.respondents, args.items):
+            expected_identifiers = (
+                [f"r{respondent}" for respondent in range(args.respondents)]
+                if args.id_column
+                else None
+            )
+            if identifiers != expected_identifiers or matrix.shape != (
+                args.respondents,
+                args.items,
+            ):
                 raise RuntimeError("benchmark fixture loaded incorrectly")
             for offset in range(min(5, args.respondents)):
                 observed = matrix[offset::5]
-                expected = (np.arange(args.items) + offset) % 5 + 1
-                np.testing.assert_array_equal(observed, np.broadcast_to(expected, observed.shape))
+                expected = np.broadcast_to(
+                    ((np.arange(args.items) + offset) % 5 + 1).astype(np.float64), observed.shape
+                )
+                if args.blank_cells:
+                    expected = expected.copy()
+                    respondents = np.arange(offset, args.respondents, 5)
+                    expected[np.arange(len(respondents)), respondents % args.items] = np.nan
+                np.testing.assert_array_equal(observed, expected)
             print(f"{name}: median={measured.median_seconds:.4f}s peak={measured.peak_mib:.3f} MiB")
         if args.masks:
             shape = (args.respondents, args.items)

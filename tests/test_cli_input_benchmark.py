@@ -124,3 +124,43 @@ def test_mask_fixture_flush_error_preserves_error_and_closes_writer(
     with pytest.raises(OSError, match="cannot flush mapped fixture"):
         benchmark.main()
     assert len(mappings) == 1 and mappings[0][0]
+
+
+def test_blank_cell_benchmark_checks_rotating_missing_items(
+    checked_benchmark: tuple[ModuleType, list[tuple[bool, weakref.ReferenceType[mmap.mmap]]]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    benchmark, _ = checked_benchmark
+    arguments = ["--respondents", "33", "--items", "7", "--blank-cells", "--repeats", "1"]
+    for extra in ([], ["--id-column"]):
+        monkeypatch.setattr("sys.argv", ["bench_cli_input.py", *arguments, *extra])
+        benchmark.main()
+        output = capsys.readouterr().out
+        assert "blank_cells=True" in output
+        assert "default: median=" in output and "skipped: median=" in output
+
+    original_load = benchmark._load_input
+
+    def filled_load(*args: object, **kwargs: object) -> tuple[np.ndarray, list[str] | None]:
+        matrix, identifiers = original_load(*args, **kwargs)
+        return np.nan_to_num(matrix), identifiers
+
+    monkeypatch.setattr(benchmark, "_load_input", filled_load)
+    with pytest.raises(AssertionError, match="Arrays are not equal"):
+        benchmark.main()
+
+
+def test_blank_cell_benchmark_requires_two_items(
+    checked_benchmark: tuple[ModuleType, list[tuple[bool, weakref.ReferenceType[mmap.mmap]]]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    benchmark, _ = checked_benchmark
+    monkeypatch.setattr("sys.argv", ["bench_cli_input.py", "--items", "1", "--blank-cells"])
+
+    with pytest.raises(SystemExit) as raised:
+        benchmark.main()
+
+    assert raised.value.code == 2
+    assert "blank cells need at least two items" in capsys.readouterr().err

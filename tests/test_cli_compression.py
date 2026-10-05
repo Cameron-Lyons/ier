@@ -11,7 +11,8 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 import numpy as np
 import pytest
 
-from ier import load_response_time_archive, load_score_archive
+from ier import load_response_time_archive, load_score_archive, load_screen_archive
+from ier.archive import _stream_npz_members
 from ier.cli import main
 
 if TYPE_CHECKING:
@@ -195,3 +196,86 @@ def test_compression_rejects_text_formats_before_reading_or_replacing_files(
     )
     assert "--compress requires --format npz" in capsys.readouterr().err
     assert destination.read_text(encoding="utf-8") == "previous result"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "screen",
+        "composite",
+        "response-time",
+        "screen-scores",
+        "composite-scores",
+        "response-time-scores",
+    ],
+)
+def test_compress_level_requires_compress_before_reading_or_replacing_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], command: str
+) -> None:
+    destination = tmp_path / "previous.npz"
+    destination.write_bytes(b"previous result")
+    assert (
+        main(
+            [
+                command,
+                str(tmp_path / "absent-input"),
+                "--format",
+                "npz",
+                "--compress-level",
+                "9",
+                "--output",
+                str(destination),
+            ]
+        )
+        == 1
+    )
+    assert "--compress-level requires --compress" in capsys.readouterr().err
+    assert destination.read_bytes() == b"previous result"
+
+
+@pytest.mark.parametrize("level", ["0", "10", "fast"])
+def test_compress_level_accepts_only_deflate_levels(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], level: str
+) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["screen", str(tmp_path / "absent.csv"), "--compress", "--compress-level", level])
+    assert exit_info.value.code == 2
+    assert "--compress-level" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", ["screen", "composite", "response-time"])
+@pytest.mark.parametrize(("options", "level"), [([], 1), (["--compress-level", "9"], 9)])
+def test_compress_level_reaches_every_npz_writer(
+    tmp_path: Path, command: str, options: list[str], level: int
+) -> None:
+    source = tmp_path / "responses.csv"
+    source.write_text("id,q1,q2,q3,q4\na,1,1,1,1\nb,1,2,3,4\nc,1,1,1,4\n", encoding="utf-8")
+    destination = tmp_path / "compressed.npz"
+    with patch("ier.archive._stream_npz_members", wraps=_stream_npz_members) as stream:
+        assert (
+            main(
+                [
+                    command,
+                    str(source),
+                    "--id-column",
+                    "id",
+                    *_arguments(command),
+                    "--format",
+                    "npz",
+                    "--output",
+                    str(destination),
+                    "--compress",
+                    *options,
+                ]
+            )
+            == 0
+        )
+    assert stream.call_args.kwargs == {"compressed": True, "compression_level": level}
+    with ZipFile(destination) as archive:
+        assert {member.compress_type for member in archive.infolist()} == {ZIP_DEFLATED}
+    if command == "screen":
+        assert load_screen_archive(destination)["respondent_ids"] == ["a", "b", "c"]
+    elif command == "composite":
+        assert load_score_archive(destination)["respondent_ids"] == ["a", "b", "c"]
+    else:
+        assert load_response_time_archive(destination)["respondent_ids"] == ["a", "b", "c"]

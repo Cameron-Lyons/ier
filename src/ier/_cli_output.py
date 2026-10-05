@@ -8,25 +8,22 @@ import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TextIO
 
 import numpy as np
 
 from ier._atomic_output import atomic_output_path
-from ier._cli_composite import (
-    validate_composite_components,
-    validate_composite_flags,
-    validate_composite_probabilities,
-)
 from ier._cli_streams import _open_text_path
 
 if TYPE_CHECKING:
+    from ier._cli_composite import CompositeReport, ResponseTimeReport
     from ier.types import IndexCatalog, ScreenResult
 
 
 _JSON_ARRAY_CHUNK_SIZE = 4096
+_CSV_CHUNK_SIZE = 1024
+_CSV_BITS = np.array(["0", "1"], dtype=object)
 _TEXT_RANK_BATCH_SIZE = 16_384
 
 
@@ -39,10 +36,7 @@ class _JsonArray:
 
 
 def _write_output(text: str, path: Path | None) -> None:
-    with _output_stream(path) as handle:
-        handle.write(text)
-        if path is None or path == Path("-"):
-            handle.write("\n")
+    _write_stream_output(path, lambda handle: handle.write(text))
 
 
 @contextmanager
@@ -55,19 +49,17 @@ def _output_stream(path: Path | None) -> Iterator[TextIO]:
         yield handle
 
 
-def _json_chunk_values(array: _JsonArray, start: int, stop: int) -> list[object]:
+def _json_chunk_values(array: _JsonArray, start: int, stop: int) -> Sequence[object]:
     """Materialize one bounded JSON-ready chunk from a large value sequence."""
-    values = array.values[start:stop]
     if array.kind == "number":
-        numeric = np.asarray(values, dtype=float)
-        chunk: list[object] = numeric.tolist()
-        for index in np.flatnonzero(~np.isfinite(numeric)):
-            chunk[int(index)] = None
-        return chunk
+        return _csv_float_column(array.values, start, stop)
+    values = array.values[start:stop]
     if array.kind == "integer":
-        return [int(value) for value in np.asarray(values, dtype=np.int_)]
+        integers: list[int] = np.asarray(values, dtype=np.int_).tolist()
+        return integers
     if array.kind == "boolean":
-        return [bool(value) for value in np.asarray(values, dtype=np.bool_)]
+        booleans: list[bool] = np.asarray(values, dtype=np.bool_).tolist()
+        return booleans
     return [str(value) for value in values]
 
 
@@ -110,20 +102,41 @@ def _write_json_value(handle: TextIO, value: object, indent: int = 0) -> None:
     json.dump(value, handle, allow_nan=False)
 
 
-def _write_json_output(
+def _write_stream_output(
     path: Path | None,
-    writer: Callable[[TextIO], None],
+    writer: Callable[[TextIO], object],
 ) -> None:
-    """Write JSON to a plain, compressed, or standard-output destination."""
+    """Stream output to a plain, compressed, or standard-output destination."""
     with _output_stream(path) as handle:
         writer(handle)
         if path is None or path == Path("-"):
             handle.write("\n")
 
 
-def _csv_number(value: float) -> float | None:
-    """Return a CSV-safe number, using an empty cell for non-finite values."""
-    return float(value) if np.isfinite(value) else None
+def _csv_float_column(
+    values: Sequence[object] | np.ndarray, start: int, stop: int
+) -> list[float | None]:
+    """Return one chunk of numbers, using None (an empty CSV cell) for non-finite values."""
+    numeric = np.asarray(values[start:stop], dtype=np.float64)
+    column: list[float | None] = numeric.tolist()
+    for index in np.flatnonzero(~np.isfinite(numeric)):
+        column[int(index)] = None
+    return column
+
+
+def _csv_bit_column(values: Sequence[object] | np.ndarray, start: int, stop: int) -> list[str]:
+    """Return one chunk of truth values as preformatted 0/1 cells."""
+    bits = np.asarray(values[start:stop], dtype=np.bool_).view(np.uint8)
+    # NumPy stores True as any nonzero byte (bool views and foreign NPZ members
+    # need not use 1), so clip the raw bytes onto the two-cell lookup table.
+    cells: list[str] = _CSV_BITS.take(bits, mode="clip").tolist()
+    return cells
+
+
+def _csv_int_column(values: Sequence[object] | np.ndarray, start: int, stop: int) -> list[int]:
+    """Return one chunk of counts as Python integers."""
+    integers: list[int] = np.asarray(values[start:stop], dtype=np.int64).tolist()
+    return integers
 
 
 def _respondent_label_values(
@@ -198,13 +211,19 @@ def _ranked_rows(
     return result
 
 
+def _alternative_options_text(groups: Sequence[Sequence[str]]) -> str:
+    """Join option groups with ';' and the interchangeable options in each with '|'."""
+    return ";".join("|".join(group) for group in groups)
+
+
 def _emit_index_catalog_text(catalog: IndexCatalog) -> str:
     lines = [
         "index\tdirection\tflag_mode\tscreen_default\tcomposite\tcomposite_default"
-        "\trequired_options"
+        "\trequired_options\talternative_options\tkeyed_responses"
     ]
     for name, metadata in catalog.items():
         required = ",".join(metadata["required_options"]) or "-"
+        alternatives = _alternative_options_text(metadata["alternative_options"]) or "-"
         lines.append(
             "\t".join(
                 (
@@ -215,6 +234,8 @@ def _emit_index_catalog_text(catalog: IndexCatalog) -> str:
                     "yes" if metadata["composite_enabled"] else "no",
                     "yes" if metadata["default_composite"] else "no",
                     required,
+                    alternatives,
+                    "yes" if metadata["uses_keyed_responses"] else "no",
                 )
             )
         )
@@ -238,6 +259,8 @@ def _write_index_catalog_csv(handle: TextIO, catalog: IndexCatalog) -> None:
         "default_composite",
         "composite_enabled",
         "required_options",
+        "alternative_options",
+        "uses_keyed_responses",
     ]
     writer = csv.DictWriter(handle, fieldnames=fieldnames)
     writer.writeheader()
@@ -251,6 +274,8 @@ def _write_index_catalog_csv(handle: TextIO, catalog: IndexCatalog) -> None:
                 "default_composite": metadata["default_composite"],
                 "composite_enabled": metadata["composite_enabled"],
                 "required_options": ",".join(metadata["required_options"]),
+                "alternative_options": _alternative_options_text(metadata["alternative_options"]),
+                "uses_keyed_responses": metadata["uses_keyed_responses"],
             }
         )
 
@@ -327,15 +352,6 @@ def _emit_screen_text(
                 f"\t{int(bool(eligible[idx]))}"
             )
     return "\n".join(lines)
-
-
-def _emit_screen_json(
-    result: ScreenResult,
-    respondent_ids: list[str] | None = None,
-) -> str:
-    output = StringIO()
-    _write_screen_json(output, result, respondent_ids)
-    return output.getvalue()
 
 
 def _write_screen_json(
@@ -417,67 +433,56 @@ def _write_screen_csv(
     eligible = np.asarray(result["consensus_eligible"])
     consensus = np.asarray(result["consensus_flags"])
     labels = _respondent_label_values(n, respondent_ids)
-    writer = csv.DictWriter(handle, fieldnames=fieldnames)
-    writer.writeheader()
-    for i in range(n):
-        row: dict[str, object] = {
-            "respondent": labels[i],
-            "flag_count": int(counts[i]),
-            "valid_index_count": int(valid_counts[i]),
-            "consensus_eligible": int(bool(eligible[i])),
-            "consensus_flag": int(bool(consensus[i])),
-        }
+    writer = csv.writer(handle)
+    writer.writerow(fieldnames)
+    # Convert bounded column chunks at once rather than formatting cell by cell.
+    for start in range(0, n, _CSV_CHUNK_SIZE):
+        stop = min(start + _CSV_CHUNK_SIZE, n)
+        columns: list[Sequence[object]] = [
+            labels[start:stop],
+            _csv_int_column(counts, start, stop),
+            _csv_int_column(valid_counts, start, stop),
+            _csv_bit_column(eligible, start, stop),
+            _csv_bit_column(consensus, start, stop),
+        ]
         for name in result["indices_used"]:
-            row[f"{name}_score"] = _csv_number(scores[name][i])
-            row[f"{name}_flag"] = int(bool(flags[name][i]))
-        writer.writerow(row)
+            columns.append(_csv_float_column(scores[name], start, stop))
+            columns.append(_csv_bit_column(flags[name], start, stop))
+        writer.writerows(zip(*columns, strict=True))
 
 
-def _emit_composite_text(
-    scores: np.ndarray,
-    method: str,
-    top: int,
-    respondent_ids: list[str] | None = None,
-    weights: Mapping[str, float] | None = None,
-    min_valid_indices: int | None = None,
-    errors: Mapping[str, str] | None = None,
-    component_scores: Mapping[str, np.ndarray] | None = None,
-    valid_index_counts: np.ndarray | None = None,
-    standardized: bool = True,
-    flags: np.ndarray | None = None,
-    flag_threshold: float | None = None,
-    flag_percentile: float | None = None,
-    probabilities: np.ndarray | None = None,
-) -> str:
-    validate_composite_components(len(scores), component_scores, valid_index_counts)
-    validate_composite_flags(len(scores), flags, flag_threshold, flag_percentile)
-    validate_composite_probabilities(len(scores), probabilities)
+def _emit_composite_text(report: CompositeReport, top: int) -> str:
+    scores = report.scores
+    flags = report.flags
+    probabilities = report.probabilities
+    component_scores = report.component_scores
+    valid_index_counts = report.valid_index_counts
     order = _ranked_rows(scores, top)
-    labels = _respondent_label_values(len(scores), respondent_ids)
-    label_name = "identifier" if respondent_ids is not None else "index"
+    labels = _respondent_label_values(len(scores), report.respondent_ids)
+    label_name = "identifier" if report.respondent_ids is not None else "index"
     lines = [
         f"respondents: {len(scores)}",
-        f"method: {method}",
-        f"standardized: {str(standardized).lower()}",
+        f"method: {report.method}",
+        f"standardized: {str(report.standardized).lower()}",
     ]
-    if weights:
+    if report.weights:
         lines.append(
-            "weights: " + ", ".join(f"{name}={weight:g}" for name, weight in weights.items())
+            "weights: " + ", ".join(f"{name}={weight:g}" for name, weight in report.weights.items())
         )
-    if min_valid_indices is not None:
-        lines.append(f"minimum valid indices: {min_valid_indices}")
+    if report.min_valid_indices is not None:
+        lines.append(f"minimum valid indices: {report.min_valid_indices}")
     if probabilities is not None:
         lines.append("probability: logistic (uncalibrated)")
     if flags is not None:
-        assert flag_threshold is not None
-        threshold_source = "percentile" if flag_percentile is not None else "fixed"
-        lines.append(f"threshold: {flag_threshold:g} ({threshold_source})")
-        if flag_percentile is not None:
-            lines.append(f"percentile: {flag_percentile:g}")
+        assert report.flag_threshold is not None
+        threshold_source = "percentile" if report.flag_percentile is not None else "fixed"
+        lines.append(f"threshold: {report.flag_threshold:g} ({threshold_source})")
+        if report.flag_percentile is not None:
+            lines.append(f"percentile: {report.flag_percentile:g}")
         lines.append(f"flagged: {int(np.sum(flags))}")
-    if errors:
+    if report.errors:
         lines.append("errors:")
-        for name, message in sorted(errors.items()):
+        for name, message in sorted(report.errors.items()):
             lines.append(f"  {name}: {message}")
     detail_names = list(component_scores) if component_scores is not None else []
     if detail_names:
@@ -504,115 +509,58 @@ def _emit_composite_text(
     return "\n".join(lines)
 
 
-def _emit_composite_json(
-    scores: np.ndarray,
-    method: str,
-    respondent_ids: list[str] | None = None,
-    weights: Mapping[str, float] | None = None,
-    min_valid_indices: int | None = None,
-    errors: Mapping[str, str] | None = None,
-    component_scores: Mapping[str, np.ndarray] | None = None,
-    valid_index_counts: np.ndarray | None = None,
-    standardized: bool = True,
-    flags: np.ndarray | None = None,
-    flag_threshold: float | None = None,
-    flag_percentile: float | None = None,
-    probabilities: np.ndarray | None = None,
-) -> str:
-    output = StringIO()
-    _write_composite_json(
-        output,
-        scores,
-        method,
-        respondent_ids,
-        weights,
-        min_valid_indices,
-        errors,
-        component_scores,
-        valid_index_counts,
-        standardized,
-        flags,
-        flag_threshold,
-        flag_percentile,
-        probabilities,
-    )
-    return output.getvalue()
-
-
-def _write_composite_json(
-    handle: TextIO,
-    scores: np.ndarray,
-    method: str,
-    respondent_ids: list[str] | None = None,
-    weights: Mapping[str, float] | None = None,
-    min_valid_indices: int | None = None,
-    errors: Mapping[str, str] | None = None,
-    component_scores: Mapping[str, np.ndarray] | None = None,
-    valid_index_counts: np.ndarray | None = None,
-    standardized: bool = True,
-    flags: np.ndarray | None = None,
-    flag_threshold: float | None = None,
-    flag_percentile: float | None = None,
-    probabilities: np.ndarray | None = None,
-) -> None:
+def _write_composite_json(handle: TextIO, report: CompositeReport) -> None:
     """Write composite JSON while bounding respondent-array allocation."""
-    validate_composite_components(len(scores), component_scores, valid_index_counts)
-    validate_composite_flags(len(scores), flags, flag_threshold, flag_percentile)
-    validate_composite_probabilities(len(scores), probabilities)
+    scores = report.scores
     payload: dict[str, object] = {
-        "method": method,
-        "standardized": standardized,
+        "method": report.method,
+        "standardized": report.standardized,
         "scores": _JsonArray(scores, "number"),
         "n_respondents": len(scores),
-        "errors": dict(errors or {}),
+        "errors": dict(report.errors),
     }
-    if weights:
-        payload["weights"] = dict(weights)
-    if min_valid_indices is not None:
-        payload["min_valid_indices"] = min_valid_indices
-    if probabilities is not None:
+    if report.weights:
+        payload["weights"] = dict(report.weights)
+    if report.min_valid_indices is not None:
+        payload["min_valid_indices"] = report.min_valid_indices
+    if report.probabilities is not None:
         payload["probability_scale"] = "uncalibrated_logistic"
-        payload["probabilities"] = _JsonArray(np.asarray(probabilities), "number")
-    if flags is not None:
-        assert flag_threshold is not None
-        payload["threshold"] = flag_threshold
-        payload["threshold_source"] = "percentile" if flag_percentile is not None else "fixed"
-        if flag_percentile is not None:
-            payload["percentile"] = flag_percentile
-        payload["flags"] = _JsonArray(np.asarray(flags), "boolean")
-    if component_scores is not None:
-        assert valid_index_counts is not None
-        payload["indices_used"] = list(component_scores)
+        payload["probabilities"] = _JsonArray(np.asarray(report.probabilities), "number")
+    if report.flags is not None:
+        assert report.flag_threshold is not None
+        payload["threshold"] = report.flag_threshold
+        payload["threshold_source"] = (
+            "percentile" if report.flag_percentile is not None else "fixed"
+        )
+        if report.flag_percentile is not None:
+            payload["percentile"] = report.flag_percentile
+        payload["flags"] = _JsonArray(np.asarray(report.flags), "boolean")
+    if report.component_scores is not None:
+        assert report.valid_index_counts is not None
+        payload["indices_used"] = list(report.component_scores)
         payload["component_scores"] = {
             name: _JsonArray(np.asarray(values), "number")
-            for name, values in component_scores.items()
+            for name, values in report.component_scores.items()
         }
         payload["valid_index_counts"] = _JsonArray(
-            np.asarray(valid_index_counts),
+            np.asarray(report.valid_index_counts),
             "integer",
         )
-    if respondent_ids is not None:
+    if report.respondent_ids is not None:
         payload["respondent_ids"] = _JsonArray(
-            _respondent_label_values(len(scores), respondent_ids),
+            _respondent_label_values(len(scores), report.respondent_ids),
             "string",
         )
     _write_json_value(handle, payload)
 
 
-def _write_composite_csv(
-    handle: TextIO,
-    scores: np.ndarray,
-    respondent_ids: list[str] | None = None,
-    component_scores: Mapping[str, np.ndarray] | None = None,
-    valid_index_counts: np.ndarray | None = None,
-    flags: np.ndarray | None = None,
-    probabilities: np.ndarray | None = None,
-) -> None:
+def _write_composite_csv(handle: TextIO, report: CompositeReport) -> None:
     """Write respondent-aligned composite scores directly to a CSV stream."""
-    validate_composite_components(len(scores), component_scores, valid_index_counts)
-    validate_composite_probabilities(len(scores), probabilities)
-    if flags is not None and len(flags) != len(scores):
-        raise ValueError("composite flag length must match composite score length")
+    scores = report.scores
+    flags = report.flags
+    probabilities = report.probabilities
+    component_scores = report.component_scores
+    valid_index_counts = report.valid_index_counts
     detail_names = list(component_scores) if component_scores is not None else []
     writer = csv.writer(handle)
     header = ["respondent", "composite_score"]
@@ -623,39 +571,39 @@ def _write_composite_csv(
     if component_scores is not None:
         header.extend(["valid_index_count", *(f"{name}_score" for name in detail_names)])
     writer.writerow(header)
-    labels = _respondent_label_values(len(scores), respondent_ids)
-    for index, (label, score) in enumerate(zip(labels, scores, strict=True)):
-        row: list[object] = [label, _csv_number(score)]
+    n_respondents = len(scores)
+    labels = _respondent_label_values(n_respondents, report.respondent_ids)
+    for start in range(0, n_respondents, _CSV_CHUNK_SIZE):
+        stop = min(start + _CSV_CHUNK_SIZE, n_respondents)
+        columns: list[Sequence[object]] = [
+            labels[start:stop],
+            _csv_float_column(scores, start, stop),
+        ]
         if probabilities is not None:
-            row.append(_csv_number(probabilities[index]))
+            columns.append(_csv_float_column(probabilities, start, stop))
         if flags is not None:
-            row.append(int(bool(flags[index])))
+            columns.append(_csv_bit_column(flags, start, stop))
         if component_scores is not None:
             assert valid_index_counts is not None
-            row.append(int(valid_index_counts[index]))
-            row.extend(_csv_number(component_scores[name][index]) for name in detail_names)
-        writer.writerow(row)
+            columns.append(_csv_int_column(valid_index_counts, start, stop))
+            columns.extend(
+                _csv_float_column(component_scores[name], start, stop) for name in detail_names
+            )
+        writer.writerows(zip(*columns, strict=True))
 
 
-def _emit_response_time_text(
-    scores: np.ndarray,
-    flags: np.ndarray,
-    metric: str,
-    direction: Literal["high", "low"],
-    cutoff: float,
-    top: int,
-    respondent_ids: list[str] | None = None,
-) -> str:
+def _emit_response_time_text(report: ResponseTimeReport, top: int) -> str:
     """Render timing results as a compact human-readable summary."""
-    labels = _respondent_label_values(len(scores), respondent_ids)
-    order = _ranked_rows(scores, top, direction)
-    label_name = "identifier" if respondent_ids is not None else "index"
+    scores = report.scores
+    labels = _respondent_label_values(len(scores), report.respondent_ids)
+    order = _ranked_rows(scores, top, report.direction)
+    label_name = "identifier" if report.respondent_ids is not None else "index"
     lines = [
         f"respondents: {len(scores)}",
-        f"metric: {metric}",
-        f"flag direction: {direction}",
-        f"threshold: {cutoff:g}",
-        f"flagged: {int(np.sum(flags))}",
+        f"metric: {report.metric}",
+        f"flag direction: {report.direction}",
+        f"threshold: {report.cutoff:g}",
+        f"flagged: {int(np.sum(report.flags))}",
         f"top suspicious respondents ({label_name}, score):",
     ]
     for index in order:
@@ -663,63 +611,39 @@ def _emit_response_time_text(
     return "\n".join(lines)
 
 
-def _emit_response_time_json(
-    scores: np.ndarray,
-    flags: np.ndarray,
-    metric: str,
-    direction: Literal["high", "low"],
-    cutoff: float,
-    respondent_ids: list[str] | None = None,
-) -> str:
-    """Render timing results as strict JSON."""
-    output = StringIO()
-    _write_response_time_json(
-        output,
-        scores,
-        flags,
-        metric,
-        direction,
-        cutoff,
-        respondent_ids,
-    )
-    return output.getvalue()
-
-
-def _write_response_time_json(
-    handle: TextIO,
-    scores: np.ndarray,
-    flags: np.ndarray,
-    metric: str,
-    direction: Literal["high", "low"],
-    cutoff: float,
-    respondent_ids: list[str] | None = None,
-) -> None:
+def _write_response_time_json(handle: TextIO, report: ResponseTimeReport) -> None:
     """Write timing JSON while bounding respondent-array allocation."""
+    scores = report.scores
     payload: dict[str, object] = {
         "n_respondents": len(scores),
-        "metric": metric,
-        "flag_direction": direction,
-        "threshold": cutoff,
+        "metric": report.metric,
+        "flag_direction": report.direction,
+        "threshold": report.cutoff,
         "scores": _JsonArray(scores, "number"),
-        "flags": _JsonArray(flags, "boolean"),
+        "flags": _JsonArray(report.flags, "boolean"),
     }
-    if respondent_ids is not None:
+    if report.respondent_ids is not None:
         payload["respondent_ids"] = _JsonArray(
-            _respondent_label_values(len(scores), respondent_ids),
+            _respondent_label_values(len(scores), report.respondent_ids),
             "string",
         )
     _write_json_value(handle, payload)
 
 
-def _write_response_time_csv(
-    handle: TextIO,
-    scores: np.ndarray,
-    flags: np.ndarray,
-    respondent_ids: list[str] | None = None,
-) -> None:
+def _write_response_time_csv(handle: TextIO, report: ResponseTimeReport) -> None:
     """Write respondent-aligned timing scores and flags directly to a CSV stream."""
+    scores = report.scores
+    n_respondents = len(scores)
+    labels = _respondent_label_values(n_respondents, report.respondent_ids)
     writer = csv.writer(handle)
     writer.writerow(["respondent", "response_time_score", "response_time_flag"])
-    labels = _respondent_label_values(len(scores), respondent_ids)
-    for label, score, flag in zip(labels, scores, flags, strict=True):
-        writer.writerow([label, _csv_number(score), int(bool(flag))])
+    for start in range(0, n_respondents, _CSV_CHUNK_SIZE):
+        stop = min(start + _CSV_CHUNK_SIZE, n_respondents)
+        writer.writerows(
+            zip(
+                labels[start:stop],
+                _csv_float_column(scores, start, stop),
+                _csv_bit_column(report.flags, start, stop),
+                strict=True,
+            )
+        )

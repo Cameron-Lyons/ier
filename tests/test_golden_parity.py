@@ -295,17 +295,22 @@ class TestGoldenExtendedIndices(unittest.TestCase):
     """Locked fixtures for guttman / markov / person_total / midpoint / lz / onset."""
 
     def test_guttman_locked(self) -> None:
+        # Item means 21/8, 5/2, 25/8, 3, 27/8, 11/4 give the easiest-first order
+        # [4, 2, 3, 5, 0, 1]; each value counts harder-item-higher pairs of 15.
+        np.testing.assert_array_equal(
+            guttman(PARITY_MATRIX, normalize=False), [3, 3, 0, 2, 0, 6, 2, 7]
+        )
         scores = guttman(PARITY_MATRIX)
         expected = np.array(
             [
-                0.7333333333333333,
-                0.6666666666666666,
-                0.0,
-                0.4666666666666667,
+                0.2,
+                0.2,
                 0.0,
                 0.13333333333333333,
+                0.0,
                 0.4,
                 0.13333333333333333,
+                0.4666666666666667,
             ]
         )
         np.testing.assert_allclose(scores, expected, rtol=0, atol=1e-12)

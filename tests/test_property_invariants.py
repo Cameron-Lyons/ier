@@ -11,7 +11,6 @@ from ier.irv import irv
 from ier.longstring import (
     _avgstr_message,
     _longstr_message,
-    _run_length_decode,
     _run_length_encode,
     longstring,
 )
@@ -56,7 +55,7 @@ class TestLongstringProperties:
     def test_run_length_encode_decode_roundtrip(self, message: str) -> None:
         """Encoding then decoding should return the original string."""
         encoded = _run_length_encode(message)
-        decoded = _run_length_decode(encoded)
+        decoded = "".join(char * count for char, count in encoded)
         assert decoded == message
 
     @given(non_empty_string())

@@ -10,7 +10,7 @@ import pytest
 from ier import IndexOptions
 from ier.acquiescence import acquiescence, acquiescence_flag
 from ier.mahad import mahad
-from ier.screen import _reduce_screen_results, screen
+from ier.screen import _reduce_screen_results, screen, screen_scores
 from ier.visualize import plot_distributions, plot_flag_counts, plot_flagged_heatmap
 
 
@@ -384,6 +384,7 @@ class TestScreen(unittest.TestCase):
             ({"irv": True}, ["irv"], None, "finite number"),
             ({"irv": -1.0}, ["irv"], None, "between 0 and 100"),
             ({"irv": 101.0}, ["irv"], None, "between 0 and 100"),
+            ({"irv": cast("Any", 10**400)}, ["irv"], None, "between 0 and 100"),
             ({"irv": 90.0}, ["irv"], {"irv": 0.5}, "both a threshold and percentile"),
         ]
         for percentiles, indices, thresholds, message in cases:
@@ -397,6 +398,25 @@ class TestScreen(unittest.TestCase):
                     thresholds=thresholds,
                     percentiles=percentiles,
                 )
+
+    def test_non_mapping_overrides_raise_type_error(self) -> None:
+        scores = {"irv": np.array([0.1, 0.2, 0.3])}
+        for value in [[("irv", 1.0)], (("irv", 1.0),), "irv"]:
+            for label in ["thresholds", "percentiles"]:
+                message = f"^{label} must be a mapping of registered index names to numbers$"
+                override = cast("Any", {label: value})
+                with self.subTest(label=label, value=value):
+                    with self.assertRaisesRegex(TypeError, message):
+                        screen(self.data, indices=["irv"], **override)
+                    with self.assertRaisesRegex(TypeError, message):
+                        screen_scores(scores, **override)
+
+    def test_empty_index_selection_keeps_returning_an_empty_screen(self) -> None:
+        result = screen(self.data, indices=[])
+
+        self.assertEqual(result["n_indices"], 0)
+        self.assertEqual(result["indices_used"], [])
+        self.assertFalse(result["consensus_flags"].any())
 
     def test_invalid_consensus_threshold_raises(self) -> None:
         for value in [0, -1, 1.5, True]:
@@ -622,6 +642,64 @@ class TestDataFrameInputs(unittest.TestCase):
         df = pl.DataFrame({"a": [1.0, 3.0], "b": [2.0, 3.0], "c": [3.0, 3.0], "d": [4.0, 3.0]})
         scores = irv(df.to_numpy())
         self.assertEqual(len(scores), 2)
+
+    def _nullable_frames(self) -> dict[str, Any]:
+        pd = pytest.importorskip("pandas")
+        rng = np.random.default_rng(11)
+        values = rng.integers(1, 6, size=(40, 12)).astype(float)
+        values[rng.random(values.shape) < 0.05] = np.nan
+        mixed = pd.DataFrame(values)
+        mixed[3] = mixed[3].map(lambda value: None if np.isnan(value) else str(int(value)))
+        return {
+            "Int64 with pd.NA": pd.DataFrame(values).convert_dtypes(),
+            "Float64 with pd.NA": pd.DataFrame(values / 2).astype("Float64"),
+            "object column": mixed,
+        }
+
+    def test_pandas_nullable_dataframes_screen_every_index(self) -> None:
+        options = IndexOptions(scale_min=1, scale_max=5, onset_window_size=3, onset_min_items=6)
+        for name, df in self._nullable_frames().items():
+            with self.subTest(frame=name):
+                converted = df.to_numpy(dtype=float, na_value=np.nan)
+                result = screen(df, options=options)
+                reference = screen(converted, options=options)
+
+                self.assertEqual(result["errors"], {})
+                self.assertEqual(result["indices_used"], reference["indices_used"])
+                self.assertGreater(result["n_indices"], 0)
+                for index_name in reference["indices_used"]:
+                    np.testing.assert_array_equal(
+                        result["scores"][index_name], reference["scores"][index_name]
+                    )
+                    np.testing.assert_array_equal(
+                        result["flags"][index_name], reference["flags"][index_name]
+                    )
+                np.testing.assert_array_equal(
+                    result["consensus_flags"], reference["consensus_flags"]
+                )
+
+    def test_pandas_nullable_dataframes_compose(self) -> None:
+        from ier import composite
+
+        for name, df in self._nullable_frames().items():
+            with self.subTest(frame=name):
+                converted = df.to_numpy(dtype=float, na_value=np.nan)
+                np.testing.assert_array_equal(composite(df), composite(converted))
+
+    def test_nested_lists_with_none_screen_without_soft_failures(self) -> None:
+        data = [
+            [1, 2, 3, 4, 5, 4],
+            [3, 3, 3, 3, 3, 3],
+            [5, 4, None, 2, 1, 2],
+            [2, 4, 1, 5, 3, None],
+        ]
+
+        result = screen(data, indices=["irv", "longstring"])
+
+        self.assertEqual(result["errors"], {})
+        self.assertEqual(result["indices_used"], ["irv", "longstring"])
+        reference = screen(np.array(data, dtype=float), indices=["irv", "longstring"])
+        np.testing.assert_array_equal(result["scores"]["irv"], reference["scores"]["irv"])
 
 
 class TestPlotDistributions(unittest.TestCase):

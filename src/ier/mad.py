@@ -66,10 +66,10 @@ def mad(
     Example:
         >>> data = [[5, 1, 4, 2], [3, 3, 3, 3], [5, 2, 4, 1]]
         >>> mad_scores = mad(data, positive_items=[0, 2], negative_items=[1, 3], scale_max=5)
-        >>> print(mad_scores)
+        >>> mad_scores.tolist()
         [0.0, 0.0, 1.0]
     """
-    x_array = validate_matrix_input(x, check_type=False)
+    x_array = validate_matrix_input(x)
     n_cols = x_array.shape[1]
 
     if item_pairs is not None:
@@ -163,7 +163,7 @@ def mad_flag(
     Example:
         >>> data = [[5, 1, 4, 2], [5, 5, 5, 5], [5, 2, 4, 1]]
         >>> scores, flags = mad_flag(data, positive_items=[0, 2], negative_items=[1, 3])
-        >>> print(flags)
+        >>> flags.tolist()
         [False, True, False]
     """
     scores = mad(

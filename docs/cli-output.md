@@ -60,6 +60,8 @@ container; this option requires `--format npz`. Compression preserves every
 array and metadata field and requires no schema change or special loading
 option. Repeated scores, flags, and IDs can become much smaller, while
 continuous scores often compress modestly and take more CPU to write and load.
+`--compress` uses DEFLATE level 1 by default; add `--compress-level 1-9` to
+trade write time for size (9 is smallest). Any level loads the same way.
 Archives use the same atomic file replacement as the text formats.
 Load every archive with pickling disabled:
 
@@ -99,8 +101,9 @@ print(saved["errors"])
 names, aligned vectors, optional IDs, and soft failures before opening the file.
 It streams compatible arrays without constructing a respondent-by-index matrix;
 the shared atomic boundary protects the destination from later I/O failures.
-Both `save_score_archive()` and `save_response_time_archive()` accept the Boolean
-`compressed` option, which defaults to `False`. Archive respondent IDs and error
+Every public archive writer accepts the Boolean `compressed` option, which
+defaults to `False`, and an optional `compression_level` from 1 to 9 for
+compressed output. Archive respondent IDs and error
 messages cannot end with a NUL character because fixed-width NumPy Unicode
 would silently truncate that character; embedded NULs are preserved. Invalid
 Unicode codepoints in external archive metadata produce a contextual error.
@@ -135,7 +138,8 @@ Without a subset, historical index failures are retained in output and reported
 on standard error; `--strict` rejects them before writing. Composite output
 retains only failures for composite-enabled indices, although strict validation
 still audits every failure before conversion. Saved screening-only scores must
-be excluded from composites with `--indices`.
+be excluded from composites with `--indices` or skipped with `--skip-unsupported`,
+which names the skipped indices on standard error.
 
 Input matrix options, worker counts, and `best_subset` are unavailable for saved
 scores. Select the desired component names explicitly. Composite archives need
@@ -177,6 +181,12 @@ when an index has no available scores. JSON exposes the same values inside each
 index summary and uses `null` for an unavailable rate. Soft failures are stored
 in aligned `error_names` and `error_messages` Unicode vectors.
 
+`save_screen_archive()` writes this schema from Python, and
+`load_screen_archive()` restores the complete `ScreenResult` from either writer.
+The loader recomputes each `flag__NAME` vector from its score, threshold, and
+source, then checks the respondent counts, consensus decisions, and summary
+counts, so the restored result can be plotted or reported without rescoring.
+
 ### Composite schema
 
 `composite` archives include the `method` string scalar, `standardized` boolean
@@ -215,6 +225,20 @@ unchanged.
 `response-time` archives include `metric`, `flag_direction`, `threshold`,
 respondent-aligned `scores`, and boolean `flags`.
 
+| `metric` | `flag_direction` | Scores |
+|----------|------------------|--------|
+| `mean`, `median`, `sd`, `min` | `low` | Per-respondent timing summaries |
+| `consistency` | `low` | Coefficients of variation |
+| `mixture` | `high` | Fast-component probabilities |
+| `effort` | `low` | Response time effort (RTE) proportions |
+
+`effort` extends the allowed metric values without a schema change, so archives
+from earlier releases load unchanged; earlier readers reject only the new
+metric value. Fixed effort cutoffs, including the default 0.90, flag RTE
+strictly below the threshold and verify under the tie-exclusive rule. An effort
+archive's threshold and every available score must lie between 0 and 1, the
+range of RTE, so an item time saved as an effort cutoff is rejected.
+
 Load and reflag the retained scores through the public validated boundary:
 
 ```python
@@ -242,10 +266,13 @@ save_response_time_archive(
 ```
 
 `load_response_time_archive()` disables pickling and verifies schema version,
-metric and direction compatibility, finite cutoff metadata, aligned score and
-flag vectors, optional respondent identifiers, and agreement between stored
-flags and their cutoff rule. It accepts both inclusive fixed-threshold flags and
-tie-exclusive percentile flags.
+metric and direction compatibility, finite cutoff metadata, the RTE range of
+effort cutoffs and scores, aligned score and flag vectors, optional respondent
+identifiers, and agreement between stored flags and their cutoff rule. It accepts both inclusive fixed-threshold flags and
+tie-exclusive percentile flags. `response_time_score_flags()` includes ties at a
+fixed cutoff; to apply the strict effort rule to a new cutoff in Python, compare
+the saved effort scores directly, as in `saved["scores"] < 0.8`, which never
+flags unavailable scores.
 
 `save_response_time_archive()` writes the same CLI-compatible schema and checks
 all scores, Boolean flags, cutoff metadata, direction rules, and optional
@@ -258,14 +285,17 @@ Reflag timing archives or convert them to another output format from the CLI:
 ier response-time-scores timing.npz --threshold 1.0 --format csv --output revised.csv
 ier response-time-scores timing.npz --percentile 1 --format npz --output stricter.npz
 ier response-time-scores timing.npz --format json --output timing.json.gz
+ier response-time-scores effort.npz --threshold 0.8 --format json
 ```
 
 `response-time-scores` validates the archive before using its retained scores,
 metric, suspicious-tail direction, and respondent IDs. It never reads the
-original timing matrix or refits a mixture. Direct metrics and consistency use
-the low tail; mixture probabilities use the high tail. Choose either
+original timing matrix or refits a mixture. Direct metrics, consistency, and
+effort use the low tail; mixture probabilities use the high tail. Choose either
 `--threshold` for an inclusive fixed cutoff or `--percentile` for a strict
-sample-percentile cutoff that excludes ties. These options are mutually
+sample-percentile cutoff that excludes ties. Effort is the exception to the
+inclusive fixed rule: a fixed RTE cutoff must lie between 0 and 1 and flags
+scores strictly below it, on both timing commands. These options are mutually
 exclusive on both timing commands.
 
 With neither cutoff option, the saved threshold and exact flags are preserved,
@@ -278,3 +308,85 @@ options are unavailable for saved timing scores.
 
 Consumers should reject unsupported future `schema_version` values rather than
 assuming their layout is unchanged.
+
+## Input inspection
+
+`ier inspect DATA` loads a response matrix with the same input options as the
+scoring commands and reports how it was parsed, without scoring any index:
+
+```bash
+ier inspect export.csv --id-column ResponseId --item-pattern 'Q*' --missing-value NA
+ier inspect responses.csv --format json --output inspection.json
+```
+
+Text output is a short summary that lists at most ten item names and the ten
+most-missing items. `--format json` writes one object with every item, and
+`--output` writes either format with the same atomic replacement and `.gz`,
+`.bz2`, or `.xz` compression as result files.
+
+| Key | Value |
+|-----|-------|
+| `source` | Input path, or `standard input` |
+| `input_format` | `delimited` or `npy` |
+| `delimiter` | Field delimiter; `null` for whitespace-separated or `.npy` input |
+| `delimiter_detection` | `explicit` (`--delimiter`), `sniffer` (comma, tab, or semicolon found by `csv.Sniffer`), `fallback` (chosen from the first records' fields), or `whitespace`; `null` for `.npy` input |
+| `header` | `present` (declared with `--header present` or implied by named columns), `auto-detected` (non-numeric first cell), or `absent` |
+| `id_column` | `--id-column` name, or `null` |
+| `n_columns` | Input columns, including identifier and unselected columns |
+| `n_respondents`, `n_items` | Shape of the matrix that scoring commands would use |
+| `item_names` | Selected header names in scoring order, or `null` without a header |
+| `item_positions` | 1-based input column of each selected item |
+| `missing_cells`, `missing_by_item` | Missing cells overall and for each selected item |
+| `infinite_cells` | Infinite cells, which are left out of the value summary |
+| `observed_min`, `observed_max` | Smallest and largest finite responses, or `null` when there are none |
+| `distinct_values` | Number of distinct finite responses |
+| `non_integer_values` | Whether any finite response has a fractional part |
+| `respondents_at_min`, `respondents_at_max` | Respondents with at least one response at each observed extreme |
+| `suggested_options` | `--scale-min=VALUE` and `--scale-max=VALUE` arguments for the observed extremes, or an empty list |
+| `warnings` | Human-readable cautions about the observed scale |
+
+When `--scale-min` and `--scale-max` are omitted, scale-aware indices infer the
+response scale from the observed extremes, so `suggested_options` reproduces
+the bounds a scoring command would use. Pass the bounds explicitly when the
+questionnaire's scale is wider. Each entry is one complete argument that
+scoring commands accept as written; the `=` form keeps a negative value in
+exponent notation, such as `-1e-05`, from being read as another option.
+`warnings` notes an observed extreme used by
+fewer than 1% of respondents, a single distinct value, no finite responses, or
+infinite cells.
+
+## Index catalog
+
+`ier indices` lists the registry metadata that `index_catalog()` returns, one
+entry per registered index in registry order:
+
+```bash
+ier indices
+ier indices --format json --output indices.json
+ier indices --format csv --output indices.csv
+```
+
+| Key | Value |
+|-----|-------|
+| `flag_direction` | `high` or `low`: the suspicious tail of the index |
+| `flag_mode` | `percentile` for tail cutoffs, or `present` when any available score flags |
+| `default_screen` | Whether `screen` scores the index when `--indices` is omitted |
+| `default_composite` | Whether `composite` includes the index when `--indices` is omitted |
+| `composite_enabled` | Whether composites accept the index |
+| `required_options` | `IndexOptions` fields that must all be set before the index can run |
+| `alternative_options` | Groups of interchangeable `IndexOptions` fields; at least one field in each group must be set |
+| `uses_keyed_responses` | Whether the index reads responses with `--reverse-keyed-items` reverse-scored |
+
+JSON writes `{"n_indices": N, "indices": {NAME: METADATA}}`, with
+`required_options` as an array of field names and `alternative_options` as an
+array of arrays, for example
+`[["infrequency_expected_responses", "infrequency_acceptable_ranges"]]`. CSV
+writes an `index` column followed by these keys, with `True`/`False` booleans,
+comma-separated `required_options`, and `alternative_options` groups separated
+by `;` with the fields inside a group separated by `|`; an empty cell means no
+options. Text writes the same rows tab-separated under the shorter headings
+`index`, `direction`, `flag_mode`, `screen_default`, `composite`,
+`composite_default`, `required_options`, `alternative_options`, and
+`keyed_responses`, with
+`yes`/`no` booleans and `-` for no options. `--output` accepts the same `.gz`,
+`.bz2`, and `.xz` suffixes and atomic replacement as result files.

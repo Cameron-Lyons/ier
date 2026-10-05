@@ -10,6 +10,7 @@ import numpy as np
 from ier import IndexOptions
 from ier.composite import (
     _combine_scores,
+    _CompositeRun,
     composite,
     composite_flag,
     composite_probability,
@@ -383,18 +384,14 @@ class TestComposite(unittest.TestCase):
 
     @patch("ier.composite.score_registered_indices")
     def test_completeness_propagates_and_summary_reports_counts(self, score_mock: Any) -> None:
-        def score_indices(
-            *_args: Any, **kwargs: Any
-        ) -> tuple[dict[str, np.ndarray], dict[str, str]]:
-            irv = np.array([1.0, np.nan, 3.0, np.nan])
-            if not kwargs.get("apply_composite_direction", False):
-                irv *= -1.0
-            return {
-                "irv": irv,
+        # Raw IRV scores are low-is-suspicious; composites reverse them.
+        score_mock.side_effect = lambda *_args, **_kwargs: (
+            {
+                "irv": np.array([-1.0, np.nan, -3.0, np.nan]),
                 "longstring": np.array([5.0, 7.0, np.nan, np.nan]),
-            }, {}
-
-        score_mock.side_effect = score_indices
+            },
+            {},
+        )
         data = np.ones((4, 3), dtype=float)
         kwargs = {
             "indices": ["irv", "longstring"],
@@ -506,7 +503,9 @@ class TestComposite(unittest.TestCase):
             ({"irv": np.inf}, "positive finite"),
             ({"irv": True}, "positive finite"),
             ({"irv": cast("Any", "invalid")}, "positive finite"),
+            ({"irv": cast("Any", 10**400)}, "positive finite"),
             ({"mahad": 2.0}, "not selected"),
+            ({"unknown": 2.0}, "unknown weight index: unknown"),
         ]
 
         for weights, message in cases:
@@ -516,6 +515,34 @@ class TestComposite(unittest.TestCase):
                     indices=["irv", "longstring"],
                     weights=weights,
                 )
+
+    def test_non_mapping_weights_raise_type_error(self) -> None:
+        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
+        message = "^weights must be a mapping of registered index names to numbers$"
+        for weights in [[("irv", 2.0)], (("irv", 2.0),), "irv"]:
+            with self.subTest(weights=weights), self.assertRaisesRegex(TypeError, message):
+                composite(data, indices=["irv", "longstring"], weights=cast("Any", weights))
+
+    @patch(
+        "ier.composite.score_registered_indices",
+        side_effect=AssertionError("indices were scored"),
+    )
+    def test_empty_index_selection_raises_before_scoring(self, _score_mock: Any) -> None:
+        data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3]]
+        calls = {
+            "composite": lambda: composite(data, indices=[]),
+            "flag": lambda: composite_flag(data, indices=[]),
+            "summary": lambda: composite_summary(data, indices=[]),
+            "probability": lambda: composite_probability(data, indices=[]),
+        }
+        for name, call in calls.items():
+            with (
+                self.subTest(name=name),
+                self.assertRaisesRegex(
+                    ValueError, "^indices must name at least one registered index$"
+                ),
+            ):
+                call()
 
 
 class TestCompositeProbability(unittest.TestCase):
@@ -579,7 +606,8 @@ class TestCompositeProbability(unittest.TestCase):
     def test_extreme_scores_are_transformed_without_overflow(self) -> None:
         scores = np.array([-np.inf, -1000.0, -1.0, 0.0, 1.0, 1000.0, np.inf, np.nan])
 
-        with patch("ier.composite.composite", return_value=scores):
+        run = _CompositeRun(scores, {}, {}, "mean", True, {}, None, None)
+        with patch("ier.composite._run_composite", return_value=run):
             result = composite_probability([[1.0]])
 
         expected = np.array(
@@ -610,19 +638,6 @@ class TestCompositeProbability(unittest.TestCase):
         self.assertIn("mad", diagnostics)
         self.assertIn("mad_positive_items", diagnostics["mad"])
 
-    @patch("ier.composite.composite", return_value=np.array([0.0]))
-    def test_diagnostics_requires_diagnostic_pair(self, _composite_mock: Any) -> None:
-        with self.assertRaisesRegex(TypeError, "expected .* diagnostics"):
-            composite_probability([[1.0]], return_diagnostics=True)
-
-    @patch(
-        "ier.composite.composite",
-        return_value=(np.array([0.0]), {"irv": "unavailable"}),
-    )
-    def test_default_rejects_unexpected_diagnostic_pair(self, _composite_mock: Any) -> None:
-        with self.assertRaisesRegex(TypeError, "unexpected diagnostics"):
-            composite_probability([[1.0]])
-
 
 class TestCompositeBestSubset(unittest.TestCase):
     """Tests for composite best_subset method."""
@@ -637,15 +652,35 @@ class TestCompositeBestSubset(unittest.TestCase):
         result = composite(data, method="best_subset")
         self.assertEqual(len(result), 3)
 
-    def test_overrides_indices(self) -> None:
-        """Test that best_subset overrides user-specified indices."""
+    def test_explicit_indices_are_deprecated_and_ignored(self) -> None:
+        """best_subset still overrides explicit indices, now with a caller-level warning."""
         data = [
             [1, 2, 3, 4, 5, 4, 3, 2, 1, 2],
             [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
             [5, 4, 3, 2, 1, 2, 3, 4, 5, 4],
         ]
-        result = composite(data, method="best_subset", indices=["mahad"])
-        self.assertEqual(len(result), 3)
+        expected = composite(data, method="best_subset")
+        calls = {
+            "composite": lambda: composite(data, ["mahad"], "best_subset"),
+            "flag": lambda: composite_flag(data, ["mahad"], "best_subset")[0],
+            "summary": lambda: composite_summary(data, ["mahad"], "best_subset")["composite"],
+            "probability": lambda: composite_probability(data, ["mahad"], "best_subset"),
+        }
+        for name, call in calls.items():
+            with (
+                self.subTest(name=name),
+                self.assertWarnsRegex(
+                    DeprecationWarning,
+                    r"indices is ignored when method='best_subset'; this will raise",
+                ) as caught,
+            ):
+                result = call()
+            self.assertEqual(caught.filename, __file__)
+            if name == "probability":
+                expected_result = 1.0 / (1.0 + np.exp(-expected))
+                np.testing.assert_allclose(result, expected_result)
+            else:
+                np.testing.assert_allclose(result, expected)
 
     def test_with_mad(self) -> None:
         """Test best_subset with MAD item info provided."""

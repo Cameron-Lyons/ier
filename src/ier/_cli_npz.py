@@ -7,41 +7,20 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from ier._cli_composite import (
-    validate_composite_components,
-    validate_composite_flags,
-    validate_composite_probabilities,
-)
 from ier.archive import (
+    _archive_header,
+    _respondent_ids_member,
     _validate_archive_strings,
-    _validate_respondent_ids,
+    _write_npz_atomically,
     save_response_time_archive,
+    save_screen_archive,
 )
-from ier.archive import _write_npz_archive as _stream_npz_archive
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ier.types import ResponseTimeFlagDirection, ResponseTimeMetric, ScreenResult
-
-
-def _metadata(result_type: str, n_respondents: int) -> dict[str, np.ndarray]:
-    return {
-        "schema_version": np.asarray(1, dtype=np.int64),
-        "result_type": np.asarray(result_type, dtype=np.str_),
-        "n_respondents": np.asarray(n_respondents, dtype=np.int64),
-    }
-
-
-def _add_respondent_ids(
-    payload: dict[str, np.ndarray],
-    n_respondents: int,
-    respondent_ids: list[str] | None,
-) -> None:
-    if respondent_ids is None:
-        return
-    values = _validate_respondent_ids(respondent_ids, n_respondents)
-    payload["respondent_ids"] = np.asarray(values, dtype=np.str_)
+    from ier._cli_composite import CompositeReport, ResponseTimeReport
+    from ier.types import ScreenResult
 
 
 def _add_errors(
@@ -65,11 +44,17 @@ def _require_npz_output_path(path: Path | None) -> Path:
 
 
 def _write_npz_archive(
-    path: Path | None, payload: dict[str, np.ndarray], *, compressed: bool = False
+    path: Path | None,
+    payload: dict[str, np.ndarray],
+    *,
+    compressed: bool = False,
+    compression_level: int | None = None,
 ) -> None:
     """Write one pickle-free NumPy result archive to an explicit file path."""
     destination = _require_npz_output_path(path)
-    _stream_npz_archive(destination, payload, compressed=compressed)
+    _write_npz_atomically(
+        destination, payload, compressed=compressed, compression_level=compression_level
+    )
 
 
 def _write_screen_npz(
@@ -78,169 +63,81 @@ def _write_screen_npz(
     respondent_ids: list[str] | None = None,
     *,
     compressed: bool = False,
+    compression_level: int | None = None,
 ) -> None:
     """Write complete screening results as a versioned NumPy archive."""
-    names = result["indices_used"]
-    summary_columns = ["mean", "std", "min", "max"]
-    summary_statistics = np.asarray(
-        [
-            [
-                result["summary"][name]["mean"],
-                result["summary"][name]["std"],
-                result["summary"][name]["min"],
-                result["summary"][name]["max"],
-            ]
-            for name in names
-        ],
-        dtype=np.float64,
-    ).reshape(len(names), len(summary_columns))
-    payload = _metadata("screen", result["n_respondents"])
-    payload.update(
-        {
-            "n_indices": np.asarray(result["n_indices"], dtype=np.int64),
-            "min_flags": np.asarray(result["min_flags"], dtype=np.int64),
-            "index_names": np.asarray(names, dtype=np.str_),
-            "thresholds": np.asarray(
-                [
-                    np.nan if result["thresholds"][name] is None else result["thresholds"][name]
-                    for name in names
-                ],
-                dtype=np.float64,
-            ),
-            "threshold_sources": np.asarray(
-                [result["threshold_sources"][name] for name in names],
-                dtype=np.str_,
-            ),
-            "percentiles": np.asarray(
-                [
-                    np.nan if result["percentiles"][name] is None else result["percentiles"][name]
-                    for name in names
-                ],
-                dtype=np.float64,
-            ),
-            "flag_counts": np.asarray(result["flag_counts"], dtype=np.int64),
-            "valid_index_counts": np.asarray(
-                result["valid_index_counts"],
-                dtype=np.int64,
-            ),
-            "consensus_eligible": np.asarray(
-                result["consensus_eligible"],
-                dtype=np.bool_,
-            ),
-            "consensus_flags": np.asarray(result["consensus_flags"], dtype=np.bool_),
-            "summary_columns": np.asarray(summary_columns, dtype=np.str_),
-            "summary_statistics": summary_statistics,
-            "summary_n_flagged": np.asarray(
-                [result["summary"][name]["n_flagged"] for name in names],
-                dtype=np.int64,
-            ),
-            "summary_n_valid": np.asarray(
-                [result["summary"][name]["n_valid"] for name in names],
-                dtype=np.int64,
-            ),
-            "summary_n_unavailable": np.asarray(
-                [result["summary"][name]["n_unavailable"] for name in names],
-                dtype=np.int64,
-            ),
-            "summary_flag_rate": np.asarray(
-                [result["summary"][name]["flag_rate"] for name in names],
-                dtype=np.float64,
-            ),
-        }
+    save_screen_archive(
+        _require_npz_output_path(path),
+        result,
+        respondent_ids=respondent_ids,
+        compressed=compressed,
+        compression_level=compression_level,
     )
-    if result["min_valid_indices"] is not None:
-        payload["min_valid_indices"] = np.asarray(
-            result["min_valid_indices"],
-            dtype=np.int64,
-        )
-    _add_errors(payload, result["errors"])
-    for name in names:
-        payload[f"score__{name}"] = np.asarray(result["scores"][name], dtype=np.float64)
-        payload[f"flag__{name}"] = np.asarray(result["flags"][name], dtype=np.bool_)
-    _add_respondent_ids(payload, result["n_respondents"], respondent_ids)
-    _write_npz_archive(path, payload, compressed=compressed)
 
 
 def _write_composite_npz(
     path: Path | None,
-    scores: np.ndarray,
-    method: str,
-    respondent_ids: list[str] | None = None,
-    weights: Mapping[str, float] | None = None,
-    min_valid_indices: int | None = None,
-    errors: Mapping[str, str] | None = None,
-    component_scores: Mapping[str, np.ndarray] | None = None,
-    valid_index_counts: np.ndarray | None = None,
-    standardized: bool = True,
-    flags: np.ndarray | None = None,
-    flag_threshold: float | None = None,
-    flag_percentile: float | None = None,
-    probabilities: np.ndarray | None = None,
+    report: CompositeReport,
     *,
     compressed: bool = False,
+    compression_level: int | None = None,
 ) -> None:
     """Write composite results as a versioned NumPy archive."""
-    validate_composite_components(len(scores), component_scores, valid_index_counts)
-    validate_composite_flags(len(scores), flags, flag_threshold, flag_percentile)
-    validate_composite_probabilities(len(scores), probabilities)
-
-    payload = _metadata("composite", len(scores))
+    scores = report.scores
+    payload = _archive_header("composite", len(scores))
     payload.update(
         {
-            "method": np.asarray(method, dtype=np.str_),
-            "standardized": np.asarray(standardized, dtype=np.bool_),
+            "method": np.asarray(report.method, dtype=np.str_),
+            "standardized": np.asarray(report.standardized, dtype=np.bool_),
             "scores": np.asarray(scores, dtype=np.float64),
         }
     )
-    if weights:
-        payload["weight_names"] = np.asarray(list(weights), dtype=np.str_)
-        payload["weights"] = np.asarray(list(weights.values()), dtype=np.float64)
-    if min_valid_indices is not None:
-        payload["min_valid_indices"] = np.asarray(min_valid_indices, dtype=np.int64)
-    if probabilities is not None:
+    if report.weights:
+        payload["weight_names"] = np.asarray(list(report.weights), dtype=np.str_)
+        payload["weights"] = np.asarray(list(report.weights.values()), dtype=np.float64)
+    if report.min_valid_indices is not None:
+        payload["min_valid_indices"] = np.asarray(report.min_valid_indices, dtype=np.int64)
+    if report.probabilities is not None:
         payload["probability_scale"] = np.asarray("uncalibrated_logistic", dtype=np.str_)
-        payload["probabilities"] = np.asarray(probabilities, dtype=np.float64)
-    if flags is not None:
-        assert flag_threshold is not None
-        payload["threshold"] = np.asarray(flag_threshold, dtype=np.float64)
+        payload["probabilities"] = np.asarray(report.probabilities, dtype=np.float64)
+    if report.flags is not None:
+        assert report.flag_threshold is not None
+        payload["threshold"] = np.asarray(report.flag_threshold, dtype=np.float64)
         payload["threshold_source"] = np.asarray(
-            "percentile" if flag_percentile is not None else "fixed",
+            "percentile" if report.flag_percentile is not None else "fixed",
             dtype=np.str_,
         )
-        if flag_percentile is not None:
-            payload["percentile"] = np.asarray(flag_percentile, dtype=np.float64)
-        payload["flags"] = np.asarray(flags, dtype=np.bool_)
-    if component_scores is not None:
-        assert valid_index_counts is not None
-        payload["index_names"] = np.asarray(list(component_scores), dtype=np.str_)
-        payload["valid_index_counts"] = np.asarray(valid_index_counts, dtype=np.int64)
-        for name, values in component_scores.items():
+        if report.flag_percentile is not None:
+            payload["percentile"] = np.asarray(report.flag_percentile, dtype=np.float64)
+        payload["flags"] = np.asarray(report.flags, dtype=np.bool_)
+    if report.component_scores is not None:
+        assert report.valid_index_counts is not None
+        payload["index_names"] = np.asarray(list(report.component_scores), dtype=np.str_)
+        payload["valid_index_counts"] = np.asarray(report.valid_index_counts, dtype=np.int64)
+        for name, values in report.component_scores.items():
             payload[f"score__{name}"] = np.asarray(values, dtype=np.float64)
-    _add_errors(payload, errors)
-    _add_respondent_ids(payload, len(scores), respondent_ids)
-    _write_npz_archive(path, payload, compressed=compressed)
+    _add_errors(payload, report.errors)
+    payload.update(_respondent_ids_member(report.respondent_ids, len(scores)))
+    _write_npz_archive(path, payload, compressed=compressed, compression_level=compression_level)
 
 
 def _write_response_time_npz(
     path: Path | None,
-    scores: np.ndarray,
-    flags: np.ndarray,
-    metric: ResponseTimeMetric,
-    direction: ResponseTimeFlagDirection,
-    cutoff: float,
-    respondent_ids: list[str] | None = None,
+    report: ResponseTimeReport,
     *,
     compressed: bool = False,
+    compression_level: int | None = None,
 ) -> None:
     """Write response-time results as a versioned NumPy archive."""
     destination = _require_npz_output_path(path)
     save_response_time_archive(
         destination,
-        scores,
-        flags,
-        threshold=cutoff,
-        metric=metric,
-        flag_direction=direction,
-        respondent_ids=respondent_ids,
+        report.scores,
+        report.flags,
+        threshold=report.cutoff,
+        metric=report.metric,
+        flag_direction=report.direction,
+        respondent_ids=report.respondent_ids,
         compressed=compressed,
+        compression_level=compression_level,
     )

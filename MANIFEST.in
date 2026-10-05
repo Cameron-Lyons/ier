@@ -2,4 +2,5 @@ recursive-include tests/fixtures *
 recursive-include tests *.py
 recursive-include scripts *.py *.sh
 recursive-include benchmarks *.py
+recursive-include docs *.md
 include uv.lock

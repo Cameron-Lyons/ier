@@ -5,7 +5,15 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-from ier import composite, composite_scores, composite_scores_summary, composite_summary
+from ier import (
+    ScreenResult,
+    composite,
+    composite_scores,
+    composite_scores_summary,
+    composite_summary,
+    index_catalog,
+    screen,
+)
 
 
 @pytest.mark.parametrize("method", ["mean", "sum", "max"])
@@ -192,3 +200,107 @@ def test_precomputed_summary_all_missing_results_have_unavailable_statistics() -
     assert result["n_valid"] == 0
     np.testing.assert_array_equal(result["valid_index_counts"], [0, 0])
     assert np.isnan([result[key] for key in ["mean", "std", "min", "max"]]).all()
+
+
+@pytest.fixture(scope="module")
+def default_screen() -> ScreenResult:
+    rng = np.random.default_rng(20261005)
+    data = rng.integers(1, 6, size=(80, 12)).astype(float)
+    data[:3] = 3.0
+    data[rng.random(data.shape) < 0.03] = np.nan
+    return screen(data)
+
+
+def _composite_subset(mapping: dict[str, Any]) -> dict[str, Any]:
+    catalog = index_catalog()
+    return {name: value for name, value in mapping.items() if catalog[name]["composite_enabled"]}
+
+
+@pytest.mark.parametrize("method", ["mean", "sum", "max"])
+def test_dropping_unsupported_indices_reuses_default_screen_scores(
+    default_screen: ScreenResult, method: str
+) -> None:
+    scores = default_screen["scores"]
+    subset = _composite_subset(scores)
+    skipped = [name for name in scores if name not in subset]
+    assert skipped == ["u3_poly", "midpoint", "acquiescence"]
+
+    with pytest.raises(ValueError, match="invalid index 'u3_poly'"):
+        composite_scores(scores, method=cast("Any", method))
+    dropped = composite_scores(scores, method=cast("Any", method), unsupported="drop")
+    np.testing.assert_array_equal(dropped, composite_scores(subset, method=cast("Any", method)))
+
+    summary = composite_scores_summary(
+        scores, method=cast("Any", method), weights={"mahad": 2.0}, unsupported="drop"
+    )
+    expected = composite_scores_summary(subset, method=cast("Any", method), weights={"mahad": 2.0})
+    assert summary["indices_used"] == expected["indices_used"] == list(subset)
+    assert summary["weights"] == expected["weights"]
+    np.testing.assert_array_equal(summary["composite"], expected["composite"])
+    np.testing.assert_array_equal(summary["valid_index_counts"], expected["valid_index_counts"])
+
+
+def test_dropping_unsupported_indices_filters_failure_provenance(
+    default_screen: ScreenResult,
+) -> None:
+    errors = {"mahad": "singular covariance", "acquiescence": "invalid polarity pairs"}
+    scores = {
+        name: values for name, values in default_screen["scores"].items() if name not in errors
+    }
+    subset = _composite_subset(scores)
+    minimum = len(subset) + 1
+
+    with pytest.raises(ValueError, match="invalid index 'u3_poly'"):
+        composite_scores(scores, errors=errors)
+    # The retained composite failure still counts as selected for weights and completeness.
+    summary = composite_scores_summary(
+        scores, errors=errors, weights={"mahad": 2.0}, min_valid_indices=minimum, unsupported="drop"
+    )
+    expected = composite_scores_summary(
+        subset, errors={"mahad": "singular covariance"}, weights={"mahad": 2.0}
+    )
+    assert summary["errors"] == {"mahad": "singular covariance"}
+    assert summary["weights"] == expected["weights"]
+    assert summary["n_valid"] == 0
+    np.testing.assert_array_equal(summary["valid_index_counts"], expected["valid_index_counts"])
+    np.testing.assert_array_equal(
+        composite_scores(scores, errors=errors, unsupported="drop"),
+        composite_scores(subset, errors={"mahad": "singular covariance"}),
+    )
+    with pytest.raises(ValueError, match="weight index is not selected: acquiescence"):
+        composite_scores(scores, errors=errors, weights={"acquiescence": 1.0}, unsupported="drop")
+
+
+@pytest.mark.parametrize(
+    ("scores", "errors", "message"),
+    [
+        ({"irv": [0.1, 0.2], "unknown": [1.0, 2.0]}, None, "invalid index 'unknown'"),
+        ({"irv": [0.1, 0.2]}, {"unknown": "failed"}, "invalid index 'unknown'"),
+        ({"irv": [0.1, 0.2]}, {"irv": "failed"}, "both scores and errors"),
+        (
+            {"u3_poly": [0.1, 0.2]},
+            {"mad": "failed"},
+            "^scores must contain at least one composite-enabled index after dropping "
+            "unsupported indices: u3_poly$",
+        ),
+        ({}, None, "at least one registered index"),
+    ],
+)
+def test_dropping_unsupported_indices_still_rejects_invalid_requests(
+    scores: dict[str, Any], errors: dict[str, str] | None, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        composite_scores(scores, errors=errors, unsupported="drop")
+    with pytest.raises(ValueError, match=message):
+        composite_scores_summary(scores, errors=errors, unsupported="drop")
+
+
+def test_unsupported_policy_is_validated() -> None:
+    with pytest.raises(ValueError, match="unsupported must be 'error' or 'drop'"):
+        composite_scores({"irv": [0.1, 0.2]}, unsupported=cast("Any", "skip"))
+
+
+@pytest.mark.parametrize("weights", [[("irv", 2.0)], (("irv", 2.0),), "irv"])
+def test_precomputed_non_mapping_weights_raise_type_error(weights: object) -> None:
+    with pytest.raises(TypeError, match="^weights must be a mapping of registered index names"):
+        composite_scores({"irv": [0.1, 0.2]}, weights=cast("Any", weights))

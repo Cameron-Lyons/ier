@@ -215,7 +215,10 @@ class TestLz(unittest.TestCase):
                 discrimination = rng.uniform(0.2, 3.0, n_items)
                 difficulty = rng.uniform(-3.0, 3.0, n_items)
 
-                with patch("ier.lz._LZ_BATCH_ELEMENTS", 512):
+                with (
+                    patch("ier.lz._LZ_BATCH_ELEMENTS", 512),
+                    patch("ier.lz._LZ_THETA_BATCH_ELEMENTS", 512),
+                ):
                     theta = _estimate_theta(data, discrimination, difficulty)
                     scores = _compute_lz(
                         data,
@@ -339,7 +342,7 @@ def test_missing_batches_match_scalar_rows(na_rm: bool, n_items: int, layout: st
     expected_theta, expected_scores = _reference_rows(data, a, b, na_rm=na_rm)
 
     # Cross many batch boundaries, including inputs wider than the element budget.
-    with patch("ier.lz._LZ_BATCH_ELEMENTS", 53):
+    with patch("ier.lz._LZ_BATCH_ELEMENTS", 53), patch("ier.lz._LZ_THETA_BATCH_ELEMENTS", 53):
         actual_theta = _estimate_theta(data, a, b, na_rm=na_rm)
         actual_scores = _compute_lz(data, a, b, actual_theta, na_rm=na_rm)
     np.testing.assert_allclose(actual_theta, expected_theta, atol=2e-11, rtol=2e-11)
@@ -401,6 +404,7 @@ def test_missing_theta_solver_workspace_is_bounded() -> None:
     data[::3, 0] = np.nan
     with (
         patch("ier.lz._LZ_BATCH_ELEMENTS", 53),
+        patch("ier.lz._LZ_THETA_BATCH_ELEMENTS", 53),
         patch("ier.lz._ml_theta_batch", wraps=_ml_theta_batch) as solve,
         patch("ier.lz._compute_lz_batch", wraps=_compute_lz_batch) as score,
     ):

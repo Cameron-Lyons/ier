@@ -7,7 +7,7 @@ import weakref
 from unittest.mock import patch
 
 import pytest
-from benchmarks._measurement import measure, measure_many
+from benchmarks._measurement import measure, measure_many, thread_settings
 
 
 def test_timing_excludes_tracing_and_retains_last_timed_result() -> None:
@@ -203,3 +203,10 @@ def test_invalid_repeats_do_not_run_the_operation(repeats: int) -> None:
 def test_empty_comparison_is_rejected() -> None:
     with pytest.raises(ValueError, match="at least one operation"):
         measure_many({}, 1)
+
+
+def test_thread_settings_name_blas_and_openmp_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENBLAS_NUM_THREADS", "1")
+    monkeypatch.delenv("OMP_NUM_THREADS", raising=False)
+
+    assert thread_settings() == "OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=unset"

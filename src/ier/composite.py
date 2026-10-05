@@ -14,22 +14,23 @@ References:
 
 from __future__ import annotations
 
+import warnings
+from dataclasses import dataclass
+from math import inf
 from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 
-from ier._composite_reductions import (
-    combine_mean_scores,
-    combine_sum_max_scores,
-    standardize_index_scores,
-)
-from ier._flagging import threshold_flags
+from ier._composite_reductions import combine_mean_scores, combine_sum_max_scores
+from ier._flagging import threshold_flags, validate_percentile, validate_threshold
 from ier._registry import (
     INDEX_REGISTRY,
     IndexOptions,
     composite_index_names,
     default_composite_indices,
+    numeric_override,
     resolve_index_options,
+    resolve_index_overrides,
     score_registered_indices,
     validate_index_errors,
     validate_index_names,
@@ -45,34 +46,55 @@ if TYPE_CHECKING:
 
     from numpy.typing import ArrayLike
 
-    from ier.types import CompositeMethod, CompositeSummary
+    from ier.types import CombineMethod, CompositeMethod, CompositeSummary, FloatArray, IntArray
 
 
-def _resolve_composite_indices(
-    indices: list[str] | None,
-    method: Literal["mean", "sum", "max", "best_subset"],
-    options: IndexOptions,
+@dataclass(frozen=True)
+class _CompositeRun:
+    """One reduced composite with the validated settings that produced it."""
+
+    combined: FloatArray
+    index_scores: dict[str, np.ndarray]
+    diagnostics: dict[str, str]
+    method: CompositeMethod
+    standardize: bool
+    weights: dict[str, float]
+    min_valid_indices: int | None
+    valid_index_counts: IntArray | None
+
+
+def _select_composite_indices(
+    indices: list[str] | None, method: CompositeMethod, options: IndexOptions
 ) -> list[str]:
+    """Resolve and validate the indices one raw-matrix composite scores."""
     if method == "best_subset":
-        if options.mad_positive_items is not None and options.mad_negative_items is not None:
-            return ["mad", "irv", "longstring", "lz"]
-        return ["irv", "longstring", "lz"]
-
-    if indices is None:
-        return default_composite_indices()
-    return indices
-
-
-def _validate_composite_request(
-    indices: list[str],
-    method: Literal["mean", "sum", "max", "best_subset"],
-) -> Literal["mean", "sum", "max"]:
+        if indices is not None:
+            # Level 4 attributes the warning to the caller of the public entry point.
+            warnings.warn(
+                "indices is ignored when method='best_subset'; this will raise in a future release",
+                DeprecationWarning,
+                stacklevel=4,
+            )
+        mad_items = (
+            options.mad_positive_items is not None and options.mad_negative_items is not None
+        )
+        indices = ["mad", "irv", "longstring", "lz"] if mad_items else ["irv", "longstring", "lz"]
+    elif indices is None:
+        indices = default_composite_indices()
     validate_index_names(indices, composite_index_names())
-
-    combine_method = "mean" if method == "best_subset" else method
-    if combine_method not in ["mean", "sum", "max"]:
+    # Accept array-like selections (NumPy arrays, pandas Index) as screen() does.
+    selected = [str(name) for name in indices]
+    if len(selected) == 0:
+        raise ValueError("indices must name at least one registered index")
+    # Tuple membership keeps unhashable values on the documented ValueError path.
+    if method not in ("mean", "sum", "max", "best_subset"):
         raise ValueError("method must be 'mean', 'sum', 'max', or 'best_subset'")
-    return combine_method
+    return selected
+
+
+_positive_weight = numeric_override(
+    "weight", "a positive finite number", lambda value: 0 < value < inf
+)
 
 
 def _resolve_composite_weights(
@@ -80,23 +102,8 @@ def _resolve_composite_weights(
     indices: list[str],
 ) -> dict[str, float]:
     """Validate partial weight overrides and return every effective index weight."""
-    resolved = dict.fromkeys(indices, 1.0)
-    if weights is None:
-        return resolved
-
-    for name, value in weights.items():
-        if name not in resolved:
-            raise ValueError(f"weight index is not selected: {name}")
-        if isinstance(value, bool):
-            raise ValueError(f"weight for {name} must be a positive finite number")
-        try:
-            weight = float(value)
-        except (TypeError, ValueError) as err:
-            raise ValueError(f"weight for {name} must be a positive finite number") from err
-        if not np.isfinite(weight) or weight <= 0:
-            raise ValueError(f"weight for {name} must be a positive finite number")
-        resolved[name] = weight
-    return resolved
+    overrides = resolve_index_overrides(weights, indices, label="weight", convert=_positive_weight)
+    return {**dict.fromkeys(indices, 1.0), **overrides}
 
 
 def _validate_standardize(standardize: bool) -> bool:
@@ -106,27 +113,20 @@ def _validate_standardize(standardize: bool) -> bool:
     return standardize
 
 
-def _standardize_index_scores(scores: np.ndarray) -> np.ndarray:
-    """Apply shared stable component calibration without mutating inputs."""
-    return standardize_index_scores(scores)
-
-
 def _combine_scores(
     index_scores: dict[str, np.ndarray],
     diagnostics: dict[str, str],
-    method: Literal["mean", "sum", "max"],
+    method: CombineMethod,
     standardize: bool,
     weights: Mapping[str, float] | None = None,
     *,
     min_valid_indices: int | None = None,
     valid_counts_out: np.ndarray | None = None,
     multipliers: Mapping[str, float] | None = None,
-) -> np.ndarray:
+) -> FloatArray:
     if len(index_scores) == 0:
         failed = "; ".join(f"{name}: {msg}" for name, msg in sorted(diagnostics.items()))
         raise ValueError(f"no valid indices could be computed from the data. failures: {failed}")
-    if method not in {"mean", "sum", "max"}:
-        raise ValueError("method must be 'mean', 'sum', or 'max'")
 
     n_respondents = len(next(iter(index_scores.values())))
     if valid_counts_out is not None:
@@ -144,15 +144,84 @@ def _combine_scores(
     )
 
 
+def _reduce_prepared(
+    scores: dict[str, np.ndarray],
+    errors: dict[str, str],
+    n_respondents: int,
+    method: CompositeMethod,
+    standardize: bool,
+    weights: dict[str, float],
+    weighted: bool,
+    min_valid_indices: int | None,
+    count_valid: bool,
+) -> _CompositeRun:
+    """Reduce validated components once, applying registered directions."""
+    counts = np.zeros(n_respondents, dtype=np.int_) if count_valid else None
+    combined = _combine_scores(
+        scores,
+        errors,
+        "mean" if method == "best_subset" else method,
+        standardize,
+        # Unweighted requests keep the faster equal-weight reductions.
+        weights if weighted else None,
+        min_valid_indices=min_valid_indices,
+        valid_counts_out=counts,
+        multipliers={name: INDEX_REGISTRY[name].composite_multiplier for name in scores},
+    )
+    return _CompositeRun(
+        combined, scores, errors, method, standardize, weights, min_valid_indices, counts
+    )
+
+
+def _run_composite(
+    x: MatrixLike,
+    indices: list[str] | None,
+    method: CompositeMethod,
+    standardize: bool,
+    options: IndexOptions | None,
+    weights: Mapping[str, float] | None,
+    min_valid_indices: int | None,
+    strict: bool,
+    workers: int,
+    *,
+    count_valid: bool = False,
+) -> _CompositeRun:
+    """Validate one raw-matrix request, score its indices, and reduce them once."""
+    workers = validate_worker_count(workers)
+    standardize = _validate_standardize(standardize)
+    if not isinstance(strict, bool):
+        raise ValueError("strict must be a boolean")
+    resolved = resolve_index_options(options)
+    selected = _select_composite_indices(indices, method, resolved)
+    resolved_weights = _resolve_composite_weights(weights, selected)
+    min_valid_indices = validate_min_valid_indices(min_valid_indices, len(selected))
+    x_array = validate_matrix_input(x)
+    index_scores, diagnostics = score_registered_indices(
+        x_array, selected, resolved, strict=strict, workers=workers, validated=True
+    )
+    return _reduce_prepared(
+        index_scores,
+        diagnostics,
+        len(x_array),
+        method,
+        standardize,
+        resolved_weights,
+        weights is not None,
+        min_valid_indices,
+        count_valid,
+    )
+
+
 def composite_scores(
     scores: Mapping[str, ArrayLike],
-    method: Literal["mean", "sum", "max"] = "mean",
+    method: CombineMethod = "mean",
     standardize: bool = True,
     *,
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
     errors: Mapping[str, str] | None = None,
-) -> np.ndarray:
+    unsupported: Literal["error", "drop"] = "error",
+) -> FloatArray:
     """
     Combine already-computed registered-index score vectors.
 
@@ -175,6 +244,10 @@ def composite_scores(
     - min_valid_indices: Optional minimum available component count per respondent.
     - errors: Optional retained per-index soft failures. Failed indices remain
               selected for weight and completeness validation, with no available scores.
+    - unsupported: ``"error"`` (default) rejects registered indices that are not
+                   composite-enabled. ``"drop"`` omits them from ``scores`` and
+                   ``errors`` so default :func:`screen` results can be reused
+                   directly. Unknown index names raise in both modes.
 
     Returns:
     - A respondent-aligned NumPy array of composite scores.
@@ -184,59 +257,92 @@ def composite_scores(
                   range. Reduce weights or choose ``method="mean"``.
 
     Example:
-        >>> from ier import composite_scores, composite_summary
+        >>> import numpy as np
+        >>> from ier import composite_scores, composite_summary, screen
+        >>> data = [
+        ...     [1, 2, 3, 4, 5, 4],
+        ...     [3, 3, 3, 3, 3, 3],
+        ...     [5, 4, 3, 2, 1, 2],
+        ...     [2, 5, 1, 4, 3, 2],
+        ...     [4, 4, 5, 4, 4, 5],
+        ...     [1, 5, 1, 5, 1, 5],
+        ... ]
         >>> initial = composite_summary(data, indices=["irv", "longstring"])
         >>> weighted = composite_scores(
         ...     initial["indices"],
         ...     weights={"irv": 2.0, "longstring": 0.5},
         ... )
+        >>> np.round(weighted, 2).tolist()
+        [-0.43, 1.76, -0.43, -0.43, 0.75, -1.22]
+        >>> screened = screen(data)  # includes screen-only u3_poly, midpoint, and acquiescence
+        >>> reused = composite_scores(
+        ...     screened["scores"], errors=screened["errors"], unsupported="drop"
+        ... )
+        >>> reused.shape
+        (6,)
     """
-    validated_scores, retained_errors, resolved_weights, min_valid_indices = (
-        _prepare_composite_scores(scores, method, standardize, weights, min_valid_indices, errors)
-    )
-    multipliers = {name: INDEX_REGISTRY[name].composite_multiplier for name in validated_scores}
-
-    return _combine_scores(
-        validated_scores,
-        retained_errors,
-        method,
-        standardize,
-        resolved_weights if weights is not None else None,
-        min_valid_indices=min_valid_indices,
-        multipliers=multipliers,
-    )
+    return _precomputed_run(
+        scores, method, standardize, weights, min_valid_indices, errors, unsupported
+    ).combined
 
 
-def _prepare_composite_scores(
+def _precomputed_run(
     scores: Mapping[str, ArrayLike],
-    method: Literal["mean", "sum", "max"],
+    method: CombineMethod,
     standardize: bool,
     weights: Mapping[str, float] | None,
     min_valid_indices: int | None,
     errors: Mapping[str, str] | None,
-) -> tuple[dict[str, np.ndarray], dict[str, str], dict[str, float], int | None]:
-    """Validate one precomputed request before reducing or summarizing it."""
-    validated_scores, _ = validate_score_vectors(scores)
+    unsupported: Literal["error", "drop"],
+    *,
+    count_valid: bool = False,
+) -> _CompositeRun:
+    """Validate and reduce one precomputed request without scoring any index."""
+    if unsupported not in ("error", "drop"):
+        raise ValueError("unsupported must be 'error' or 'drop'")
+    validated_scores, n_respondents = validate_score_vectors(scores)
     allowed = composite_index_names()
-    validate_index_names(list(validated_scores), allowed)
-    retained_errors = validate_index_errors(errors, list(validated_scores), allowed)
+    # Dropping still rejects unknown names; it omits only registered screen-only indices.
+    checked = None if unsupported == "drop" else allowed
+    validate_index_names(list(validated_scores), checked)
+    retained_errors = validate_index_errors(errors, list(validated_scores), checked)
+    if unsupported == "drop":
+        dropped = [name for name in validated_scores if name not in allowed]
+        validated_scores = {name: arr for name, arr in validated_scores.items() if name in allowed}
+        retained_errors = {name: msg for name, msg in retained_errors.items() if name in allowed}
+        if not validated_scores:
+            raise ValueError(
+                "scores must contain at least one composite-enabled index after dropping "
+                f"unsupported indices: {', '.join(dropped)}"
+            )
     indices = [*validated_scores, *retained_errors]
-    if method not in {"mean", "sum", "max"}:
+    if method not in ("mean", "sum", "max"):
         raise ValueError("method must be 'mean', 'sum', or 'max' for precomputed scores")
-    _validate_standardize(standardize)
+    standardize = _validate_standardize(standardize)
     resolved_weights = _resolve_composite_weights(weights, indices)
     min_valid_indices = validate_min_valid_indices(min_valid_indices, len(indices))
-    return validated_scores, retained_errors, resolved_weights, min_valid_indices
+    return _reduce_prepared(
+        validated_scores,
+        retained_errors,
+        n_respondents,
+        method,
+        standardize,
+        resolved_weights,
+        weights is not None,
+        min_valid_indices,
+        count_valid,
+    )
 
 
 def composite_scores_summary(
     scores: Mapping[str, ArrayLike],
-    method: Literal["mean", "sum", "max"] = "mean",
+    method: CombineMethod = "mean",
     standardize: bool = True,
     *,
     weights: Mapping[str, float] | None = None,
     min_valid_indices: int | None = None,
     errors: Mapping[str, str] | None = None,
+    unsupported: Literal["error", "drop"] = "error",
 ) -> CompositeSummary:
     """Combine reusable scores with component coverage and summary statistics.
 
@@ -246,34 +352,21 @@ def composite_scores_summary(
     arrays are never mutated; compatible arrays are retained in ``indices``.
     Optional ``errors`` retains original soft failures without recalculating
     indices. Failed indices remain selected for weight and completeness
-    validation but never contribute to coverage or scores.
+    validation but never contribute to coverage or scores. Set
+    ``unsupported="drop"`` to omit registered indices that are not
+    composite-enabled, such as screen-only defaults.
     """
-    validated_scores, retained_errors, resolved_weights, min_valid_indices = (
-        _prepare_composite_scores(scores, method, standardize, weights, min_valid_indices, errors)
-    )
-    n_respondents = len(next(iter(validated_scores.values())))
-    valid_index_counts = np.zeros(n_respondents, dtype=np.int_)
-    multipliers = {name: INDEX_REGISTRY[name].composite_multiplier for name in validated_scores}
-    combined_scores = _combine_scores(
-        validated_scores,
-        retained_errors,
+    run = _precomputed_run(
+        scores,
         method,
         standardize,
-        resolved_weights if weights is not None else None,
-        min_valid_indices=min_valid_indices,
-        valid_counts_out=valid_index_counts,
-        multipliers=multipliers,
-    )
-    return _summarize_composite_result(
-        combined_scores,
-        validated_scores,
-        retained_errors,
-        method,
-        standardize,
-        resolved_weights,
+        weights,
         min_valid_indices,
-        valid_index_counts,
+        errors,
+        unsupported,
+        count_valid=True,
     )
+    return _summarize_composite_result(run)
 
 
 @overload
@@ -289,7 +382,7 @@ def composite(
     return_diagnostics: Literal[False] = False,
     strict: bool = False,
     workers: int = 1,
-) -> np.ndarray: ...
+) -> FloatArray: ...
 
 
 @overload
@@ -305,7 +398,7 @@ def composite(
     return_diagnostics: Literal[True],
     strict: bool = False,
     workers: int = 1,
-) -> tuple[np.ndarray, dict[str, str]]: ...
+) -> tuple[FloatArray, dict[str, str]]: ...
 
 
 @overload
@@ -321,7 +414,7 @@ def composite(
     return_diagnostics: bool,
     strict: bool = False,
     workers: int = 1,
-) -> np.ndarray | tuple[np.ndarray, dict[str, str]]: ...
+) -> FloatArray | tuple[FloatArray, dict[str, str]]: ...
 
 
 def composite(
@@ -336,7 +429,7 @@ def composite(
     return_diagnostics: bool = False,
     strict: bool = False,
     workers: int = 1,
-) -> np.ndarray | tuple[np.ndarray, dict[str, str]]:
+) -> FloatArray | tuple[FloatArray, dict[str, str]]:
     """
     Calculate a composite IER index combining multiple detection methods.
 
@@ -347,6 +440,8 @@ def composite(
     Configure indices with a single ``IndexOptions`` via ``options=``. By default,
     missing required config is recorded in diagnostics without aborting other
     indices. Set ``strict=True`` to require every selected index to succeed.
+    ``IndexOptions.reverse_keyed_items`` are reverse-scored only for components
+    that use keyed responses, such as ``lz``; the others read ``x``.
 
     The composite score is a sample-relative signal, not a calibrated probability
     of careless responding. Prefer multi-index agreement and substantive review
@@ -358,8 +453,8 @@ def composite(
               "mahad", "psychsyn", "psychant", "evenodd", "person_total", "lz",
               "mad", "markov", "longstring_pattern", "guttman",
               "individual_reliability", "semantic_syn", "semantic_ant",
-              "infrequency", "missing_rate". Default includes NumPy-safe indices that do not
-              require extra config.
+              "infrequency", "missing_rate", "avgstr", "autocorrelation". Default
+              includes NumPy-safe indices that do not require extra config.
     - method: How to combine indices. "mean" (default), "sum", "max", or
               "best_subset" (overrides indices to ["mad", "irv", "longstring", "lz"],
               falling back to ["irv", "longstring", "lz"] if MAD item info not provided).
@@ -382,46 +477,31 @@ def composite(
       greater likelihood of careless responding.
 
     Raises:
-    - ValueError: If invalid indices are specified, no index succeeds, or a final
-                  weighted sum or maximum exceeds the finite float range,
+    - ValueError: If invalid or no indices are specified, no index succeeds, or a
+                  final weighted sum or maximum exceeds the finite float range,
                   including an infinite score returned by an index.
+    - TypeError: If ``weights`` is neither a mapping nor a mapping-like object
+                 with ``items()``, such as a pandas Series.
+
+    Passing ``indices`` with ``method="best_subset"`` is deprecated: the explicit
+    indices are ignored with a ``DeprecationWarning`` and will raise in a future release.
 
     Example:
+        >>> import numpy as np
         >>> from ier import IndexOptions, composite
         >>> data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3], [5, 4, 3, 2, 1]]
-        >>> scores = composite(data, options=IndexOptions())
-        >>> print(scores)
+        >>> scores, errors = composite(data, options=IndexOptions(), return_diagnostics=True)
+        >>> np.round(scores, 2).tolist()
+        [-0.71, 1.41, -0.71]
+        >>> list(errors)  # three respondents cannot support a five-item covariance
+        ['mahad']
     """
-    workers = validate_worker_count(workers)
-    standardize = _validate_standardize(standardize)
-    x_array = validate_matrix_input(x, check_type=False)
-    resolved = resolve_index_options(options)
-    selected_indices = _resolve_composite_indices(indices, method, resolved)
-    combine_method = _validate_composite_request(selected_indices, method)
-    resolved_weights = _resolve_composite_weights(weights, selected_indices)
-    min_valid_indices = validate_min_valid_indices(min_valid_indices, len(selected_indices))
-
-    index_scores, diagnostics = score_registered_indices(
-        x_array,
-        selected_indices,
-        resolved,
-        strict=strict,
-        workers=workers,
+    run = _run_composite(
+        x, indices, method, standardize, options, weights, min_valid_indices, strict, workers
     )
-    multipliers = {name: INDEX_REGISTRY[name].composite_multiplier for name in index_scores}
-    result = _combine_scores(
-        index_scores,
-        diagnostics,
-        combine_method,
-        standardize,
-        resolved_weights if weights is not None else None,
-        min_valid_indices=min_valid_indices,
-        multipliers=multipliers,
-    )
-
     if return_diagnostics:
-        return result, diagnostics
-    return result
+        return run.combined, run.diagnostics
+    return run.combined
 
 
 @overload
@@ -509,32 +589,18 @@ def composite_flag(
     - Tuple of (composite_scores, flags) where flags is True for suspected
       careless responders.
     """
-    composite_result = composite(
-        x,
-        indices=indices,
-        method=method,
-        standardize=standardize,
-        options=options,
-        weights=weights,
-        min_valid_indices=min_valid_indices,
-        return_diagnostics=return_diagnostics,
-        strict=strict,
-        workers=workers,
+    # Decision arguments fail before the matrix is converted or any index is scored.
+    threshold = validate_threshold(threshold)
+    percentile = validate_percentile(percentile)
+    run = _run_composite(
+        x, indices, method, standardize, options, weights, min_valid_indices, strict, workers
+    )
+    flags = threshold_flags(
+        run.combined, threshold=threshold, percentile=percentile, direction="high"
     )
     if return_diagnostics:
-        if not isinstance(composite_result, tuple):
-            raise TypeError("expected (scores, diagnostics) when return_diagnostics=True")
-        scores, diagnostics = composite_result
-    else:
-        if isinstance(composite_result, tuple):
-            raise TypeError("unexpected diagnostics tuple when return_diagnostics=False")
-        scores = composite_result
-
-    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="high")
-
-    if return_diagnostics:
-        return scores, flags, diagnostics
-    return scores, flags
+        return run.combined, flags, run.diagnostics
+    return run.combined, flags
 
 
 def composite_summary(
@@ -559,58 +625,25 @@ def composite_summary(
     component count for each respondent before applying ``min_valid_indices``.
     Unrepresentable weighted sums or maxima raise ``ValueError``, as in ``composite()``.
     """
-    workers = validate_worker_count(workers)
-    standardize = _validate_standardize(standardize)
-    x_array = validate_matrix_input(x, check_type=False)
-    resolved = resolve_index_options(options)
-    selected_indices = _resolve_composite_indices(indices, method, resolved)
-    combine_method = _validate_composite_request(selected_indices, method)
-    resolved_weights = _resolve_composite_weights(weights, selected_indices)
-    min_valid_indices = validate_min_valid_indices(min_valid_indices, len(selected_indices))
-
-    individual_scores, diagnostics = score_registered_indices(
-        x_array,
-        selected_indices,
-        resolved,
-        strict=strict,
-        workers=workers,
-    )
-    multipliers = {name: INDEX_REGISTRY[name].composite_multiplier for name in individual_scores}
-    valid_index_counts = np.zeros(len(x_array), dtype=np.int_)
-    combined_scores = _combine_scores(
-        individual_scores,
-        diagnostics,
-        combine_method,
-        standardize,
-        resolved_weights if weights is not None else None,
-        min_valid_indices=min_valid_indices,
-        valid_counts_out=valid_index_counts,
-        multipliers=multipliers,
-    )
-
-    return _summarize_composite_result(
-        combined_scores,
-        individual_scores,
-        diagnostics,
+    run = _run_composite(
+        x,
+        indices,
         method,
         standardize,
-        resolved_weights,
+        options,
+        weights,
         min_valid_indices,
-        valid_index_counts,
+        strict,
+        workers,
+        count_valid=True,
     )
+    return _summarize_composite_result(run)
 
 
-def _summarize_composite_result(
-    combined_scores: np.ndarray,
-    individual_scores: dict[str, np.ndarray],
-    diagnostics: dict[str, str],
-    method: CompositeMethod,
-    standardize: bool,
-    resolved_weights: dict[str, float],
-    min_valid_indices: int | None,
-    valid_index_counts: np.ndarray,
-) -> CompositeSummary:
+def _summarize_composite_result(run: _CompositeRun) -> CompositeSummary:
     """Describe one reduced composite without scoring or calibrating it again."""
+    combined_scores = run.combined
+    assert run.valid_index_counts is not None
     available = ~np.isnan(combined_scores)
     n_valid = int(np.count_nonzero(available))
     valid_composite = (
@@ -620,14 +653,14 @@ def _summarize_composite_result(
 
     return {
         "composite": combined_scores,
-        "indices": individual_scores,
-        "indices_used": list(individual_scores.keys()),
-        "errors": diagnostics,
-        "method": method,
-        "standardized": standardize,
-        "weights": resolved_weights,
-        "min_valid_indices": min_valid_indices,
-        "valid_index_counts": valid_index_counts,
+        "indices": run.index_scores,
+        "indices_used": list(run.index_scores),
+        "errors": run.diagnostics,
+        "method": run.method,
+        "standardized": run.standardize,
+        "weights": run.weights,
+        "min_valid_indices": run.min_valid_indices,
+        "valid_index_counts": run.valid_index_counts,
         "mean": stats["mean"],
         "std": stats["std"],
         "min": stats["min"],
@@ -649,7 +682,7 @@ def composite_probability(
     return_diagnostics: Literal[False] = False,
     strict: bool = False,
     workers: int = 1,
-) -> np.ndarray: ...
+) -> FloatArray: ...
 
 
 @overload
@@ -664,7 +697,7 @@ def composite_probability(
     return_diagnostics: Literal[True],
     strict: bool = False,
     workers: int = 1,
-) -> tuple[np.ndarray, dict[str, str]]: ...
+) -> tuple[FloatArray, dict[str, str]]: ...
 
 
 @overload
@@ -679,7 +712,7 @@ def composite_probability(
     return_diagnostics: bool,
     strict: bool = False,
     workers: int = 1,
-) -> np.ndarray | tuple[np.ndarray, dict[str, str]]: ...
+) -> FloatArray | tuple[FloatArray, dict[str, str]]: ...
 
 
 def composite_probability(
@@ -693,7 +726,7 @@ def composite_probability(
     return_diagnostics: bool = False,
     strict: bool = False,
     workers: int = 1,
-) -> np.ndarray | tuple[np.ndarray, dict[str, str]]:
+) -> FloatArray | tuple[FloatArray, dict[str, str]]:
     """
     Compute an uncalibrated logistic composite IER score.
 
@@ -709,28 +742,10 @@ def composite_probability(
     also receive ordered per-index soft-failure messages.
     Unrepresentable weighted sums or maxima raise ``ValueError`` before transformation.
     """
-    z_scores_result = composite(
-        x,
-        indices=indices,
-        method=method,
-        standardize=True,
-        options=options,
-        weights=weights,
-        min_valid_indices=min_valid_indices,
-        return_diagnostics=return_diagnostics,
-        strict=strict,
-        workers=workers,
+    run = _run_composite(
+        x, indices, method, True, options, weights, min_valid_indices, strict, workers
     )
+    result = logistic_transform(run.combined)
     if return_diagnostics:
-        if not isinstance(z_scores_result, tuple):
-            raise TypeError("expected (scores, diagnostics) when return_diagnostics=True")
-        z_scores, diagnostics = z_scores_result
-    else:
-        if isinstance(z_scores_result, tuple):
-            raise TypeError("unexpected diagnostics tuple when return_diagnostics=False")
-        z_scores = z_scores_result
-
-    result = logistic_transform(z_scores)
-    if return_diagnostics:
-        return result, diagnostics
+        return result, run.diagnostics
     return result

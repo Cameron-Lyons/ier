@@ -12,7 +12,12 @@ from unittest.mock import patch
 
 import pytest
 
-from ier._cli_output import _output_stream, _write_json_output, _write_json_value, _write_output
+from ier._cli_output import (
+    _output_stream,
+    _write_json_value,
+    _write_output,
+    _write_stream_output,
+)
 from ier._cli_streams import _open_text_path
 from ier.cli import main
 
@@ -64,7 +69,7 @@ def test_late_json_validation_failure_preserves_existing_result(tmp_path: Path) 
     destination = tmp_path / "result.json"
     destination.write_text('{"previous": true}', encoding="utf-8")
     with pytest.raises(ValueError, match="Out of range float"):
-        _write_json_output(
+        _write_stream_output(
             destination,
             lambda stream: _write_json_value(stream, {"valid": [1, 2, 3], "invalid": float("inf")}),
         )

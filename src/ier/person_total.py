@@ -10,6 +10,7 @@ import numpy as np
 
 from ier._column_statistics import _exact_mean_profile, column_mean_profile
 from ier._correlation import row_correlations
+from ier._flagging import threshold_flags
 from ier._validation import MatrixLike, validate_matrix_input
 
 _PERSON_TOTAL_BATCH_ELEMENTS = 262_144
@@ -40,8 +41,7 @@ def person_total(
 
     Example:
         >>> data = [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1], [1, 2, 3, 4, 5]]
-        >>> scores = person_total(data)
-        >>> print(scores)
+        >>> np.round(person_total(data), 2).tolist()
         [1.0, -1.0, 1.0]
     """
     x_array = validate_matrix_input(x, min_columns=2)
@@ -77,6 +77,40 @@ def person_total(
             )
 
     return correlations
+
+
+def person_total_flag(
+    x: MatrixLike,
+    threshold: float | None = None,
+    percentile: float = 5.0,
+    na_rm: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute person-total correlations and flag respondents with low agreement.
+
+    Parameters:
+    - x: A matrix of data where rows are individuals and columns are items.
+    - threshold: Absolute correlation threshold at or below which to flag.
+                 If None, uses percentile.
+    - percentile: Percentile below which to flag (default 5th percentile).
+    - na_rm: If True, use pairwise complete observations for correlations.
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for flagged respondents.
+      Unavailable (``NaN``) scores are never flagged.
+
+    Example:
+        >>> data = [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1], [1, 2, 3, 4, 5], [1, 2, 3, 5, 4]]
+        >>> scores, flags = person_total_flag(data, threshold=0.0)
+        >>> flags.tolist()
+        [False, True, False, False]
+    """
+    scores = person_total(x, na_rm=na_rm)
+
+    # Mirrors INDEX_REGISTRY["person_total"].flag_direction; importing it here is circular.
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="low")
+
+    return scores, flags
 
 
 def _repair_pairwise_profiles(

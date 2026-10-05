@@ -16,6 +16,7 @@ from ier import (
     screen,
     screen_scores,
 )
+from ier._cli_composite import CompositeReport, ResponseTimeReport
 from ier._cli_npz import _write_composite_npz, _write_response_time_npz, _write_screen_npz
 
 
@@ -104,11 +105,13 @@ def test_detailed_composite_archive_round_trip_supports_reuse(tmp_path: Path) ->
     destination = tmp_path / "composite.npz"
     _write_composite_npz(
         destination,
-        details["composite"],
-        details["method"],
-        errors=details["errors"],
-        component_scores=details["indices"],
-        valid_index_counts=details["valid_index_counts"],
+        CompositeReport(
+            details["composite"],
+            details["method"],
+            errors=details["errors"],
+            component_scores=details["indices"],
+            valid_index_counts=details["valid_index_counts"],
+        ),
     )
 
     loaded = load_score_archive(str(destination))
@@ -124,7 +127,7 @@ def test_detailed_composite_archive_round_trip_supports_reuse(tmp_path: Path) ->
 
 def test_aggregate_only_composite_archive_has_actionable_error(tmp_path: Path) -> None:
     destination = tmp_path / "aggregate.npz"
-    _write_composite_npz(destination, np.array([0.1, 0.2]), "mean")
+    _write_composite_npz(destination, CompositeReport(np.array([0.1, 0.2]), "mean"))
 
     with pytest.raises(ValueError, match="--include-components"):
         load_score_archive(destination)
@@ -134,11 +137,7 @@ def test_response_time_archive_is_not_a_registered_score_archive(tmp_path: Path)
     destination = tmp_path / "timing.npz"
     _write_response_time_npz(
         destination,
-        np.array([1.0, 2.0]),
-        np.array([True, False]),
-        "median",
-        "low",
-        1.5,
+        ResponseTimeReport(np.array([1.0, 2.0]), np.array([True, False]), "median", "low", 1.5),
     )
 
     with pytest.raises(ValueError, match="result_type must be 'screen' or 'composite'"):
@@ -153,12 +152,7 @@ def test_response_time_archive_round_trip_supports_reflagging(tmp_path: Path) ->
     respondent_ids = ["case-1", "case-2", "case-3", "case-4", "case-5"]
     _write_response_time_npz(
         destination,
-        scores,
-        flags,
-        "median",
-        "low",
-        threshold,
-        respondent_ids,
+        ResponseTimeReport(scores, flags, "median", "low", threshold, respondent_ids),
     )
 
     loaded = load_response_time_archive(destination)
@@ -184,14 +178,7 @@ def test_response_time_mixture_archive_preserves_high_tail(tmp_path: Path) -> No
     destination = tmp_path / "mixture.npz"
     scores = np.asarray([0.01, 0.4, 0.8, 0.99])
     flags = scores >= 0.8
-    _write_response_time_npz(
-        destination,
-        scores,
-        flags,
-        "mixture",
-        "high",
-        0.8,
-    )
+    _write_response_time_npz(destination, ResponseTimeReport(scores, flags, "mixture", "high", 0.8))
 
     loaded = load_response_time_archive(destination)
 
@@ -252,6 +239,25 @@ def test_malformed_response_time_archive_is_rejected(
 
     with pytest.raises(ValueError, match=message):
         load_response_time_archive(destination)
+
+
+def test_response_time_flags_load_as_canonical_booleans(tmp_path: Path) -> None:
+    # A Boolean byte of 2 compares as True, so it agrees with the threshold rule.
+    payload = _response_time_payload()
+    payload["flags"] = np.asarray([2, 0], dtype=np.uint8).view(np.bool_)
+    destination = tmp_path / "timing.npz"
+    np.savez(destination, **payload)
+
+    loaded = load_response_time_archive(destination)
+
+    assert loaded["flags"].dtype == np.bool_
+    assert loaded["flags"].view(np.uint8).tolist() == [1, 0]
+    rewritten = tmp_path / "rewritten.npz"
+    save_response_time_archive(
+        rewritten, loaded["scores"], payload["flags"], threshold=loaded["threshold"]
+    )
+    with np.load(rewritten, allow_pickle=False) as raw:
+        assert raw["flags"].view(np.uint8).tolist() == [1, 0]
 
 
 def test_response_time_archive_requires_complete_pickle_free_npz(tmp_path: Path) -> None:

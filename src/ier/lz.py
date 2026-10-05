@@ -26,6 +26,9 @@ from ier._statistics import logistic_transform
 from ier._validation import MatrixLike, validate_matrix_input, validate_score_array
 
 _LZ_BATCH_ELEMENTS = 10_240
+# The ability solver iterates only on unresolved rows, so larger batches
+# amortize per-iteration overhead without recomputing converged rows.
+_LZ_THETA_BATCH_ELEMENTS = 65_536
 _MIN_PROBABILITY = 1e-10
 _MAX_PROBABILITY = 1 - _MIN_PROBABILITY
 _MIN_LOG_ODDS = math.log(_MIN_PROBABILITY / (1 - _MIN_PROBABILITY))
@@ -85,9 +88,10 @@ def lz(
     Example:
         >>> data = [[1, 1, 0, 0, 1], [1, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
         >>> lz_scores = lz(data)
-        >>> print(lz_scores)
+        >>> np.round(lz_scores, 2).tolist()
+        [0.19, 0.62, 0.1]
     """
-    x_array = validate_matrix_input(x, check_type=False)
+    x_array = validate_matrix_input(x)
 
     if model not in ["1pl", "2pl"]:
         raise ValueError("model must be '1pl' or '2pl'")
@@ -148,10 +152,10 @@ def lz_flag(
     - Tuple of (lz_scores, flags) where flags is True for suspected careless responders.
 
     Example:
-        >>> data = [[1, 1, 0, 0, 1], [1, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
-        >>> scores, flags = lz_flag(data)
-        >>> print(flags)
-        [False, False, True]
+        >>> data = [[1, 1, 1, 0, 0], [0, 0, 1, 1, 1], [1, 1, 0, 1, 0]]
+        >>> scores, flags = lz_flag(data, difficulty=[-2, -1, 0, 1, 2], model="1pl")
+        >>> flags.tolist()
+        [False, True, False]
     """
     scores = lz(
         x,
@@ -269,7 +273,7 @@ def _estimate_discrimination(x: np.ndarray, na_rm: bool = True) -> np.ndarray:
 def _estimate_theta(x: np.ndarray, a: np.ndarray, b: np.ndarray, na_rm: bool = True) -> np.ndarray:
     """Estimate abilities in bounded batches, omitting missing items when requested."""
     theta = np.empty(x.shape[0])
-    batch_rows = max(1, _LZ_BATCH_ELEMENTS // x.shape[1])
+    batch_rows = max(1, _LZ_THETA_BATCH_ELEMENTS // x.shape[1])
     for start in range(0, len(x), batch_rows):
         stop = min(start + batch_rows, len(x))
         theta[start:stop] = _ml_theta_batch(x[start:stop], a, b, na_rm=na_rm)
@@ -302,14 +306,18 @@ def _ml_theta_batch(
     valid = True if observed is None else observed[interior]
     proportion = np.clip(np.mean(active_responses, axis=1, where=valid), 0.01, 0.99)
     estimates = np.clip(np.log(proportion / (1.0 - proportion)), -4.0, 4.0)
-    lower = np.full(len(active_responses), -4.0)
-    upper = np.full(len(active_responses), 4.0)
-    active = np.ones(len(active_responses), dtype=bool)
     magnitude = np.max(np.abs(a), where=~np.isnan(a), initial=0.0)
     scaled = magnitude > math.sqrt(np.finfo(float).max / len(a)) / 4
     if scaled:
         estimates = _initial_scaled_theta(active_responses, a, b, estimates, valid)
 
+    # Iterate only on unresolved rows. A root beyond the bracket bisects toward
+    # it for dozens of steps after the rest of the batch converges. Every row
+    # reduction is independent, so dropping resolved rows from the workspace
+    # leaves each estimate bit-identical.
+    pending = np.flatnonzero(interior)
+    lower = np.full(len(pending), -4.0)
+    upper = np.full(len(pending), 4.0)
     # Saturated predictors and tiny moments are valid finite-model limits.
     # Unrepresentable Newton steps fall back to the safeguarded bracket.
     with np.errstate(over="ignore", under="ignore"):
@@ -327,13 +335,12 @@ def _ml_theta_batch(
             else:
                 score = np.sum(a * (active_responses - probabilities), axis=1, where=valid)
                 tolerance = 1e-12
-            score_converged = active & (np.abs(score) <= tolerance)
-            active[score_converged] = False
-            if not np.any(active):
+            score_converged = np.abs(score) <= tolerance
+            if np.all(score_converged):
                 break
 
-            positive = active & (score > 0.0)
-            negative = active & ~positive
+            positive = score > 0.0
+            negative = ~positive
             lower[positive] = estimates[positive]
             upper[negative] = estimates[negative]
 
@@ -355,13 +362,28 @@ def _ml_theta_batch(
             changes = np.abs(candidates - estimates)
             if scaled:
                 changes *= np.maximum(step_scales, 1.0)
-            step_converged = active & (changes <= 1e-12)
-            estimates[active] = candidates[active]
-            active[step_converged] = False
-            if not np.any(active):
-                break
+            # Score-converged rows keep their current estimates; step-converged
+            # rows keep their candidates. Float32 and float16 binary inputs start
+            # in their own precision, so round each iterate back to it.
+            np.copyto(candidates, estimates, where=score_converged)
+            estimates = candidates.astype(estimates.dtype, copy=False)
+            resolved = score_converged | (changes <= 1e-12)
+            if np.any(resolved):
+                theta[pending[resolved]] = estimates[resolved]
+                unresolved = ~resolved
+                pending = pending[unresolved]
+                estimates = estimates[unresolved]
+                if len(pending) == 0:
+                    break
+                lower = lower[unresolved]
+                upper = upper[unresolved]
+                active_responses = active_responses[unresolved]
+                if not isinstance(valid, bool):
+                    valid = valid[unresolved]
 
-    theta[interior] = estimates
+    # Score-converged rows and rows still moving after the iteration budget
+    # keep their latest estimates.
+    theta[pending] = estimates
     return theta
 
 

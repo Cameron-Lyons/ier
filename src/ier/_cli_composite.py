@@ -1,13 +1,22 @@
-"""Shared validation for composite command-line serializers."""
+"""Validated composite and response-time reports shared by command-line serializers."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    from ier.types import ResponseTimeFlagDirection, ResponseTimeMetric
+
+
+def validate_respondent_ids(n_respondents: int, respondent_ids: list[str] | None) -> None:
+    """Validate optional respondent identifiers against the result length."""
+    if respondent_ids is not None and len(respondent_ids) != n_respondents:
+        raise ValueError("respondent ID count must match result length")
 
 
 def validate_composite_components(
@@ -59,3 +68,52 @@ def validate_composite_probabilities(
     """Validate optional respondent-aligned logistic composite values."""
     if probabilities is not None and len(probabilities) != n_respondents:
         raise ValueError("composite probability length must match composite score length")
+
+
+@dataclass(frozen=True)
+class CompositeReport:
+    """One composite result, validated once for every output format.
+
+    Optional details are absent unless requested: components and their
+    availability counts travel together, as do flags and their threshold.
+    """
+
+    scores: np.ndarray
+    method: str
+    respondent_ids: list[str] | None = None
+    weights: Mapping[str, float] | None = None
+    min_valid_indices: int | None = None
+    errors: Mapping[str, str] = field(default_factory=dict)
+    component_scores: Mapping[str, np.ndarray] | None = None
+    valid_index_counts: np.ndarray | None = None
+    standardized: bool = True
+    flags: np.ndarray | None = None
+    flag_threshold: float | None = None
+    flag_percentile: float | None = None
+    probabilities: np.ndarray | None = None
+
+    def __post_init__(self) -> None:
+        n_respondents = len(self.scores)
+        validate_respondent_ids(n_respondents, self.respondent_ids)
+        validate_composite_components(n_respondents, self.component_scores, self.valid_index_counts)
+        validate_composite_flags(
+            n_respondents, self.flags, self.flag_threshold, self.flag_percentile
+        )
+        validate_composite_probabilities(n_respondents, self.probabilities)
+
+
+@dataclass(frozen=True)
+class ResponseTimeReport:
+    """One flagged response-time result, validated once for every output format."""
+
+    scores: np.ndarray
+    flags: np.ndarray
+    metric: ResponseTimeMetric
+    direction: ResponseTimeFlagDirection
+    cutoff: float
+    respondent_ids: list[str] | None = None
+
+    def __post_init__(self) -> None:
+        validate_respondent_ids(len(self.scores), self.respondent_ids)
+        if len(self.flags) != len(self.scores):
+            raise ValueError("response-time flag length must match score length")

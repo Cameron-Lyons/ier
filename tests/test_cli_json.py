@@ -12,14 +12,18 @@ from unittest.mock import patch
 
 import numpy as np
 
+from ier._cli_composite import CompositeReport, ResponseTimeReport
 from ier._cli_output import (
     _write_composite_json,
+    _write_json_value,
     _write_response_time_json,
     _write_screen_json,
 )
 from ier.cli import main
 
 if TYPE_CHECKING:
+    from typing import TextIO
+
     from ier.types import ScreenResult
 
 
@@ -84,9 +88,7 @@ class TestCliJson(unittest.TestCase):
         composite_output = StringIO()
         _write_composite_json(
             composite_output,
-            result["scores"]["example"],
-            "mean",
-            identifiers,
+            CompositeReport(result["scores"]["example"], "mean", identifiers),
         )
         composite_payload = json.loads(composite_output.getvalue())
         self.assertIs(composite_payload["standardized"], True)
@@ -103,9 +105,11 @@ class TestCliJson(unittest.TestCase):
         diagnostic_output = StringIO()
         _write_composite_json(
             diagnostic_output,
-            result["scores"]["example"],
-            "mean",
-            errors={"mad": "missing item configuration"},
+            CompositeReport(
+                result["scores"]["example"],
+                "mean",
+                errors={"mad": "missing item configuration"},
+            ),
         )
         self.assertEqual(
             json.loads(diagnostic_output.getvalue())["errors"],
@@ -115,12 +119,14 @@ class TestCliJson(unittest.TestCase):
         timing_output = StringIO()
         _write_response_time_json(
             timing_output,
-            result["scores"]["example"],
-            result["flags"]["example"],
-            "median",
-            "low",
-            2.0,
-            identifiers,
+            ResponseTimeReport(
+                result["scores"]["example"],
+                result["flags"]["example"],
+                "median",
+                "low",
+                2.0,
+                identifiers,
+            ),
         )
         timing_payload = json.loads(timing_output.getvalue())
         self.assertEqual(timing_payload["scores"], [1.0, None, None, None, 5.0])
@@ -158,17 +164,19 @@ class TestCliJson(unittest.TestCase):
             )
             _write_composite_json(
                 component_output,
-                np.arange(5, dtype=float),
-                "mean",
-                component_scores={
-                    "first": np.arange(5, dtype=float),
-                    "second": np.arange(5, dtype=float) * 2.0,
-                },
-                valid_index_counts=np.full(5, 2, dtype=np.int_),
-                flags=np.array([False, False, False, False, True]),
-                flag_threshold=3.0,
-                flag_percentile=75.0,
-                probabilities=np.linspace(0.1, 0.9, 5),
+                CompositeReport(
+                    np.arange(5, dtype=float),
+                    "mean",
+                    component_scores={
+                        "first": np.arange(5, dtype=float),
+                        "second": np.arange(5, dtype=float) * 2.0,
+                    },
+                    valid_index_counts=np.full(5, 2, dtype=np.int_),
+                    flags=np.array([False, False, False, False, True]),
+                    flag_threshold=3.0,
+                    flag_percentile=75.0,
+                    probabilities=np.linspace(0.1, 0.9, 5),
+                ),
             )
 
         self.assertEqual(json.loads(output.getvalue())["n_respondents"], 5)
@@ -189,10 +197,13 @@ class TestCliJson(unittest.TestCase):
             source.write_text("1,1,1\n1,2,3\n3,3,3\n", encoding="utf-8")
             destination = root / "screen.json"
 
-            with patch(
-                "ier._cli_output.StringIO",
-                side_effect=AssertionError("buffered JSON path used"),
-            ):
+            handles: list[TextIO] = []
+
+            def write_to_destination(handle: TextIO, value: object, indent: int = 0) -> None:
+                handles.append(handle)
+                _write_json_value(handle, value, indent)
+
+            with patch("ier._cli_output._write_json_value", side_effect=write_to_destination):
                 code = main(
                     [
                         "screen",
@@ -208,6 +219,8 @@ class TestCliJson(unittest.TestCase):
 
             self.assertEqual(code, 0)
             self.assertEqual(json.loads(destination.read_text())["n_respondents"], 3)
+            self.assertTrue(handles)
+            self.assertFalse(any(isinstance(handle, StringIO) for handle in handles))
 
 
 if __name__ == "__main__":

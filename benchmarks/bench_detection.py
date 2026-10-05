@@ -22,10 +22,15 @@ CarelessFactory = Callable[[np.random.Generator, int, int], np.ndarray]
 
 
 def _attentive(rng: np.random.Generator, n: int, items: int) -> np.ndarray:
-    """Mildly correlated Likert-like responses (not pure uniform noise)."""
+    """Mildly correlated Likert-like responses (not pure uniform noise).
+
+    Item locations give items distinct difficulties, so person-fit indices such
+    as guttman have a population item order that attentive respondents follow.
+    """
     latent = rng.normal(size=(n, 1))
+    loc = rng.uniform(-1.0, 1.0, size=items)
     noise = rng.normal(scale=0.85, size=(n, items))
-    continuous = 3.0 + 0.7 * latent + noise
+    continuous = 3.0 + 0.7 * latent - loc + noise
     return np.clip(np.rint(continuous), 1, 5).astype(float)
 
 
@@ -108,11 +113,12 @@ def main() -> None:
     print(f"indices={result['indices_used']}")
     print(f"TP={tp} FP={fp} FN={fn} TN={tn}")
     print(f"sensitivity={sens:.3f} specificity={spec:.3f}")
-    print("per-index careless flag rate:")
+    print("per-index careless flag rate (attentive flag rate):")
     for name in result["indices_used"]:
         flags = result["flags"][name]
         rate = float(np.mean(flags[labels == 1]))
-        print(f"  {name}: {rate:.3f}")
+        attentive_rate = float(np.mean(flags[labels == 0]))
+        print(f"  {name}: {rate:.3f} ({attentive_rate:.3f})")
 
 
 if __name__ == "__main__":

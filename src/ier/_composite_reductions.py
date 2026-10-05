@@ -13,6 +13,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from typing import Literal
 
+    from ier.types import CombineMethod
+
 _REDUCTION_BATCH_ROWS = 8192
 _MIN_EXPONENT = -4096
 _ROUNDING_TOLERANCE = 8 * np.finfo(float).eps
@@ -185,9 +187,7 @@ def _check_infinite_result(result: np.ndarray, method: Literal["sum", "max"]) ->
         raise _range_error(method, row, infinite_score=True)
 
 
-def _exact_reduction(
-    components: list[_ScoreComponent], row: int, method: Literal["mean", "sum", "max"]
-) -> float:
+def _exact_reduction(components: list[_ScoreComponent], row: int, method: CombineMethod) -> float:
     if method == "mean":
         return _exact_mean(components, row)
     terms = []
@@ -337,7 +337,7 @@ def _reduction_block(
     components: list[_ScoreComponent],
     selection: slice | np.ndarray,
     size: int,
-    method: Literal["mean", "sum", "max"],
+    method: CombineMethod,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Keep infinite inputs out of scaled arithmetic and preserve row repair order."""
     infinite_rows = None
@@ -378,7 +378,7 @@ def _repair_reductions(
     counts_out: np.ndarray | None,
     mask: np.ndarray | None = None,
     *,
-    method: Literal["mean", "sum", "max"] = "mean",
+    method: CombineMethod = "mean",
     min_valid_indices: int | None = None,
 ) -> None:
     for start in range(0, len(result), _REDUCTION_BATCH_ROWS):

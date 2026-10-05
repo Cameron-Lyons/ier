@@ -10,6 +10,7 @@ import warnings
 import numpy as np
 
 from ier._column_statistics import column_mean_order
+from ier._flagging import validate_threshold
 from ier._row_statistics import row_slices
 from ier._validation import MatrixLike, validate_matrix_input
 
@@ -27,12 +28,19 @@ def guttman(
 
     Guttman errors measure the number of times a person's responses violate
     the expected ordering based on item difficulty (mean endorsement).
-    An error occurs when a person scores higher on a harder item than an
-    easier item.
+    Items are ordered easiest first (highest sample mean first). An error is
+    an item pair where the respondent scores strictly higher on the harder,
+    less endorsed item than on the easier one, so a perfect cumulative pattern
+    scores 0. Items with tied difficulties are ordered by column position.
+    Item means always use the available (non-missing) responses, whatever
+    ``na_rm`` is; items without any observed response are ordered last. Pairs
+    involving a missing response never count as errors.
 
     Parameters:
     - x: A matrix of data where rows are individuals and columns are items.
-    - na_rm: If True, handle missing values by excluding them from comparisons.
+    - na_rm: Selects the normalization denominator. If True, normalized scores
+             divide by the pairs among the respondent's answered items; if False,
+             they divide by every item pair. Raw counts do not depend on it.
     - normalize: If True, return proportion of errors (0-1 scale).
                  If False, return raw error counts.
 
@@ -44,15 +52,21 @@ def guttman(
     - ValueError: If inputs are invalid
 
     Example:
-        >>> data = [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1], [3, 3, 3, 3, 3]]
-        >>> scores = guttman(data)
-        >>> print(scores)  # Second person has high errors (reversed pattern)
+        >>> import numpy as np
+        >>> # Items get harder from left to right; the last row reverses [1, 1, 0, 0].
+        >>> data = [[1, 1, 1, 0], [1, 1, 0, 0], [1, 0, 0, 0], [1, 1, 0, 0], [0, 0, 1, 1]]
+        >>> guttman(data, normalize=False).tolist()
+        [0.0, 0.0, 0.0, 0.0, 4.0]
+        >>> np.round(guttman(data), 2).tolist()
+        [0.0, 0.0, 0.0, 0.0, 0.67]
     """
     x_array = validate_matrix_input(x, min_columns=2)
     n_persons = x_array.shape[0]
     n_items = x_array.shape[1]
 
-    difficulty_order = column_mean_order(x_array, ignore_nan=na_rm)
+    # One missing response must not make its item the hardest, so na_rm sets
+    # only the denominator below.
+    difficulty_order = column_mean_order(x_array, ignore_nan=True)
     categories = _small_categorical_values(x_array)
     errors, valid_counts = _count_guttman_errors(
         x_array,
@@ -125,7 +139,11 @@ def _count_guttman_errors(
     *,
     count_valid: bool,
 ) -> tuple[np.ndarray, np.ndarray | None]:
-    """Count increasing response pairs in bounded row batches."""
+    """Count Guttman errors in bounded row batches of easiest-first items.
+
+    With the easiest item first, every strictly increasing response pair is a
+    response that favors a harder item over an easier one.
+    """
     n_people, n_items = x.shape
     use_merges = categories is None and n_items >= 768 and x.dtype.kind in "iuf"
     # Merge levels retain sorted values, permutations and counting workspaces.
@@ -154,7 +172,7 @@ def _count_categorical_errors(
     x_sorted: np.ndarray,
     categories: np.ndarray,
 ) -> np.ndarray:
-    """Count increasing pairs by grouping positions on an ordered response scale."""
+    """Count increasing pairs of easiest-first items by grouping response categories."""
     errors = np.zeros(x_sorted.shape[0], dtype=np.int64)
     lower_categories = np.zeros(x_sorted.shape, dtype=bool)
 
@@ -174,7 +192,7 @@ def _count_categorical_errors(
 
 
 def _count_pairwise_errors(x_sorted: np.ndarray) -> np.ndarray:
-    """Count pairs for one bounded high-cardinality response block."""
+    """Count increasing pairs of easiest-first items in one high-cardinality block."""
     n_people, n_items = x_sorted.shape
     errors = np.zeros(n_people, dtype=np.int64)
 
@@ -188,7 +206,7 @@ def _count_pairwise_errors(x_sorted: np.ndarray) -> np.ndarray:
 
 
 def _count_merge_errors(x_sorted: np.ndarray) -> np.ndarray:
-    """Count increasing pairs across sorted runs, keeping ties and NaNs excluded.
+    """Count increasing pairs of easiest-first items across sorted runs, skipping ties and NaNs.
 
     Small runs use direct comparisons. Each subsequent level counts only pairs
     crossing its two halves, then retains their sorted merge for the next level.
@@ -234,15 +252,29 @@ def guttman_flag(
 
     Parameters:
     - x: A matrix of data where rows are individuals and columns are items.
-    - threshold: Error rate threshold for flagging (default 0.5).
-    - na_rm: If True, handle missing values.
+    - threshold: Finite error-rate threshold for flagging (default 0.5).
+                 Respondents with normalized scores strictly above it are flagged.
+                 Like the other ``*_flag`` helpers, it is converted with
+                 ``float()``, so numeric strings are accepted; ``True`` and
+                 ``False`` are rejected.
+    - na_rm: Normalization denominator passed to :func:`guttman`. If True, use
+             the pairs among answered items; if False, use every item pair.
 
     Returns:
     - Boolean array where True indicates potentially careless responding.
 
+    Raises:
+    - ValueError: If ``threshold`` is ``True`` or ``False``, cannot be
+                  converted with ``float()``, or is not finite, or if inputs
+                  are invalid.
+
     Example:
-        >>> data = [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1], [3, 3, 3, 3, 3]]
-        >>> flags = guttman_flag(data, threshold=0.4)
+        >>> data = [[1, 1, 1, 0], [1, 1, 0, 0], [1, 0, 0, 0], [1, 1, 0, 0], [0, 0, 1, 1]]
+        >>> guttman_flag(data, threshold=0.5).tolist()
+        [False, False, False, False, True]
     """
+    validated_threshold = validate_threshold(threshold)
+    if validated_threshold is None:
+        raise ValueError("threshold must be a finite number")
     scores = guttman(x, na_rm=na_rm, normalize=True)
-    return scores > threshold
+    return scores > validated_threshold

@@ -10,13 +10,22 @@ from __future__ import annotations
 import math
 from operator import index
 from statistics import NormalDist
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 _GAMMA_EPSILON = 1e-14
 _GAMMA_MAX_ITERATIONS = 10_000
 _CONTINUED_FRACTION_FLOOR = 1e-300
 _QUANTILE_MAX_ITERATIONS = 128
+_QUANTILE_BATCH_ELEMENTS = 8_192
+# Array Newton iterations overtake scalar solves near 100-250 general
+# probabilities (NumPy 2.x sooner, NumPy 1.26 later); smaller sets solve singly.
+_QUANTILE_ARRAY_MIN_ELEMENTS = 192
+_TINY = float(np.finfo(float).tiny)
 
 
 def _gamma_lower_series(shape: float, value: float) -> float:
@@ -188,7 +197,7 @@ def _chi_square_quantile(probability: float, degrees_of_freedom: int) -> float:
         (math.log(probability) + math.lgamma(half_df + 1.0)) / half_df
     )
     estimate = wilson_hilferty if wilson_hilferty > 0.0 else lower_tail_guess
-    estimate = max(estimate, np.finfo(float).tiny)
+    estimate = max(estimate, _TINY)
 
     lower = 0.0
     upper = max(df, estimate, 1.0)
@@ -201,7 +210,7 @@ def _chi_square_quantile(probability: float, degrees_of_freedom: int) -> float:
         if math.isinf(upper):
             raise ArithmeticError("could not bracket chi-square quantile")
 
-    value = min(max(estimate, np.finfo(float).tiny), upper)
+    value = min(max(estimate, _TINY), upper)
     target_tail = probability if probability <= 0.5 else 1.0 - probability
 
     for _ in range(_QUANTILE_MAX_ITERATIONS):
@@ -229,7 +238,7 @@ def _chi_square_quantile(probability: float, degrees_of_freedom: int) -> float:
         if not math.isfinite(candidate) or not lower < candidate < upper:
             candidate = (lower + upper) / 2.0
 
-        if abs(candidate - value) <= max(abs(value) * 5e-14, np.finfo(float).tiny):
+        if abs(candidate - value) <= max(abs(value) * 5e-14, _TINY):
             return candidate
         value = candidate
 
@@ -270,7 +279,12 @@ def _chi_square_lower_quantile(probability: float, degrees_of_freedom: int) -> f
 
 
 def chi_square_quantiles(probabilities: np.ndarray, degrees_of_freedom: int) -> np.ndarray:
-    """Evaluate array quantiles, validating once and vectorizing the exact df=2 case."""
+    """Evaluate array quantiles, validating once and solving each batch together.
+
+    Results equal ``chi_square_quantile`` element by element. Bounded batches
+    take the same special cases, and the general Newton solve runs on arrays
+    unless a batch has too few general probabilities to repay array overhead.
+    """
     degrees_of_freedom = _validate_degrees_of_freedom(degrees_of_freedom)
     probability_array = np.asarray(probabilities, dtype=float)
     if not (
@@ -285,9 +299,275 @@ def chi_square_quantiles(probabilities: np.ndarray, degrees_of_freedom: int) -> 
             np.log1p(result, out=result)
         result *= -2.0
         return result
-    flat_result = np.fromiter(
-        (_chi_square_quantile(float(item), degrees_of_freedom) for item in probability_array.flat),
-        dtype=float,
-        count=probability_array.size,
-    )
+    flat_result = np.empty(probability_array.size)
+    # Each result is independent of its batch, so batches only bound workspace.
+    for start in range(0, probability_array.size, _QUANTILE_BATCH_ELEMENTS):
+        stop = start + _QUANTILE_BATCH_ELEMENTS
+        flat_result[start:stop] = _chi_square_quantile_batch(
+            probability_array.flat[start:stop], degrees_of_freedom
+        )
     return flat_result.reshape(probability_array.shape)
+
+
+def _chi_square_quantile_batch(probabilities: np.ndarray, degrees_of_freedom: int) -> np.ndarray:
+    """Route validated probabilities through the scalar special cases for df != 2."""
+    result = np.zeros(probabilities.shape)
+    result[probabilities == 1.0] = math.inf
+    general = (probabilities > 0.0) & (probabilities < 1.0)
+    if degrees_of_freedom == 1:
+        small = general & (probabilities <= 1e-8)
+        selected = probabilities[small]
+        with np.errstate(under="ignore"):
+            result[small] = selected * (math.pi / 2.0 * selected)
+        large = general & (probabilities >= 0.1)
+        normal = _libm(NormalDist().inv_cdf, (1.0 - probabilities[large]) / 2.0)
+        result[large] = normal * normal
+        general &= ~(small | large)
+    else:
+        tiny = general & (probabilities <= 1e-50)
+        result[tiny] = [
+            _chi_square_lower_quantile(probability, degrees_of_freedom)
+            for probability in probabilities[tiny].tolist()
+        ]
+        general &= ~tiny
+    selected = probabilities[general]
+    if selected.size < _QUANTILE_ARRAY_MIN_ELEMENTS:
+        # Per-iteration array overhead outweighs scalar solves for few values.
+        result[general] = [
+            _chi_square_quantile(probability, degrees_of_freedom)
+            for probability in selected.tolist()
+        ]
+    else:
+        result[general] = _chi_square_quantiles_general(selected, degrees_of_freedom)
+    return result
+
+
+def _chi_square_quantiles_general(probabilities: np.ndarray, degrees_of_freedom: int) -> np.ndarray:
+    """Apply ``_chi_square_quantile``'s safeguarded Newton solve to an array.
+
+    Each element repeats the scalar operations: a Wilson-Hilferty or lower-tail
+    start, upper-bracket doubling, then Newton steps with a bisection fallback.
+    Finished elements leave the working set, so a result never depends on the
+    other probabilities solved with it.
+    """
+    count = probabilities.size
+    result = np.empty(count)
+    if not count:
+        return result
+    df = float(degrees_of_freedom)
+    half_df = df / 2.0
+    lower_tail = probabilities <= 0.5
+    complement = 1.0 - probabilities
+
+    # Python float arithmetic overflows, underflows and propagates NaN silently.
+    # Match it so a caller's NumPy error policy cannot change any result.
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        normal = _libm(NormalDist().inv_cdf, probabilities)
+        correction = 1.0 - 2.0 / (9.0 * df) + normal * math.sqrt(2.0 / (9.0 * df))
+        # Nonpositive corrections give nonpositive Wilson-Hilferty estimates, so
+        # one test selects the lower-tail start exactly where the scalar does.
+        estimate = df * _libm(_cube, correction)
+        nonpositive = ~(estimate > 0.0)
+        if nonpositive.any():
+            log_probability = _libm(math.log, probabilities[nonpositive])
+            estimate[nonpositive] = 2.0 * _libm(
+                math.exp, (log_probability + math.lgamma(half_df + 1.0)) / half_df
+            )
+        np.maximum(estimate, _TINY, out=estimate)
+
+        # The scalar max(df, estimate, 1.0) and its second _TINY clamp reduce to
+        # these because df >= 1 and the estimate is already at least _TINY.
+        upper = np.maximum(estimate, df)
+        pending = np.arange(count)
+        while pending.size:
+            cdf, survival = _regularized_gamma_pair_array(half_df, upper[pending] / 2.0)
+            below_target = np.where(
+                lower_tail[pending], cdf < probabilities[pending], survival > complement[pending]
+            )
+            pending = pending[below_target]
+            doubled = upper[pending] * 2.0
+            if np.isinf(doubled).any():
+                raise ArithmeticError("could not bracket chi-square quantile")
+            upper[pending] = doubled
+
+        positions = np.arange(count)
+        value = np.minimum(estimate, upper)
+        lower = np.zeros(count)
+        target_tail = np.where(lower_tail, probabilities, complement)
+        for _ in range(_QUANTILE_MAX_ITERATIONS):
+            cdf, survival = _regularized_gamma_pair_array(half_df, value / 2.0)
+            residual = np.where(lower_tail, cdf, survival)
+            residual -= target_tail
+            below_target = np.where(lower_tail, residual < 0.0, residual > 0.0)
+            derivative = _chi_square_density_array(value, degrees_of_freedom)
+            np.negative(derivative, out=derivative, where=~lower_tail)
+            converged = np.abs(residual) <= target_tail * 5e-14
+
+            lower = np.where(below_target, value, lower)
+            upper = np.where(below_target, upper, value)
+            candidate = np.full_like(value, math.nan)
+            usable = (derivative > 0.0) | (derivative < 0.0)
+            np.divide(residual, derivative, out=candidate, where=usable)
+            np.subtract(value, candidate, out=candidate, where=usable)
+            bisect = ~(np.isfinite(candidate) & (lower < candidate) & (candidate < upper))
+            candidate[bisect] = (lower[bisect] + upper[bisect]) / 2.0
+            stalled = np.abs(candidate - value) <= np.maximum(np.abs(value) * 5e-14, _TINY)
+
+            result[positions[converged]] = value[converged]
+            stalled &= ~converged
+            result[positions[stalled]] = candidate[stalled]
+            remaining = ~(converged | stalled)
+            if not remaining.any():
+                return result
+            positions = positions[remaining]
+            value = candidate[remaining]
+            lower = lower[remaining]
+            upper = upper[remaining]
+            lower_tail = lower_tail[remaining]
+            target_tail = target_tail[remaining]
+
+    raise ArithmeticError("chi-square quantile did not converge")
+
+
+def _regularized_gamma_pair_array(
+    shape: float, values: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return ``_regularized_gamma_pair`` for an array of finite non-negative values.
+
+    Each element repeats the scalar recurrence and operation order. Callers
+    suppress floating-point warnings as Python float arithmetic would.
+    """
+    lower = np.zeros_like(values)
+    upper = np.ones_like(values)
+    # Zero values (for example halved subnormals) keep the scalar P = 0, Q = 1.
+    positive = values > 0.0
+    values = values[positive]
+    scale = _libm(math.exp, -values + shape * _libm(math.log, values) - math.lgamma(shape))
+    positive_lower = np.empty_like(values)
+    positive_upper = np.empty_like(values)
+
+    series = values < shape + 1.0
+    tail = _gamma_lower_series_array(shape, values[series])
+    tail *= scale[series]
+    np.clip(tail, 0.0, 1.0, out=tail)
+    positive_lower[series] = tail
+    positive_upper[series] = 1.0 - tail
+
+    fraction = ~series
+    tail = _gamma_upper_fraction_array(shape, values[fraction])
+    tail *= scale[fraction]
+    np.clip(tail, 0.0, 1.0, out=tail)
+    positive_upper[fraction] = tail
+    positive_lower[fraction] = 1.0 - tail
+
+    lower[positive] = positive_lower
+    upper[positive] = positive_upper
+    return lower, upper
+
+
+def _gamma_lower_series_array(shape: float, values: np.ndarray) -> np.ndarray:
+    """Evaluate ``_gamma_lower_series`` elementwise, retiring converged elements."""
+    result = np.empty_like(values)
+    if not values.size:
+        return result
+    positions = np.arange(values.size)
+    term = np.full_like(values, 1.0 / shape)
+    series = term.copy()
+    denominator = shape
+    for _ in range(_GAMMA_MAX_ITERATIONS):
+        denominator += 1.0
+        term *= values / denominator
+        series += term
+        # Terms are non-negative and the series is positive for non-negative
+        # values, so the scalar convergence test needs no absolute values here.
+        converged = term <= series * _GAMMA_EPSILON
+        finished = np.count_nonzero(converged)
+        if finished:
+            result[positions[converged]] = series[converged]
+            if finished == converged.size:
+                return result
+            remaining = ~converged
+            positions = positions[remaining]
+            values = values[remaining]
+            term = term[remaining]
+            series = series[remaining]
+    raise ArithmeticError("regularized gamma series did not converge")
+
+
+def _gamma_upper_fraction_array(shape: float, values: np.ndarray) -> np.ndarray:
+    """Evaluate the scalar modified-Lentz upper-gamma fraction elementwise."""
+    result = np.empty_like(values)
+    if not values.size:
+        return result
+    positions = np.arange(values.size)
+    denominator = values + 1.0 - shape
+    np.copyto(
+        denominator,
+        _CONTINUED_FRACTION_FLOOR,
+        where=np.abs(denominator) < _CONTINUED_FRACTION_FLOOR,
+    )
+    reciprocal_previous = np.full_like(values, 1.0 / _CONTINUED_FRACTION_FLOOR)
+    reciprocal_current = 1.0 / denominator
+    fraction = reciprocal_current.copy()
+
+    for iteration in range(1, _GAMMA_MAX_ITERATIONS + 1):
+        coefficient = -float(iteration) * (float(iteration) - shape)
+        denominator += 2.0
+        reciprocal_current *= coefficient
+        reciprocal_current += denominator
+        np.copyto(
+            reciprocal_current,
+            _CONTINUED_FRACTION_FLOOR,
+            where=np.abs(reciprocal_current) < _CONTINUED_FRACTION_FLOOR,
+        )
+        reciprocal_previous = denominator + coefficient / reciprocal_previous
+        np.copyto(
+            reciprocal_previous,
+            _CONTINUED_FRACTION_FLOOR,
+            where=np.abs(reciprocal_previous) < _CONTINUED_FRACTION_FLOOR,
+        )
+        np.divide(1.0, reciprocal_current, out=reciprocal_current)
+        change = reciprocal_previous * reciprocal_current
+        fraction *= change
+        converged = np.abs(change - 1.0) <= _GAMMA_EPSILON
+        finished = np.count_nonzero(converged)
+        if finished:
+            result[positions[converged]] = fraction[converged]
+            if finished == converged.size:
+                return result
+            remaining = ~converged
+            positions = positions[remaining]
+            denominator = denominator[remaining]
+            reciprocal_previous = reciprocal_previous[remaining]
+            reciprocal_current = reciprocal_current[remaining]
+            fraction = fraction[remaining]
+
+    raise ArithmeticError("regularized gamma continued fraction did not converge")
+
+
+def _chi_square_density_array(values: np.ndarray, degrees_of_freedom: int) -> np.ndarray:
+    """Return ``_chi_square_density`` for an array of positive finite values."""
+    half_df = degrees_of_freedom / 2.0
+    log_density = (
+        (half_df - 1.0) * _libm(math.log, values)
+        - values / 2.0
+        - half_df * math.log(2.0)
+        - math.lgamma(half_df)
+    )
+    return _libm(math.exp, log_density)
+
+
+def _libm(function: Callable[[float], float], values: np.ndarray) -> np.ndarray:
+    """Apply a scalar float function elementwise with the scalar path's rounding.
+
+    NumPy's vectorized exponentials and logarithms may differ from the C
+    library by an ulp on some platforms. Elementwise arithmetic rounds the same
+    in NumPy and Python, so evaluating only these calls through the scalar
+    functions keeps array and scalar quantiles identical everywhere.
+    """
+    return np.fromiter(map(function, values.tolist()), dtype=float, count=values.size)
+
+
+def _cube(value: float) -> float:
+    """Return the Wilson-Hilferty cube with the scalar power operation."""
+    return value**3

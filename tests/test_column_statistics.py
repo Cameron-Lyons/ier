@@ -146,6 +146,22 @@ def test_public_scores_preserve_overflowing_item_means(ignore_nan: bool) -> None
         )
 
 
+@pytest.mark.parametrize(
+    ("ignore_nan", "expected"), [(True, [2, 3, 4, 0, 1]), (False, [2, 4, 0, 1, 3])]
+)
+def test_item_order_is_easiest_first_with_column_ties_and_missing_means_last(
+    ignore_nan: bool, expected: list[int]
+) -> None:
+    data = np.array([[1.0, np.nan, 3.0, 2.0, 3.0], [2.0, np.nan, 1.0, np.nan, 1.0]])
+    np.testing.assert_array_equal(column_mean_order(data, ignore_nan=ignore_nan), expected)
+
+
+@pytest.mark.parametrize("dtype", [np.int8, np.int64, np.uint64])
+def test_integer_item_order_breaks_exact_total_ties_by_column(dtype: type) -> None:
+    data = np.array([[0, 2, 1, 1, 3], [1, 1, 2, 1, 0]], dtype=dtype)
+    np.testing.assert_array_equal(column_mean_order(data, ignore_nan=True), [1, 2, 4, 3, 0])
+
+
 @pytest.mark.parametrize("dtype", [np.int64, np.uint64])
 @pytest.mark.parametrize("layout", ["C", "F", "strided"])
 @pytest.mark.parametrize("ignore_nan", [False, True])
@@ -159,7 +175,7 @@ def test_integer_item_means_and_profiles_preserve_exact_totals(
     totals = [sum(int(value) for value in column) for column in data.T]
     expected = [total / len(data) for total in totals]
     expected_profile = [(total - min(totals)) / len(data) for total in totals]
-    expected_order = sorted(range(data.shape[1]), key=lambda column: totals[column])
+    expected_order = sorted(range(data.shape[1]), key=lambda column: -totals[column])
     with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 13):
         actual = column_mean(data, ignore_nan=ignore_nan)
         profile = column_mean(data, ignore_nan=ignore_nan, center_integers=True)
@@ -237,9 +253,9 @@ def test_guttman_preserves_large_integer_categories(
 
 def test_guttman_ranks_nearby_large_items_even_with_a_distant_item() -> None:
     lower = 2**60
-    data = np.array([[0, lower + 4, lower + 1], [0, lower + 1, lower + 3]])
+    data = np.array([[0, lower + 1, lower + 4], [0, lower + 3, lower + 1]])
     totals = [sum(int(value) for value in column) for column in data.T]
-    order = sorted(range(3), key=lambda column: totals[column])
+    order = sorted(range(3), key=lambda column: -totals[column])
     expected = [
         sum(row[order[a]] < row[order[b]] for a in range(3) for b in range(a + 1, 3))
         for row in data

@@ -7,6 +7,9 @@ Usage:
     uv run python benchmarks/bench_psychsyn.py --respondents 16000 --items 50
     uv run python benchmarks/bench_psychsyn.py --structure independent --missing-rate 0
     uv run python benchmarks/bench_psychsyn.py --missing-mode scattered --order F
+    uv run python benchmarks/bench_psychsyn.py --operation correlations \
+        --item-correlations pairwise --missing-mode scattered --missing-rate 0.02 \
+        --respondents 100000 --items 50
 """
 
 from __future__ import annotations
@@ -17,7 +20,7 @@ import platform
 import numpy as np
 from _measurement import measure
 
-from ier._column_statistics import column_correlations
+from ier._column_statistics import column_correlations, pairwise_column_correlations
 from ier.psychsyn import psychsyn, psychsyn_critval
 
 
@@ -37,6 +40,7 @@ def main() -> None:
         choices=("psychsyn", "psychsyn_critval", "correlations"),
         default="psychsyn",
     )
+    parser.add_argument("--item-correlations", choices=("complete", "pairwise"), default="complete")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
@@ -82,11 +86,16 @@ def main() -> None:
     data = np.array(data, order=args.order)
 
     def operation() -> np.ndarray | tuple[np.ndarray, np.ndarray] | list[tuple[int, int, float]]:
+        pairwise = args.item_correlations == "pairwise"
         if args.operation == "correlations":
-            return column_correlations(data)
+            return pairwise_column_correlations(data) if pairwise else column_correlations(data)
         if args.operation == "psychsyn_critval":
-            return psychsyn_critval(data, min_correlation=args.critval)
-        return psychsyn(data, critval=args.critval, diag=True)
+            return psychsyn_critval(
+                data, min_correlation=args.critval, item_correlations=args.item_correlations
+            )
+        return psychsyn(
+            data, critval=args.critval, diag=True, item_correlations=args.item_correlations
+        )
 
     for _ in range(args.warmup):
         operation()
@@ -94,8 +103,19 @@ def main() -> None:
     measurement = measure(operation, args.repeats)
     if isinstance(measurement.result, np.ndarray):
         correlations = measurement.result
-        available = np.isfinite(data).all(axis=0) & np.any(data != data[0], axis=0)
-        if not np.array_equal(np.isfinite(correlations), available[:, None] & available):
+        if args.item_correlations == "complete":
+            available = np.isfinite(data).all(axis=0) & np.any(data != data[0], axis=0)
+            usable = np.isfinite(correlations)
+            expected = available[:, None] & available
+        else:
+            # Pair availability depends on shared rows; each item needs three varying responses.
+            observed = np.count_nonzero(~np.isnan(data), axis=0)
+            spread = np.fmax.reduce(data, axis=0, initial=-np.inf) > np.fmin.reduce(
+                data, axis=0, initial=np.inf
+            )
+            usable = np.isfinite(np.diagonal(correlations))
+            expected = (observed >= 3) & spread
+        if not np.array_equal(usable, expected):
             raise RuntimeError("benchmark produced correlations with incorrect item availability")
         if np.isinf(correlations).any() or np.any(np.abs(correlations) > 1):
             raise RuntimeError("benchmark produced invalid item correlations")
@@ -113,6 +133,7 @@ def main() -> None:
         f"shape={data.shape} selected_pairs={selected_pairs} structure={args.structure} "
         f"missing_rate={args.missing_rate} missing_mode={args.missing_mode} order={args.order} "
         f"dtype={args.dtype} integer_offset={args.integer_offset} "
+        f"item_correlations={args.item_correlations} "
         f"repeats={args.repeats} warmup={args.warmup} seed={args.seed}"
     )
     print(
