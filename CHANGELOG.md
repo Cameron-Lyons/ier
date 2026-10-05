@@ -5,6 +5,289 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-10-05
+
+### Added
+
+- Five opt-in, composite-enabled registry indices bring the catalog to 26:
+  `avgstr`, `autocorrelation`, `gpoly`, `u3poly_fit`, and `ht`.
+- `avgstr` scores the average length of identical runs, matching
+  `careless::longstring(avg = TRUE)`, through `longstring_scores(avg=True)`.
+  With `na_rm=True`, a run can continue across a skipped item.
+- `autocorrelation()` and `autocorrelation_flag()` detect zigzag, seesaw, and
+  short cyclic patterns (Gottfried et al., 2022; `responsePatterns::rp.acors`)
+  from the largest (`"max_abs"`) or summed (`"sum_abs"`) absolute correlation
+  of each respondent's responses with lagged copies; `return_lags=True` also
+  returns the strongest lag. As in R, a lag whose window does not vary scores 1.
+  The default `max_lag=10` departs from R's `J - 3` deliberately, raising the
+  AUC in a simulated 40-item survey from 0.75 to 0.96. Registry and CLI
+  settings: `IndexOptions.autocorrelation_max_lag`/`autocorrelation_statistic`
+  and `--autocorrelation-max-lag N` (`none` for the R range)/
+  `--autocorrelation-statistic`. A 23,000-by-40 matrix scores in about 16 ms.
+- PerFit's item-step person-fit statistics: `gpoly()` (polytomous Guttman
+  errors, normalized by default as `Gnormed.poly`), `u3poly()` (polytomous U3),
+  and `ht()` (transposed scalability for dichotomous items), using exact
+  integer arithmetic so perfect patterns score exactly 0. The registry indices
+  `gpoly` and `u3poly_fit` flag high and `ht` flags low, with `gpoly_flag()`,
+  `u3poly_flag()`, `ht_flag()`, and `IndexOptions.person_fit_ncat`/
+  `--person-fit-ncat`. `gpoly()` and `u3poly()` scored 22,000 respondents by
+  30 five-category items in 4–15 ms, against 19–53 ms for `guttman()`.
+- `response_time_effort()` computes response time effort (Wise & Kong, 2005),
+  the share of answered items whose time reaches an item threshold: normative
+  NT10 values by default (`normative_fraction=0.10` of each item's mean time,
+  optionally capped by `max_threshold`), or one shared or per-item value.
+  `return_item_flags=True` also returns the rapid-response matrix, and
+  `response_time_effort_flag()` flags RTE strictly below a fixed cutoff
+  (default 0.90).
+- `ier response-time --metric effort` scores RTE with `--effort-fraction` and
+  `--effort-max-threshold`, or `--effort-threshold` for one shared item time.
+  It flags RTE strictly below 0.90 unless `--threshold` (a proportion from 0 to
+  1, also strict) is given. Timing archives accept the `effort` metric without
+  a schema version change, so `ier response-time-scores` can reflag it.
+- `evenodd(..., method="halves")` implements the classic even-odd index
+  (Johnson, 2005; Meade & Craig, 2012; Curran, 2016), correlating odd- and
+  even-position factor means across factors with a clamped Spearman–Brown
+  correction. Scores equal `-careless::evenodd` to within 1e-7, and
+  respondents whose half means do not vary are unavailable, as in careless. In
+  a simulated six-scale survey it separated random responders with an AUC of
+  about 0.95, against about 0.5 for the unchanged default `"item_pairs"`. Set
+  it with `IndexOptions.evenodd_method` or `--evenodd-method halves`.
+- `individual_reliability(..., factors=[...])` randomly halves each scale and
+  correlates half means across scales (Curran, 2016; Huang et al., 2012),
+  reaching an AUC of about 0.99 in the same simulation. Reliability functions
+  accept an `np.random.Generator` as `random_seed`, and
+  `IndexOptions.reliability_factors`/`--reliability-factors 8,8,8` configure
+  the registry index.
+- `psychsyn()`, `psychant()`, `psychsyn_critval()`, and `psychsyn_summary()`
+  accept `item_correlations="pairwise"`, the careless-compatible missing-data
+  mode: pairs come from pairwise-complete correlations over at least three
+  shared respondents, and each respondent is scored over the pairs they
+  answered. `IndexOptions.psychsyn_item_correlations` and
+  `--psychsyn-item-correlations pairwise` apply it to the registry. At 1%
+  missing cells, a 2,000-by-20 Likert matrix scores at least 95% of
+  respondents, where the unchanged `"complete"` default scores none.
+- `infrequency()` and `infrequency_flag()` accept keyword-only
+  `acceptable_ranges`, one inclusive `(low, high)` range per item with
+  `-inf`/`inf` for open ends, as an alternative to `expected_responses`.
+  Integer responses are compared exactly. Registry and CLI settings:
+  `IndexOptions.infrequency_acceptable_ranges` and
+  `--infrequency-acceptable-ranges '1:2,5:'` (attached form for negative
+  values, as in `--infrequency-acceptable-ranges=-3:-1`).
+- Split IRV in `screen()`, composites, and the CLI through
+  `IndexOptions.irv_num_split`/`irv_split_points` and `--irv-num-split N`/
+  `--irv-split-points 0,10,20`; invalid settings are `irv` index failures.
+- `reverse_score(x, items, scale_min=None, scale_max=None)` recodes
+  reverse-keyed items as `scale_min + scale_max - x`, inferring missing bounds
+  from the whole matrix and rejecting out-of-range responses. Integer input
+  keeps its dtype when it holds both bounds and is recoded exactly.
+- `IndexOptions.reverse_keyed_items` and `--reverse-keyed-items 1,4,7`
+  reverse-score the listed 0-based columns only for indices that assume one
+  keying direction (`evenodd`, `individual_reliability`, `guttman`, `lz`,
+  `gpoly`, `u3poly_fit`, `ht`); sequence, response-style, pair, outlier, and
+  attention-check indices read responses as presented. With a third of the
+  items reverse-worded, classic even-odd's AUC rose from 0.62 to 0.96 while
+  `longstring` kept 1.00 in the same run. With `person_fit_ncat`, `gpoly` and
+  `u3poly_fit` reflect items on their declared category scale. Invalid items or
+  bounds fail each keyed index with a `reverse_keyed_items could not be
+  applied` message.
+- `psychsyn_flag()`, `psychant_flag()`, `person_total_flag()`, `u3_poly_flag()`,
+  and `midpoint_responding_flag()` return `(scores, flags)` with default
+  percentiles that reproduce `screen()`. The last two take scale bounds before
+  `threshold` and `percentile`, as `acquiescence_flag()` does.
+  `psychsyn_critval()`, `psychsyn_summary()`, and `mahad_summary()` are now
+  exported, and both summaries also report `n_total`, `n_valid`, and
+  `n_missing`; their previous count keys remain.
+- `composite_scores()` and `composite_scores_summary()` accept
+  `unsupported="drop"`, and `ier composite-scores` accepts
+  `--skip-unsupported`, so `screen()` results and screening archives combine
+  without filtering. Indices that are not composite-enabled (by default
+  `u3_poly`, `midpoint`, `acquiescence`) are dropped, and the CLI names them.
+- `index_agreement(screen_result, kind)` compares every pair of selected
+  indices by co-flag `"overlap"` counts, flag `"jaccard"` similarity (the
+  default), or `"spearman"` rank correlation oriented by flag direction, with
+  `NaN` for undefined cells. `plot_index_agreement()` draws the matrix.
+- `screen_table()` and `composite_table()` return ordered, respondent-aligned
+  column mappings following the CLI CSV schemas, ready for
+  `pandas.DataFrame(table, index=df.index)` or `polars.DataFrame()`, without
+  copying result arrays.
+- `save_screen_archive()` and `load_screen_archive()` persist complete
+  `screen()` results in the `ier screen --format npz` schema, so the restored
+  `ScreenResult` (in a new `ScreenArchive`) can be plotted or tabulated without
+  the responses. The writer validates every decision and replaces the file
+  atomically; the loader recomputes flags from scores and recorded cutoffs,
+  avoiding the tie flips of passing percentile cutoffs to `screen_scores()`.
+- `compression_level=` on every archive writer and `--compress-level` on all
+  six CLI scoring/replay commands select DEFLATE levels 1–9 for compressed
+  output.
+- `plot_composite()` draws a composite score histogram with an optional
+  shaded cutoff, overlaid flags, and the flagged count. `plot_distributions()`
+  now draws each applied cutoff, shades the flagged tail, and titles panels with
+  flagged counts; `show_thresholds=False` restores plain histograms.
+- `--config PATH` reads option values from a TOML file on `screen`,
+  `composite`, `screen-scores`, `composite-scores`, `response-time`, and
+  `response-time-scores`, flat or in per-command tables such as `[screen]`.
+  Keys are long option names; switches take Booleans, lists take arrays, and
+  `INDEX=VALUE` options take tables. Values pass through each command's own
+  checks before data is read, with errors naming the key, section, and file.
+  Unknown or duplicate keys and invalid TOML are rejected, and command-line
+  options take precedence over conflicting configured ones.
+- `ier inspect DATA` reports how a matrix is parsed without scoring it:
+  delimiter detection, header and column selection, shape, missing cells per
+  item, observed range and distinct values, and suggested
+  `--scale-min=VALUE --scale-max=VALUE`. It warns when an observed extreme is
+  used by fewer than 1% of respondents, when inferred bounds are likely wrong.
+- Repeatable `--item-pattern GLOB` and `--exclude-column NAME` select items
+  from survey exports with metadata columns on `screen`, `composite`,
+  `response-time`, and `inspect`, as in
+  `ier screen export.csv --id-column ResponseId --item-pattern 'Q*'`.
+- `index_catalog()` and `ier indices` report `uses_keyed_responses` and
+  `alternative_options` (groups of interchangeable `IndexOptions` fields), and
+  the CLI output guide documents the catalog layouts.
+- `ier` exports `FlagDirection`, `FlagMode`, `CombineMethod`,
+  `EvenOddMethod`, `ItemCorrelationMode`, `AgreementKind`,
+  `IndexThresholdMap`, `IndexPercentileMap`, `IndexThresholdSource`, and
+  `IndexThresholdSourceMap`; `ResponseTimeFlagDirection` is now an alias of
+  `FlagDirection`. Typed overloads on `mahad(flag=...)` and the `diag` argument
+  of `evenodd()`, `psychsyn()`, and `psychant()` remove the need for casts.
+- A doctest gate runs every public module's docstring examples, with output
+  identical under NumPy 1.26 and 2.x.
+- Benchmarks add `bench_person_fit.py` and options for the new modes, and every
+  benchmark prints `OPENBLAS_NUM_THREADS` and `OMP_NUM_THREADS`. The
+  architecture guide recommends single-threaded BLAS with `workers>1`:
+  `screen(workers=4)` on 10,000-by-80 responses took 26–27 ms with one BLAS
+  thread and 59–65 ms with default threading.
+
+### Changed
+
+- Compressed archives default to DEFLATE level 1 instead of zlib's level 6:
+  1,000,000-respondent screen archives saved in 1.37 s instead of 4.79 s at
+  27.0 MB instead of 24.7 MB. Use `compression_level=6` or
+  `--compress-level 6` for the previous size.
+- `plot_flagged_heatmap()` aggregates to at most 1,000 respondent blocks by
+  default (`max_rows=None` restores per-respondent rows), so rare flags stay
+  visible; a block is flagged when any respondent is. `order="flag_count"`
+  sorts respondents by flag count. Rendering 1,000,000-by-11 results took
+  0.15–0.42 s instead of 1.7–2.2 s.
+- Unseeded `individual_reliability()` no longer reads or advances NumPy's
+  global random state, so it no longer follows `np.random.seed()`. Integer
+  seeds keep bit-identical scores.
+- New option names make some previously unique CLI abbreviations ambiguous:
+  `--evenodd`, `--psychsyn`, and `--per` on `screen` and `composite`, and
+  `--compr` on every scoring command, now match several options. Scripts
+  should spell options out in full.
+- Non-mapping `thresholds`, `percentiles`, and `weights` overrides raise
+  `TypeError` instead of `AttributeError`; unregistered weight names report
+  `unknown weight index`, and values too large for a float raise `ValueError`
+  instead of `OverflowError`.
+- A bare string passed as `indices` raises `ValueError` instead of rejecting
+  its first character, and the raw-matrix composite helpers reject
+  `indices=[]` before scoring. `screen(indices=[])` still returns an empty
+  screen.
+- Missing index configuration is enforced from the catalog: `semantic_syn` and
+  `semantic_ant` messages name only the selected index, and `infrequency`
+  accepts either expected responses or acceptable ranges. `IndexMetadata` gains
+  the required keys `uses_keyed_responses` and `alternative_options`.
+- Complex, datetime, timedelta, structured, and non-numeric string matrices
+  raise `ValueError("input data must contain real numeric responses")` in every
+  index. Array-likes accepted by `screen()`, such as `collections.UserList`,
+  work in every index function; scalars, strings, mappings, sets, and
+  generators raise a `TypeError` that also derives from `ValueError`.
+- Integer-valued options such as `min_flags`, `workers`, and
+  `min_valid_indices` accept NumPy integers and other `__index__` objects.
+- `screen()` and the composite helpers validate all selection and decision
+  arguments before converting the response matrix, so invalid settings fail
+  before a large matrix is copied.
+- Numeric parse failures name the data row and column, as in `data row 2,
+  column 'date' (position 3): could not convert string to float: '2024-01-01'`.
+  Archive writers report expected and received respondent-ID counts.
+- Every CLI option has help text with its default, and scoring commands group
+  options under input, index or timing options, decision, and output headings.
+- `resample_na` and `random_seed` on `psychsyn()` and `psychant()` are
+  documented as compatibility parameters with no effect on scores, which they
+  never had through the public API.
+- Documentation states that `u3_poly` is the proportion of extreme responses,
+  not PerFit's U3, and points to `u3poly()`/`u3poly_fit`.
+- `import ier` defers `importlib.metadata`, `zipfile`, and the archive stack
+  until first use, loading 66 instead of 126 new modules after NumPy (about
+  16 ms instead of 27 ms).
+- The lz ability solver drops converged respondents from its Newton workspace,
+  with bit-identical scores: `bench_lz.py --categories 5 --missing-rate 0.1`
+  fell from 0.467 s to 0.104 s, and 50,000-by-60 2PL data from 1.36 s to
+  0.35 s.
+- Longstring and repeating-pattern run lengths avoid a broadcast `np.where`:
+  on 50,000-by-60 responses, longstring fell from 18.3 to 13.6 ms and default
+  screening from 252 to 222 ms, with bit-identical values.
+- Markov entropy scores many-category blocks, such as 0-100 sliders, with a
+  vectorized sort-based kernel instead of a per-respondent loop (within about
+  3e-14 of previous scores). With 20,000 respondents by 50 items, 101 states
+  fell from 0.408 s to 0.034 s and 64 states from 0.367 s to 0.025 s.
+- `mahad_qqplot()` solves chi-square quantiles in batched Newton iterations with
+  bit-identical results; a 20,000-by-20 Q-Q plot fell from 0.95 s to 0.063 s.
+- Compressed archive loads decompress each member once, keeping the size and
+  CRC checks, and load 1.5–2.2x faster, matching unvalidated `np.load`.
+- CLI CSV output converts 1,024-row column chunks with byte-identical output:
+  screen CSV for 100,000 respondents fell from 0.80 s to 0.27 s, and detailed
+  composite CSV is 2.0–2.1x faster. Delimited input parses complete numeric rows
+  with C-level float conversion, loading 100,000-by-30 matrices 1.4x faster.
+- Internal: each CLI command has its own handler with shared loading,
+  flagging, and output; CLI index defaults come from `IndexOptions()`; screen
+  and composite entry points share one validation and reduction pipeline; and
+  coverage excludes `@overload` stubs. Output and scores are unchanged.
+
+### Deprecated
+
+- Passing `indices` with `method="best_subset"` emits a `DeprecationWarning`
+  from `composite()`, `composite_flag()`, `composite_summary()`, and
+  `composite_probability()`, and `ier composite` prints a warning. The indices
+  are still ignored; this will raise in a future release.
+
+### Removed
+
+- The private, unused `ier.psychsyn._resample_missing_correlations` and
+  `ier.longstring._run_length_decode` helpers.
+
+### Fixed
+
+- Score-changing: `guttman()` counted Guttman-consistent pairs instead of
+  errors because items were ordered hardest-first. Items are now ordered
+  easiest-first with column-order tie-breaking, so a perfect cumulative pattern
+  scores 0 and ties no longer make scores platform-dependent. Items are ordered
+  by their available-response means whatever `na_rm` is, so one missing
+  response no longer moves an item to the hardest position. On simulated 2PL
+  data, random responders now outrank attentive ones (AUC 0.96, previously
+  0.23). Guttman scores, `guttman_flag()`, and default `screen()` consensus
+  change for most inputs.
+- Score-changing: the registry flagged and composite-weighted `psychant` in
+  the wrong direction since 1.7.0, flagging the most consistent respondents and
+  rewarding them in composites. `psychant` is now flagged high with a positive
+  composite multiplier; in a simulation, the default percentile previously
+  flagged 33 attentive respondents and no random responders.
+- Score-changing: `mahad(flag=True, method="iqr" | "zscore")` no longer flags
+  unusually small distances, which with many items flagged some of the most
+  typical respondents. `screen()` and `composite()` are unaffected.
+- pandas nullable DataFrames (`convert_dtypes()`, `Int64`/`Float64`/`boolean`
+  with `pd.NA`), object columns, and nested lists with `None` work in every
+  index. `screen()` previously soft-failed every index and returned
+  `indices_used=[]`, which could read as "no careless respondents".
+- Masked cells of a `numpy.ma.MaskedArray` (for example
+  `np.ma.masked_equal(data, -99)`) are treated as missing responses instead of
+  being scored as their underlying sentinel values.
+- `longstring_pattern()` requires an integer `max_pattern_length` of at least
+  2 instead of silently scoring every respondent 0 for smaller or Boolean
+  values; the registry and CLI reject such values too.
+- `mahad(confidence=...)` and `guttman_flag(threshold=...)` reject Boolean,
+  non-numeric, and non-finite values with `ValueError`.
+- Archive writers reject `respondent_ids` given as a set, mapping, or
+  iterator, which could attach identifiers to the wrong respondents.
+- `ier screen --format npz --min-flags N` with `N` of 2**63 or more reports a
+  validation error instead of an `OverflowError` traceback.
+- `load_response_time_archive()` returns canonical Boolean flags instead of
+  passing through stored bytes other than 0 or 1.
+- Docstring examples across the public modules now match their output under
+  NumPy 1.26 and 2.x. For example, the `markov` example sequence has zero
+  conditional entropy rather than the documented 1.56, and the `lz_flag()`
+  example claimed a flag its data did not produce.
+
 ## [1.12.0] - 2026-10-03
 
 ### Added

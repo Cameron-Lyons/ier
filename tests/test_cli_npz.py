@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import numpy as np
 
+from ier import load_response_time_archive, load_score_archive, load_screen_archive
 from ier._cli_npz import _write_npz_archive
 from ier.cli import main
 
@@ -365,7 +366,7 @@ class TestCliNpz(unittest.TestCase):
 
         with (
             patch(
-                "ier.archive._stream_npz_archive",
+                "ier.archive._stream_npz_members",
                 side_effect=OSError("simulated write failure"),
             ),
             self.assertRaisesRegex(OSError, "simulated write failure"),
@@ -374,3 +375,49 @@ class TestCliNpz(unittest.TestCase):
 
         self.assertFalse(out.exists())
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_cli_archives_follow_the_shared_schema_version(self) -> None:
+        source = self.root / "responses.csv"
+        source.write_text(
+            "id,q1,q2,q3,q4\na,1,1,1,1\nb,1,2,3,4\nc,1,1,1,4\n",
+            encoding="utf-8",
+        )
+        commands = {
+            "screen": ["--indices", "irv", "longstring"],
+            "composite": ["--indices", "irv", "longstring", "--include-components"],
+            "response-time": [],
+        }
+        outputs = {command: self.root / f"{command}.npz" for command in commands}
+
+        with patch("ier.archive._ARCHIVE_SCHEMA_VERSION", 2):
+            for command, options in commands.items():
+                code = main(
+                    [
+                        command,
+                        str(source),
+                        "--id-column",
+                        "id",
+                        *options,
+                        "--format",
+                        "npz",
+                        "--output",
+                        str(outputs[command]),
+                    ]
+                )
+                self.assertEqual(code, 0)
+                with np.load(outputs[command], allow_pickle=False) as archive:
+                    self.assertEqual(archive["schema_version"].item(), 2)
+            self.assertEqual(load_screen_archive(outputs["screen"])["schema_version"], 2)
+            self.assertEqual(load_score_archive(outputs["screen"])["schema_version"], 2)
+            self.assertEqual(load_score_archive(outputs["composite"])["schema_version"], 2)
+            timing = load_response_time_archive(outputs["response-time"])
+            self.assertEqual(timing["schema_version"], 2)
+
+        with self.assertRaisesRegex(
+            ValueError, "unsupported screen archive schema version: 2; expected 1"
+        ):
+            load_screen_archive(outputs["screen"])
+        with self.assertRaisesRegex(
+            ValueError, "unsupported response-time archive schema version: 2; expected 1"
+        ):
+            load_response_time_archive(outputs["response-time"])

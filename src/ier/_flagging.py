@@ -2,9 +2,10 @@
 
 import math
 from fractions import Fraction
-from typing import Literal
 
 import numpy as np
+
+from ier.types import FlagDirection
 
 _MIN_NORMAL = np.finfo(float).tiny
 
@@ -100,7 +101,7 @@ def threshold_flags(
     scores: np.ndarray,
     threshold: float | None,
     percentile: float,
-    direction: Literal["high", "low"],
+    direction: FlagDirection,
     inclusive: bool | None = None,
 ) -> np.ndarray:
     """Create flags, including fixed-cutoff equality but excluding percentile ties."""

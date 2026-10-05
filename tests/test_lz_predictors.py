@@ -207,7 +207,11 @@ def test_estimated_steep_models_match_independent_decimal_roots(
     originals = [value.copy() for value in (data, a, b)]
     for value in (data, a, b):
         value.flags.writeable = False
-    with np.errstate(all="raise"), patch("ier.lz._LZ_BATCH_ELEMENTS", 5):
+    with (
+        np.errstate(all="raise"),
+        patch("ier.lz._LZ_BATCH_ELEMENTS", 5),
+        patch("ier.lz._LZ_THETA_BATCH_ELEMENTS", 5),
+    ):
         theta = _estimate_theta(data, a, b, na_rm=na_rm)
         scores, flags = lz_flag(data, difficulty=b, discrimination=a, na_rm=na_rm, threshold=-1.5)
     # Compare ability in model units so enormous slopes cannot hide a poor fit
@@ -238,7 +242,11 @@ def test_common_steep_discrimination_has_analytic_binomial_ability(
     original = data.copy()
     data.flags.writeable = False
     expected = [math.log(3), -math.log(3), 0, math.log(2) if na_rm else np.nan]
-    with np.errstate(all="raise"), patch("ier.lz._LZ_BATCH_ELEMENTS", 5):
+    with (
+        np.errstate(all="raise"),
+        patch("ier.lz._LZ_BATCH_ELEMENTS", 5),
+        patch("ier.lz._LZ_THETA_BATCH_ELEMENTS", 5),
+    ):
         abilities = _estimate_theta(data, np.full(4, scale), np.zeros(4), na_rm=na_rm)
     np.testing.assert_allclose(abilities * scale, expected, rtol=3e-15, atol=1e-15)
     np.testing.assert_array_equal(data, original)
@@ -267,7 +275,11 @@ def test_huge_item_keeps_varied_moderate_item_calibration(observed_huge: bool) -
     expected_theta = _decimal_theta(moderate, a[1:], b[1:], 1.0, na_rm=True)
     assert np.all(expected_theta > b[0])
     expected_scores = _decimal_scores(data, b, a, expected_theta, na_rm=True)
-    with np.errstate(all="raise"), patch("ier.lz._LZ_BATCH_ELEMENTS", 7):
+    with (
+        np.errstate(all="raise"),
+        patch("ier.lz._LZ_BATCH_ELEMENTS", 7),
+        patch("ier.lz._LZ_THETA_BATCH_ELEMENTS", 7),
+    ):
         theta = _estimate_theta(data, a, b)
         scores, flags = lz_flag(data, difficulty=b, discrimination=a)
     np.testing.assert_allclose(theta, expected_theta, rtol=3e-12, atol=1e-12)

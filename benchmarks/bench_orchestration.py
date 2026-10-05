@@ -15,8 +15,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 from _measurement import measure
 
+from ier._composite_reductions import standardize_index_scores
 from ier._statistics import logistic_transform
-from ier.composite import _combine_scores, _standardize_index_scores
+from ier.composite import _combine_scores
 from ier.screen import _reduce_screen_results
 
 if TYPE_CHECKING:
@@ -39,7 +40,7 @@ def _check_results(
     for name, values in scores.items():
         observed = values[~np.isnan(values)]
         constant = bool(len(observed) and np.all(observed == observed[0]))
-        prepared = _standardize_index_scores(values) if args.standardize else values
+        prepared = standardize_index_scores(values) if args.standardize else values
         if args.standardize and len(observed) > 1:
             usable = prepared[~np.isnan(prepared)]
             if constant:

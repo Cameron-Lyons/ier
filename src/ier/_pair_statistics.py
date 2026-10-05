@@ -3,11 +3,11 @@
 import math
 from collections.abc import Sequence
 from fractions import Fraction
-from operator import index
 
 import numpy as np
 
 from ier._row_statistics import _integer_reduction_parameters, row_mean, row_slices
+from ier._validation import validate_column_index
 
 
 def validate_item_pairs(
@@ -45,17 +45,7 @@ def validate_paired_item_indices(
     for name, values in ((left_name, left_indices), (right_name, right_indices)):
         result = np.empty(len(values), dtype=np.intp)
         for position, value in enumerate(values):
-            if isinstance(value, (bool, np.bool_)):
-                raise ValueError(f"{name} must contain integer column indices")
-            try:
-                item_index = index(value)
-            except TypeError as error:
-                raise ValueError(f"{name} must contain integer column indices") from error
-            if item_index < 0 or item_index >= n_columns:
-                raise ValueError(
-                    f"item index {item_index} out of bounds for data with {n_columns} columns"
-                )
-            result[position] = item_index
+            result[position] = validate_column_index(value, n_columns, name=name)
         normalized.append(result)
 
     return normalized[0], normalized[1]

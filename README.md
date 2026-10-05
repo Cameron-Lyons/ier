@@ -8,35 +8,67 @@ For a comprehensive methods review, see
 
 ## Features
 
-- Multiple detection families: consistency, response patterns, response styles, outliers, omissions, response times, attention checks
-- Workflow APIs: `screen()` and `composite()` configured via `IndexOptions`
-- Reusable `screen_scores()`, `composite_scores()`, and `response_time_score_flags()` layers
-- Saved-score CLI screening and composites with reusable coverage summaries
-- Saved response-time CLI reflagging and lossless result conversion
-- Validated, pickle-free score and response-time archive persistence
-- Optional streamed NPZ compression for compact saved scores and result archives
-- Atomic result-file replacement across text, CSV, JSON, and NPZ output
-- Validated per-index weights across all composite scoring helpers
-- Standardized or raw-score composite combination from Python and the CLI
-- Opt-in fixed or sample-percentile composite flags in every CLI output format
-- Opt-in uncalibrated logistic composite values in every CLI output format
-- Opt-in minimum valid-index requirements for defensible composite coverage
-- Configurable multi-index consensus decisions for respondent-level screening
-- Opt-in minimum valid-index requirements and eligibility reporting for screening consensus
-- Fixed or per-index sample-relative screening thresholds with cutoff provenance
-- Skip-logic-aware missing-response rates with required-item subsets and applicability masks
-- Configurable attention-check missing policies with count or proportion scoring
-- Balanced acquiescence scoring from Python and the CLI with explicit polarity pairs
-- Programmatic and CLI index catalog with defaults and configuration requirements
-- CLI preservation of named respondent identifier columns
-- CLI selection of named item columns from files containing metadata
-- CLI workflows for item screening, composite scores, and response-time analysis
-- NumPy-first inputs (lists, arrays, array-compatible DataFrames)
-- Configurable soft or strict per-index failures during screening and composite scoring
-- Opt-in soft-failure diagnostics from every composite Python helper
-- Composite CLI diagnostics preserved across human-readable and structured outputs
-- Opt-in raw component scores and availability counts in every composite CLI format
-- Full type annotations (`py.typed`)
+**Detection indices**
+
+- Consistency: IRV (optionally split), even-odd (item pairs or careless-style
+  `method="halves"`), psychometric synonyms/antonyms (complete or
+  careless-compatible `item_correlations="pairwise"`), person-total correlation,
+  scale-aware resampled individual reliability, semantic pairs, and MAD
+- Response patterns: longstring, average run length (`avgstr`), repeating
+  patterns, Markov transition entropy, lagged autocorrelation, and onset
+- Response styles: extreme, midpoint, and balanced acquiescence responding
+- Outliers and person fit: Mahalanobis distance with Q-Q quantiles, Guttman
+  errors, lz, and PerFit-style polytomous `gpoly` (Gp / Gnormed.poly) and
+  `u3poly` (U3poly) plus dichotomous `ht` (Ht)
+- Omissions and attention checks: skip-logic-aware missing rates, and bogus or
+  diligence items with one expected answer or inclusive acceptable ranges
+- Response times: row summaries, consistency, Gaussian mixtures, and item-level
+  response time effort with normative NT10 thresholds
+- `*_flag()` helpers for every index, plus `reverse_score()` for reverse-keyed items
+
+**Screening and composites**
+
+- `screen()` and `composite()` configured through one `IndexOptions` object,
+  with an index catalog of defaults, flag directions, and required options
+- Fixed or per-index percentile cutoffs with recorded provenance, multi-index
+  consensus, and minimum valid-index requirements
+- Standardized or raw, weighted mean/sum/max composites with optional cutoff
+  flags and uncalibrated logistic values
+- Reusable `screen_scores()`, `composite_scores()`, and
+  `response_time_score_flags()` layers for sensitivity analysis without
+  rescoring
+- Reverse-keyed items recoded once (`IndexOptions.reverse_keyed_items`,
+  `--reverse-keyed-items`) for consistency and person-fit indices only, so one
+  run serves keyed and as-presented indices
+- Soft or strict per-index failures with retained diagnostics, and opt-in
+  thread-based parallel scoring
+
+**Results, persistence, and plots**
+
+- `screen_table()` and `composite_table()` for index-preserving pandas or
+  Polars DataFrames, and `index_agreement()` for co-flag and rank agreement
+- Validated, pickle-free NPZ archives for scores, complete screening results,
+  and response times, with optional streamed compression and atomic writes
+- Distribution plots with cutoffs, composite histograms, agreement matrices,
+  flag counts, and block-aggregated heatmaps for large surveys
+
+**Command line**
+
+- `ier screen`, `composite`, `response-time`, and saved-score replay commands
+  with text, JSON, CSV, and NPZ output, including compressed and standard-stream
+  input and output
+- Survey exports with metadata: respondent ID preservation, named, glob-pattern,
+  or excluded item columns, preamble rows, and missing-value tokens
+- Shareable TOML `--config` files, `ier inspect` to check how a file is parsed,
+  and `ier indices` to browse the catalog
+
+**Engineering**
+
+- NumPy-only base install; inputs may be lists, arrays, memory-mapped `.npy`
+  files, pandas (including nullable dtypes), or Polars frames
+- Numerically careful kernels with exact repairs for overflow, underflow, and
+  cancellation, tested against brute-force and exact-rational oracles
+- Full type annotations (`py.typed`) and docstring examples checked as doctests
 
 ## Installation
 
@@ -106,6 +138,42 @@ print("Unavailable indices:", failures)
 large_result = screen(data, workers=4)
 ```
 
+Keep pandas row labels, persist complete decisions, and compare indices:
+
+```python
+import pandas as pd
+from ier import (
+    IndexOptions,
+    index_agreement,
+    load_screen_archive,
+    save_screen_archive,
+    screen,
+    screen_table,
+)
+
+frame = pd.read_csv("survey.csv", index_col="participant_id")
+result = screen(frame, options=IndexOptions(scale_min=1, scale_max=5))
+
+report = pd.DataFrame(screen_table(result), index=frame.index)
+print(report.sort_values("flag_count", ascending=False).head())
+
+save_screen_archive("screening.npz", result, respondent_ids=frame.index.astype(str).tolist())
+restored = load_screen_archive("screening.npz")["result"]
+
+names, jaccard = index_agreement(restored, "jaccard")
+print(pd.DataFrame(jaccard, index=names, columns=names).round(2))
+```
+
+**pandas nullable dtypes.** DataFrames with extension dtypes (`Int64`, `Float64`,
+`boolean`, or the result of `convert_dtypes()`), object columns, and `pd.NA` or
+`None` missing values are accepted by every index and by `screen()` and
+`composite()`. They are converted to float64 with missing values as `NaN`.
+Integer NumPy arrays are used without conversion. Masked cells of a
+`numpy.ma.MaskedArray` (for example `np.ma.masked_equal(data, -99)`) are missing
+responses: an array with masked cells is copied with them set to `NaN`. Complex,
+datetime, timedelta, and non-numeric text matrices, including `pd.NaT` values,
+raise `ValueError`.
+
 ## CLI
 
 ```bash
@@ -123,9 +191,18 @@ ier screen data.csv --indices missing_rate --missing-applicable-mask applicable.
 ier screen data.csv --indices infrequency \
   --infrequency-item-indices 3,7 \
   --infrequency-expected-responses 5,1 --infrequency-missing fail
+ier screen data.csv --indices infrequency \
+  --infrequency-item-indices 3,7 --infrequency-acceptable-ranges '1:2,4:'
+ier screen data.csv --indices irv avgstr longstring --irv-num-split 2
+ier screen data.csv --indices psychsyn psychant --psychsyn-item-correlations pairwise
+ier screen data.csv --indices evenodd individual_reliability \
+  --evenodd-factors 8,8,8 --evenodd-method halves --reliability-factors 8,8,8
+ier screen data.csv --indices autocorrelation longstring_pattern --autocorrelation-max-lag 8
 ier screen data.csv --id-column participant_id --format csv --output screening.csv
 ier screen data.csv --id-column participant_id --item-columns q1,q2,q3,q4
 ier screen data.csv --id-column participant_id --item-column 'Q1, agreement' --item-column Q2
+ier screen export.csv --id-column ResponseId --item-pattern 'Q*'
+ier screen export.csv --id-column ResponseId --exclude-column StartDate --exclude-column Duration
 ier screen data.csv --format npz --output screening.npz
 ier screen data.csv --format npz --compress --output compact-screening.npz
 ier composite data.csv --indices irv longstring
@@ -139,15 +216,19 @@ ier composite data.csv --indices irv longstring --include-components --format js
 ier composite data.csv --format csv --output scores.csv
 ier response-time timings.csv --metric median --threshold 1.0
 ier response-time timings.csv --metric mixture --random-seed 42 --format json
+ier response-time timings.csv --metric effort --effort-max-threshold 10
 ier screen responses.csv.gz --format json --output screening.json.gz
 ier screen responses.csv.xz --format csv --output screening.csv.xz
 ier screen survey-export.csv --skip-rows 2 --id-column participant_id
 ier screen responses.npy --indices irv longstring
 ier screen-scores screening.npz --index-percentile irv=99 --min-flags 2
 ier composite-scores screening.npz --indices irv longstring --weight irv=2
+ier composite-scores screening.npz --skip-unsupported --format csv
 ier response-time-scores timing.npz --threshold 1.0 --format json
 ier response-time-scores timing.npz --format csv --output timing.csv
 cat responses.csv | ier screen - --indices irv longstring --format json
+ier screen data.csv --config ier.toml --percentile 99
+ier inspect export.csv --id-column ResponseId --item-pattern 'Q*' --missing-value NA
 ier indices --format json
 ier --version
 ```
@@ -166,13 +247,29 @@ in text, JSON, CSV, and NPZ output. Use `--item-columns q1,q2,...` to select and
 the numeric item matrix while ignoring unselected metadata columns; repeat the
 option to build the selection in groups. Use repeatable `--item-column NAME` for
 an exact header name containing a comma. Both forms can be mixed, retaining their
-command-line order.
+command-line order. Survey exports with metadata columns such as `StartDate`,
+`Duration`, or `IPAddress` can instead select items with repeatable
+`--item-pattern GLOB` (case-sensitive shell-style patterns such as `'Q*'`; matches
+keep header order, once each) or drop named columns with repeatable
+`--exclude-column NAME`. Exclusions apply after any item selection; on their own
+they score every column except the ID column and the excluded names. Patterns
+cannot be combined with exact `--item-columns` names, every pattern and excluded
+name must match the header, and a pattern that selects the ID column is an error
+unless that column is also excluded.
+Run `ier screen --help` for every option, grouped into input, index, decision,
+and output settings with their defaults. Scoring and saved-score commands also
+read option values from a TOML file passed with `--config`, flat or in
+per-command sections; command-line options take precedence. `ier inspect`
+reports the detected delimiter, header, selected columns, missing cells, and
+observed response range, with suggested `--scale-min`/`--scale-max` values.
 Quoted delimiters, escaped quotes, and multiline identifiers are preserved.
 Entirely missing delimited records retain their respondent position; physically
 blank lines are skipped.
 Malformed quoted records fail with their physical line number before an existing
 result file is replaced; jagged records retain their detected delimiter and
 report the actual and expected column counts.
+Cells that cannot be parsed as numbers report their data row, column name, and
+position.
 
 Missing-response scoring is opt-in because planned omissions are often valid.
 Use `IndexOptions(missing_item_indices=[...])` or CLI
@@ -254,14 +351,19 @@ raw registered-index vectors directly from Python, then
 IDs, and soft failures. Full CLI screen output and detailed composite archives
 written with `--include-components` are compatible as well; schema, registry,
 alignment, and pickle-free safety checks run before reuse.
+To keep a complete `screen()` result, including its flags, cutoffs, consensus
+decisions, and summaries, use `save_screen_archive("screening.npz", result)` and
+`load_screen_archive("screening.npz")["result"]`. The loader recomputes every
+recorded decision and also reads CLI `screen --format npz` archives.
 
 The `screen-scores` and `composite-scores` CLI commands reuse these archives
 without the original item matrix. They support the corresponding cutoffs,
 percentiles, weights, coverage controls, and all four output formats. Saved
 respondent IDs remain aligned. Optional `--indices` selects saved components in
 the requested order; by default all saved scores are used. Composite inputs must
-contain composite-enabled indices, so select a subset when the screening archive
-also contains response-style or onset scores. Archive failures remain visible
+contain composite-enabled indices, so select a subset or pass
+`--skip-unsupported` when the screening archive also contains response-style or
+onset scores. Archive failures remain visible
 unless an explicit subset excludes them; `--strict` rejects retained failures.
 Composite output omits failures belonging only to screening indices.
 
@@ -298,8 +400,8 @@ per-respondent valid-index counts used by the rule.
 
 Uncompressed `.npy` files are memory-mapped read-only for fast, low-overhead
 loading of large headerless real numeric matrices. Because binary arrays have no
-column headers, `--id-column`, `--item-column`, `--item-columns`, and `--delimiter`
-do not apply.
+column headers, `--id-column`, `--item-column`, `--item-columns`, `--item-pattern`,
+`--exclude-column`, and `--delimiter` do not apply.
 Use an uncompressed `.npy` file rather than a compressed `.npy` file to preserve
 memory mapping.
 
@@ -339,17 +441,28 @@ write cannot truncate an existing result. See
 
 Add `--compress` to any fresh or saved-score command using `--format npz` to
 compress the archive's members. Python writers accept `compressed=True` in
-`save_score_archive()` and `save_response_time_archive()`. Compression can save
+`save_score_archive()`, `save_screen_archive()`, and `save_response_time_archive()`.
+Compression can save
 substantial storage for repeated scores, flags, and identifiers, but costs extra
 CPU when writing and reading; uncompressed output remains the default. Both
 forms load and replay through the same APIs, with identical scores and decisions.
+Compressed output uses the fastest DEFLATE level by default; choose 1–9 with
+`--compress-level` or `compression_level=` when smaller files matter more.
 
 `ier response-time` accepts a separate respondent-by-timing matrix and supports
-mean, median, standard-deviation, minimum, consistency, and Gaussian-mixture
-scores. Fixed thresholds are inclusive; sample-relative defaults flag the low
-5% for direct timing metrics and the high 5% for mixture probabilities. Retain
-any returned score vector and pass it to `response_time_score_flags()` to compare
-cutoffs without recalculating row summaries or refitting a mixture. NPZ output
+mean, median, standard-deviation, minimum, consistency, Gaussian-mixture, and
+response time effort (`--metric effort`) scores. Fixed thresholds are inclusive;
+sample-relative defaults flag the low 5% for direct timing metrics and the high
+5% for mixture probabilities. Effort instead flags RTE strictly below a fixed
+0.90 by default, like `response_time_effort_flag()`, and a fixed effort
+`--threshold` is strict as well; `--effort-fraction`, `--effort-max-threshold`,
+or a shared `--effort-threshold` set the item thresholds. Retain a direct,
+consistency, or mixture score vector and pass it to
+`response_time_score_flags()` to compare cutoffs without recalculating row
+summaries or refitting a mixture. That function includes ties at a fixed cutoff
+and defaults to a percentile, so reflag effort with
+`response_time_effort_flag(times, threshold=...)` or compare retained RTE scores
+with `scores < cutoff`. NPZ output
 loads through `load_response_time_archive()`, which validates its schema and
 returns the stored scores ready for the same sensitivity workflow. Use
 `save_response_time_archive()` to create the identical interoperable schema from
@@ -393,6 +506,7 @@ uv run python benchmarks/bench_psychsyn.py
 uv run python benchmarks/bench_pair_differences.py
 uv run python benchmarks/bench_mahad.py
 uv run python benchmarks/bench_guttman.py
+OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_person_fit.py
 uv run python benchmarks/bench_reliability.py
 uv run python benchmarks/bench_onset.py
 uv run python benchmarks/bench_person_total.py
@@ -436,4 +550,11 @@ entry is:
 
 - Curran, P. G. (2016). Methods for the detection of carelessly invalid responses in survey data. *Journal of Experimental Social Psychology*, 66, 4-19.
 - Dunn, A. M., Heggestad, E. D., Shanock, L. R., & Theilgard, N. (2018). Intra-individual response variability as an indicator of insufficient effort responding. *Journal of Business and Psychology*, 33(1), 105-121.
+- Emons, W. H. M. (2008). Nonparametric person-fit analysis of polytomous item scores. *Applied Psychological Measurement*, 32(3), 224-247.
+- Gottfried, J., Ježek, S., Králová, M., & Řiháček, T. (2022). Autocorrelation screening: A potentially efficient method for detecting repetitive response patterns in questionnaire data. *Practical Assessment, Research, and Evaluation*, 27, Article 2.
 - Meade, A. W., & Craig, S. B. (2012). Identifying careless responses in survey data. *Psychological Methods*, 17(3), 437-455.
+- Niessen, A. S. M., Meijer, R. R., & Tendeiro, J. N. (2016). Detecting careless respondents in web-based questionnaires: Which method to use? *Journal of Research in Personality*, 63, 1-11.
+- Sijtsma, K., & Meijer, R. R. (1992). A method for investigating the intersection of item response functions in Mokken's nonparametric IRT model. *Applied Psychological Measurement*, 16(2), 149-157.
+- Tendeiro, J. N., Meijer, R. R., & Niessen, A. S. M. (2016). PerFit: An R package for person-fit analysis in IRT. *Journal of Statistical Software*, 74(5), 1-27.
+- Wise, S. L., & Kong, X. (2005). Response time effort: A new measure of examinee motivation in computer-based tests. *Applied Measurement in Education*, 18(2), 163-183.
+- Wise, S. L., & Ma, L. (2012). Setting response time thresholds for a CAT item pool: The normative threshold method. Paper presented at the annual meeting of the National Council on Measurement in Education, Vancouver, Canada.

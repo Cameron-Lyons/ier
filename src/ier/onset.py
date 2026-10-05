@@ -12,12 +12,10 @@ References:
   Psychological Methods, 17(3), 437-455.
 """
 
-from operator import index
-
 import numpy as np
 
 from ier._row_statistics import _integer_offsets, _integer_reduction_parameters, row_slices
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_integer, validate_matrix_input
 
 _SHAO_ZHANG_CRITICAL_VALUE = 1.358
 _MIN_VARIANCE = 1e-10
@@ -56,16 +54,16 @@ def onset(
 
     Example:
         >>> import numpy as np
-        >>> rng = np.random.default_rng(42)
-        >>> attentive = rng.choice([1, 2, 3, 4, 5], size=(1, 15))
+        >>> attentive = [[1, 4, 4, 3, 3, 5, 1, 4, 2, 1, 3, 5, 4, 4, 4]]
         >>> careless = np.full((1, 15), 3)
         >>> data = np.hstack([attentive, careless])
-        >>> onset(data, window_size=5, min_items=10)
+        >>> onset(data, window_size=5, min_items=10).tolist()
+        [14.0]
     """
-    x_array = validate_matrix_input(x, check_type=False)
+    x_array = validate_matrix_input(x)
 
-    window_size = _validate_item_count(window_size, name="window_size")
-    min_items = _validate_item_count(min_items, name="min_items")
+    window_size = validate_integer(window_size, message="window_size must be an integer")
+    min_items = validate_integer(min_items, message="min_items must be an integer")
     if window_size < 2:
         raise ValueError("window_size must be at least 2")
 
@@ -118,16 +116,6 @@ def onset(
                     packed, window_size, check_overflow=check_overflow
                 )
     return result
-
-
-def _validate_item_count(value: int, *, name: str) -> int:
-    """Normalize Python/NumPy integers before size comparisons and negative slices."""
-    if isinstance(value, (bool, np.bool_)):
-        raise ValueError(f"{name} must be an integer")
-    try:
-        return index(value)
-    except TypeError as error:
-        raise ValueError(f"{name} must be an integer") from error
 
 
 def _bounded_onsets(x: np.ndarray, window_size: int, *, check_overflow: bool) -> np.ndarray:
@@ -184,11 +172,11 @@ def onset_flag(
 
     Example:
         >>> import numpy as np
-        >>> rng = np.random.default_rng(42)
-        >>> attentive = rng.choice([1, 2, 3, 4, 5], size=(1, 15))
+        >>> attentive = [[1, 4, 4, 3, 3, 5, 1, 4, 2, 1, 3, 5, 4, 4, 4]]
         >>> careless = np.full((1, 15), 3)
         >>> data = np.hstack([attentive, careless])
-        >>> onset_flag(data, window_size=5, min_items=10)
+        >>> onset_flag(data, window_size=5, min_items=10).tolist()
+        [True]
     """
     onset_indices = onset(x, window_size=window_size, min_items=min_items, na_rm=na_rm)
     result: np.ndarray = ~np.isnan(onset_indices)

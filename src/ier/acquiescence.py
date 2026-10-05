@@ -65,10 +65,10 @@ def acquiescence(
     Example:
         >>> data = [[5, 5, 5, 5], [1, 1, 1, 1], [3, 3, 3, 3]]
         >>> scores = acquiescence(data, scale_min=1, scale_max=5)
-        >>> print(scores)
+        >>> print(scores.tolist())
         [1.0, 0.0, 0.5]
     """
-    x_array = validate_matrix_input(x, check_type=False)
+    x_array = validate_matrix_input(x)
 
     has_positive = positive_items is not None
     has_negative = negative_items is not None

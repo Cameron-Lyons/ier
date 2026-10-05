@@ -3,7 +3,9 @@ U3 polytomous index for detecting unusual response patterns.
 
 The U3 polytomous index measures the proportion of extreme responses,
 which can indicate careless responding patterns like extreme response style
-or random clicking at scale endpoints.
+or random clicking at scale endpoints. Despite the name, it is not the U3
+person-fit statistic of the R package PerFit; that statistic is
+``ier.u3poly`` (registry index ``u3poly_fit``).
 """
 
 import math
@@ -12,6 +14,7 @@ from fractions import Fraction
 
 import numpy as np
 
+from ier._flagging import threshold_flags
 from ier._row_statistics import _row_mean_std_counts_block, row_slices
 from ier._validation import MatrixLike, resolve_scale_bounds, validate_matrix_input
 
@@ -119,7 +122,8 @@ def u3_poly(
 
     The U3 index measures the proportion of responses at the extreme ends
     of the response scale. High values may indicate extreme response style
-    or careless responding.
+    or careless responding. It is a response-style index, not PerFit's U3
+    person-fit statistic, which :func:`ier.u3poly` computes.
 
     Parameters:
     - x: A matrix of data where rows are individuals and columns are items.
@@ -136,8 +140,8 @@ def u3_poly(
 
     Example:
         >>> data = [[1, 1, 5, 5, 3], [3, 3, 3, 3, 3], [1, 5, 1, 5, 1]]
-        >>> u3 = u3_poly(data, scale_min=1, scale_max=5)
-        >>> print(u3)  # Third person has highest extreme responding
+        >>> u3_poly(data, scale_min=1, scale_max=5).tolist()  # Third person is most extreme
+        [0.8, 0.0, 1.0]
     """
     x_array = validate_matrix_input(x, min_columns=1)
 
@@ -179,8 +183,8 @@ def midpoint_responding(
 
     Example:
         >>> data = [[1, 2, 5, 4, 3], [3, 3, 3, 3, 3], [1, 5, 1, 5, 1]]
-        >>> mid = midpoint_responding(data, scale_min=1, scale_max=5)
-        >>> print(mid)  # Second person has all midpoint responses
+        >>> midpoint_responding(data, scale_min=1, scale_max=5).tolist()  # Second is all midpoint
+        [0.2, 1.0, 0.0]
     """
     x_array = validate_matrix_input(x, min_columns=1)
 
@@ -195,6 +199,87 @@ def midpoint_responding(
         x_array,
         _midpoint_matcher(x_array.dtype, scale_min, scale_max, tolerance),
     )
+
+
+def u3_poly_flag(
+    x: MatrixLike,
+    scale_min: float | None = None,
+    scale_max: float | None = None,
+    threshold: float | None = None,
+    percentile: float = 95.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute U3 extreme-response proportions and flag unusually high values.
+
+    Scale bounds come first, in the order ``u3_poly()`` takes them, so
+    ``u3_poly_flag(x, 1, 5)`` scores on the same 1-5 scale as ``u3_poly(x, 1, 5)``.
+
+    Parameters:
+    - x: A matrix of data where rows are individuals and columns are items.
+    - scale_min: Minimum value of the response scale. If None, inferred from data.
+    - scale_max: Maximum value of the response scale. If None, inferred from data.
+    - threshold: Absolute proportion threshold at or above which to flag.
+                 If None, uses percentile.
+    - percentile: Percentile above which to flag (default 95th percentile).
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for flagged respondents.
+      Unavailable (``NaN``) scores are never flagged.
+
+    Example:
+        >>> data = [[1, 1, 5, 5, 3], [3, 3, 3, 3, 3], [1, 5, 1, 5, 1]]
+        >>> scores, flags = u3_poly_flag(data, 1, 5, threshold=0.8)
+        >>> flags.tolist()
+        [True, False, True]
+    """
+    scores = u3_poly(x, scale_min=scale_min, scale_max=scale_max)
+
+    # Mirrors INDEX_REGISTRY["u3_poly"].flag_direction; importing it here is circular.
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="high")
+
+    return scores, flags
+
+
+def midpoint_responding_flag(
+    x: MatrixLike,
+    scale_min: float | None = None,
+    scale_max: float | None = None,
+    tolerance: float = 0.0,
+    threshold: float | None = None,
+    percentile: float = 95.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute midpoint-response proportions and flag unusually high values.
+
+    Scorer options come first, in the order ``midpoint_responding()`` takes them,
+    so ``midpoint_responding_flag(x, 1, 5)`` uses the same 1-5 scale as
+    ``midpoint_responding(x, 1, 5)``.
+
+    Parameters:
+    - x: A matrix of data where rows are individuals and columns are items.
+    - scale_min: Minimum value of the response scale. If None, inferred from data.
+    - scale_max: Maximum value of the response scale. If None, inferred from data.
+    - tolerance: Finite, nonnegative range around midpoint to count as midpoint response.
+    - threshold: Absolute proportion threshold at or above which to flag.
+                 If None, uses percentile.
+    - percentile: Percentile above which to flag (default 95th percentile).
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for flagged respondents.
+      Unavailable (``NaN``) scores are never flagged.
+
+    Example:
+        >>> data = [[1, 2, 5, 4, 3], [3, 3, 3, 3, 3], [1, 5, 1, 5, 1]]
+        >>> scores, flags = midpoint_responding_flag(data, 1, 5, threshold=0.5)
+        >>> flags.tolist()
+        [False, True, False]
+    """
+    scores = midpoint_responding(x, scale_min=scale_min, scale_max=scale_max, tolerance=tolerance)
+
+    # Mirrors INDEX_REGISTRY["midpoint"].flag_direction; importing it here is circular.
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="high")
+
+    return scores, flags
 
 
 def response_pattern(

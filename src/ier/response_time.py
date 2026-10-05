@@ -8,13 +8,14 @@ careless or inattentive responding.
 from __future__ import annotations
 
 import math
+import numbers
 import warnings
 from decimal import Decimal, localcontext
-from operator import index
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 
+from ier._column_statistics import column_mean
 from ier._flagging import threshold_flags
 from ier._row_statistics import (
     _scaled_subnormal_moment_rows,
@@ -24,7 +25,13 @@ from ier._row_statistics import (
     row_slices,
     row_std,
 )
-from ier._validation import MatrixLike, validate_matrix_input, validate_score_array
+from ier._validation import (
+    MatrixLike,
+    validate_integer,
+    validate_matrix_input,
+    validate_probability,
+    validate_score_array,
+)
 
 if TYPE_CHECKING:
     from numpy.typing import ArrayLike
@@ -63,9 +70,11 @@ def response_time(
     - ValueError: If inputs are invalid or metric is unknown
 
     Example:
+        >>> import numpy as np
         >>> times = [[2.1, 3.4, 2.8], [0.5, 0.4, 0.6], [2.5, 2.3, 2.7]]
         >>> avg_times = response_time(times, metric="mean")
-        >>> print(avg_times)  # Second person has suspiciously fast times
+        >>> print(np.round(avg_times, 2).tolist())  # Second person has suspiciously fast times
+        [2.77, 0.5, 2.5]
     """
     times_array = validate_matrix_input(times, min_columns=1)
 
@@ -110,10 +119,15 @@ def response_time_score_flags(
     - Boolean array where ``True`` indicates a suspicious score.
 
     Example:
+        >>> times = [[2.1, 3.4, 2.8], [0.5, 0.4, 0.6], [2.5, 2.3, 2.7]]
         >>> medians = response_time(times, metric="median")
         >>> strict = response_time_score_flags(medians, cutoff_percentile=1)
+        >>> print(strict.tolist())
+        [False, True, False]
         >>> mixture = response_time_mixture(times, random_seed=42)
         >>> likely_fast = response_time_score_flags(mixture, direction="high")
+        >>> print(likely_fast.tolist())
+        [False, True, False]
     """
     if not isinstance(direction, str) or direction not in {"high", "low"}:
         raise ValueError("direction must be 'high' or 'low'")
@@ -179,9 +193,11 @@ def response_time_consistency(
       Lower values indicate more uniform (potentially suspicious) timing.
 
     Example:
+        >>> import numpy as np
         >>> times = [[2.1, 3.4, 2.8], [1.0, 1.0, 1.0], [2.5, 2.3, 2.7]]
         >>> cv = response_time_consistency(times)
-        >>> print(cv)  # Second person has very consistent (suspicious) times
+        >>> print(np.round(cv, 2).tolist())  # Second person has very consistent (suspicious) times
+        [0.19, 0.0, 0.07]
     """
     times_array = validate_matrix_input(times, min_columns=2)
 
@@ -202,6 +218,228 @@ def response_time_consistency(
             cv[start + positions] = scaled_stds / scaled_means
 
     return cv
+
+
+@overload
+def response_time_effort(
+    times: MatrixLike,
+    thresholds: ArrayLike | None = None,
+    *,
+    normative_fraction: float = 0.10,
+    max_threshold: float | None = None,
+    return_item_flags: Literal[False] = False,
+) -> np.ndarray: ...
+@overload
+def response_time_effort(
+    times: MatrixLike,
+    thresholds: ArrayLike | None = None,
+    *,
+    normative_fraction: float = 0.10,
+    max_threshold: float | None = None,
+    return_item_flags: Literal[True],
+) -> tuple[np.ndarray, np.ndarray]: ...
+@overload
+def response_time_effort(
+    times: MatrixLike,
+    thresholds: ArrayLike | None = None,
+    *,
+    normative_fraction: float = 0.10,
+    max_threshold: float | None = None,
+    return_item_flags: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]: ...
+
+
+def response_time_effort(
+    times: MatrixLike,
+    thresholds: ArrayLike | None = None,
+    *,
+    normative_fraction: float = 0.10,
+    max_threshold: float | None = None,
+    return_item_flags: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate response time effort: the share of answered items not rapidly answered.
+
+    Response time effort (RTE; Wise & Kong, 2005) compares every response time
+    with a threshold for that item, so long and short items are judged by their
+    own expected time. A response faster than the item threshold (strictly
+    below it) is a rapid response. By default each item threshold is the
+    normative NT10 threshold (Wise & Ma, 2012): 10% of the item's mean response
+    time over the respondents who answered it, optionally capped (commonly at
+    10 seconds) with ``max_threshold``.
+
+    Parameters:
+    - times: A matrix of response times where rows are individuals and
+             columns are items. Missing times (``NaN``) are unanswered items.
+    - thresholds: Optional item thresholds in the units of ``times``: one value
+                  for every item or a vector with one value per item. Missing
+                  (``NaN``), infinite, and nonpositive values exclude their
+                  items, but ``max_threshold`` caps positive infinity like any
+                  other value. If None, normative thresholds are used.
+    - normative_fraction: Fraction of each item's mean time used as its
+                          normative threshold, greater than 0 and at most 1
+                          (default 0.10).
+    - max_threshold: Optional positive cap applied to every item threshold.
+    - return_item_flags: If True, also return the Boolean matrix of rapid
+                         responses, for example for effort-moderated scoring.
+
+    Returns:
+    - A numpy array of RTE values in ``[0, 1]``: the proportion of each
+      respondent's answered items with a response time at or above the item
+      threshold. Lower values indicate more rapid responding. Items whose
+      threshold, after any ``max_threshold`` cap, is missing, infinite, or not
+      positive are excluded, and respondents without an answered eligible
+      item are unavailable (``NaN``).
+      With ``return_item_flags``, a tuple of (scores, rapid) where ``rapid`` is
+      True for answered eligible items below their threshold.
+
+    Raises:
+    - ValueError: If inputs are invalid, thresholds do not match the items, or
+                  ``normative_fraction`` or ``max_threshold`` is out of range.
+
+    Example:
+        >>> times = [[12, 30, 18], [0.5, 1.5, 20], [14, 28, np.nan], [13.5, 20.5, 22]]
+        >>> np.round(response_time_effort(times), 2).tolist()  # thresholds 1, 2, and 2
+        [1.0, 0.33, 1.0, 1.0]
+        >>> scores, rapid = response_time_effort(times, return_item_flags=True)
+        >>> rapid[1].tolist()
+        [True, True, False]
+        >>> response_time_effort(times, thresholds=15).tolist()
+        [0.6666666666666666, 0.3333333333333333, 0.5, 0.6666666666666666]
+    """
+    if not isinstance(return_item_flags, bool):
+        raise ValueError("return_item_flags must be a boolean")
+    fraction = validate_probability(normative_fraction, name="normative_fraction")
+    if fraction == 0.0:
+        raise ValueError("normative_fraction must be greater than 0")
+    cap = None if max_threshold is None else _positive_time(max_threshold, name="max_threshold")
+    times_array = validate_matrix_input(times, min_columns=1)
+    n_items = times_array.shape[1]
+
+    if thresholds is None:
+        item_thresholds = fraction * column_mean(times_array, ignore_nan=True)
+    else:
+        item_thresholds = _item_thresholds(thresholds, n_items)
+    if cap is not None:
+        item_thresholds = np.minimum(item_thresholds, cap)
+
+    eligible = np.isfinite(item_thresholds) & (item_thresholds > 0)
+    # No time is below negative infinity, so excluded items are never rapid.
+    cutoffs = np.where(eligible, item_thresholds, -np.inf)
+    n_eligible = int(np.count_nonzero(eligible))
+    timed = times_array.dtype.kind == "f"
+
+    scores = np.full(len(times_array), np.nan)
+    rapid_items = np.zeros(times_array.shape, dtype=bool) if return_item_flags else None
+    for start, stop in row_slices(*times_array.shape):
+        block = times_array[start:stop]
+        rapid = block < cutoffs
+        if timed:
+            answered = ~np.isnan(block)
+            if n_eligible < n_items:
+                answered &= eligible
+            n_answered = np.count_nonzero(answered, axis=1)
+        else:
+            n_answered = np.full(len(block), n_eligible)
+        n_effortful = n_answered - np.count_nonzero(rapid, axis=1)
+        np.divide(n_effortful, n_answered, out=scores[start:stop], where=n_answered > 0)
+        if rapid_items is not None:
+            rapid_items[start:stop] = rapid
+
+    if rapid_items is not None:
+        return scores, rapid_items
+    return scores
+
+
+def response_time_effort_flag(
+    times: MatrixLike,
+    threshold: float = 0.90,
+    *,
+    thresholds: ArrayLike | None = None,
+    normative_fraction: float = 0.10,
+    max_threshold: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate response time effort and flag respondents below an RTE cutoff.
+
+    Parameters:
+    - times: A matrix of response times.
+    - threshold: RTE value between 0 and 1 below which (strictly) to flag
+                 (default 0.90, a common rapid-guessing screening rule).
+    - thresholds: Optional item thresholds passed to ``response_time_effort()``.
+    - normative_fraction: Normative threshold fraction passed to
+                          ``response_time_effort()`` (default 0.10).
+    - max_threshold: Optional item-threshold cap passed to
+                     ``response_time_effort()``.
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for respondents whose RTE is
+      below ``threshold``. Unavailable (``NaN``) scores are never flagged.
+
+    Example:
+        >>> times = [[12, 30, 18], [0.5, 1.5, 20], [14, 28, np.nan], [13.5, 20.5, 22]]
+        >>> scores, flags = response_time_effort_flag(times)
+        >>> flags.tolist()
+        [False, True, False, False]
+    """
+    cutoff = validate_probability(threshold, name="threshold")
+    scores = response_time_effort(
+        times,
+        thresholds,
+        normative_fraction=normative_fraction,
+        max_threshold=max_threshold,
+    )
+    # Comparisons with unavailable scores are false, so NaN is never flagged.
+    flags: np.ndarray = scores < cutoff
+    return scores, flags
+
+
+def _positive_time(value: object, *, name: str) -> float:
+    """Return a positive finite real number as a Python float."""
+    message = f"{name} must be a positive finite number"
+    if isinstance(value, np.ndarray) and value.ndim == 0:
+        value = value[()]
+    rejected = (bool, np.bool_, np.datetime64, np.timedelta64)
+    if isinstance(value, rejected) or not isinstance(value, (numbers.Real, Decimal)):
+        raise ValueError(message)
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(message) from error
+    if not (math.isfinite(result) and result > 0):
+        raise ValueError(message)
+    return result
+
+
+def _item_thresholds(thresholds: ArrayLike, n_items: int) -> np.ndarray:
+    """Validate one shared or one-per-item threshold in the units of the times.
+
+    Infinite thresholds are kept, so ``max_threshold`` caps them like any other
+    threshold; uncapped, they exclude their items.
+    """
+    try:
+        values = np.asarray(thresholds)
+    except (TypeError, ValueError) as error:
+        raise ValueError("thresholds must be a real number or a one-dimensional array") from error
+    shared = values.ndim == 0
+    if shared:
+        values = values.reshape(1)
+    infinite = np.isinf(values) if values.dtype.kind == "f" else None
+    if infinite is not None and infinite.any():
+        # Validate the remaining thresholds, then restore the infinite ones.
+        item_thresholds = validate_score_array(
+            np.where(infinite, np.nan, values), name="thresholds"
+        )
+        item_thresholds[infinite] = values[infinite]
+    else:
+        item_thresholds = validate_score_array(values, name="thresholds")
+    if shared:
+        return np.full(n_items, item_thresholds[0])
+    if len(item_thresholds) != n_items:
+        raise ValueError(
+            f"thresholds must contain one value per item ({n_items}), got {len(item_thresholds)}"
+        )
+    return item_thresholds
 
 
 def response_time_mixture(
@@ -239,14 +477,12 @@ def response_time_mixture(
         >>> times = [[5.0, 6.0, 4.0], [0.5, 0.6, 0.4], [4.5, 5.5, 5.0]]
         >>> probs = response_time_mixture(times, random_seed=42)
     """
-    if isinstance(n_components, (bool, np.bool_)):
-        raise ValueError("n_components must be an integer of at least 2")
-    try:
-        n_components = index(n_components)
-    except TypeError as error:
-        raise ValueError("n_components must be an integer of at least 2") from error
-    if n_components < 2:
-        raise ValueError("n_components must be at least 2")
+    n_components = validate_integer(
+        n_components,
+        message="n_components must be an integer of at least 2",
+        minimum=2,
+        minimum_message="n_components must be at least 2",
+    )
 
     times_array = validate_matrix_input(times, min_columns=1)
 

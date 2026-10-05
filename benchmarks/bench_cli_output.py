@@ -7,6 +7,7 @@ Usage:
     uv run python benchmarks/bench_cli_output.py --workflow composite --format all
     uv run python benchmarks/bench_cli_output.py --workflow composite --flagged
     uv run python benchmarks/bench_cli_output.py --workflow composite --probability
+    uv run python benchmarks/bench_cli_output.py --format csv --respondent-ids
     uv run python benchmarks/bench_cli_output.py --format text --respondents 1000000 --top 10
 """
 
@@ -21,6 +22,8 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from _measurement import measure
 
+from ier import index_catalog, screen_scores
+from ier._cli_composite import CompositeReport
 from ier._cli_npz import _write_composite_npz, _write_screen_npz
 from ier._cli_output import (
     _emit_composite_text,
@@ -49,43 +52,23 @@ _COMPRESSION_SUFFIXES: dict[Compression, str] = {
     "bzip2": ".bz2",
     "xz": ".xz",
 }
+_ID_PREFIX = "site,"
 
 
 def _make_screen_result(n_respondents: int, n_indices: int) -> ScreenResult:
-    names = [f"score_{index}" for index in range(n_indices)]
+    # NPZ archives validate registered names and recompute every decision, so
+    # build a consistent result that flags the top 5% in each suspicious tail.
+    catalog = index_catalog()
+    names = [name for name, metadata in catalog.items() if metadata["flag_mode"] == "percentile"]
+    if n_indices > len(names):
+        raise ValueError(f"screen results support at most {len(names)} indices")
     values = np.linspace(0.0, 1.0, n_respondents)
-    flags = values > 0.95
-    n_flagged = int(np.count_nonzero(flags))
-    return {
-        "scores": {name: values for name in names},
-        "flags": {name: flags for name in names},
-        "thresholds": {name: 0.95 for name in names},
-        "threshold_sources": {name: "fixed" for name in names},
-        "percentiles": {name: None for name in names},
-        "flag_counts": flags.astype(np.int_) * n_indices,
-        "valid_index_counts": np.full(n_respondents, n_indices, dtype=np.int_),
-        "consensus_eligible": np.ones(n_respondents, dtype=np.bool_),
-        "consensus_flags": flags if n_indices >= 2 else np.zeros_like(flags),
-        "min_flags": 2,
-        "min_valid_indices": None,
-        "n_indices": n_indices,
-        "indices_used": names,
-        "errors": {},
-        "n_respondents": n_respondents,
-        "summary": {
-            name: {
-                "mean": 0.5,
-                "std": 0.3,
-                "min": 0.0,
-                "max": 1.0,
-                "n_valid": n_respondents,
-                "n_unavailable": 0,
-                "n_flagged": n_flagged,
-                "flag_rate": n_flagged / n_respondents,
-            }
-            for name in names
-        },
-    }
+    high = {name: catalog[name]["flag_direction"] == "high" for name in names[:n_indices]}
+    return screen_scores(
+        {name: values if is_high else 1.0 - values for name, is_high in high.items()},
+        thresholds={name: 0.95 if is_high else 0.05 for name, is_high in high.items()},
+        min_flags=2,
+    )
 
 
 def _write_screen_result(
@@ -93,19 +76,20 @@ def _write_screen_result(
     destination: Path,
     result: ScreenResult,
     top: int = 10,
+    respondent_ids: list[str] | None = None,
 ) -> None:
     if output_format == "text":
-        _write_output(_emit_screen_text(result, top), destination)
+        _write_output(_emit_screen_text(result, top, respondent_ids), destination)
         return
     if output_format == "csv":
         with _output_stream(destination) as handle:
-            _write_screen_csv(handle, result)
+            _write_screen_csv(handle, result, respondent_ids)
         return
     if output_format == "json":
         with _output_stream(destination) as handle:
-            _write_screen_json(handle, result)
+            _write_screen_json(handle, result, respondent_ids)
         return
-    _write_screen_npz(destination, result)
+    _write_screen_npz(destination, result, respondent_ids)
 
 
 def _make_composite_result(
@@ -138,56 +122,31 @@ def _write_composite_result(
     flags: np.ndarray | None,
     probabilities: np.ndarray | None,
     top: int = 10,
+    respondent_ids: list[str] | None = None,
 ) -> None:
-    if output_format == "text":
-        _write_output(
-            _emit_composite_text(
-                scores,
-                "mean",
-                top,
-                component_scores=component_scores,
-                valid_index_counts=valid_index_counts,
-                flags=flags,
-                flag_threshold=0.95 if flags is not None else None,
-                probabilities=probabilities,
-            ),
-            destination,
-        )
-        return
-    if output_format == "csv":
-        with _output_stream(destination) as handle:
-            _write_composite_csv(
-                handle,
-                scores,
-                component_scores=component_scores,
-                valid_index_counts=valid_index_counts,
-                flags=flags,
-                probabilities=probabilities,
-            )
-        return
-    if output_format == "json":
-        with _output_stream(destination) as handle:
-            _write_composite_json(
-                handle,
-                scores,
-                "mean",
-                component_scores=component_scores,
-                valid_index_counts=valid_index_counts,
-                flags=flags,
-                flag_threshold=0.95 if flags is not None else None,
-                probabilities=probabilities,
-            )
-        return
-    _write_composite_npz(
-        destination,
+    # Building the report validates it once, as the CLI does before any format.
+    report = CompositeReport(
         scores,
         "mean",
+        respondent_ids,
         component_scores=component_scores,
         valid_index_counts=valid_index_counts,
         flags=flags,
         flag_threshold=0.95 if flags is not None else None,
         probabilities=probabilities,
     )
+    if output_format == "text":
+        _write_output(_emit_composite_text(report, top), destination)
+        return
+    if output_format == "csv":
+        with _output_stream(destination) as handle:
+            _write_composite_csv(handle, report)
+        return
+    if output_format == "json":
+        with _output_stream(destination) as handle:
+            _write_composite_json(handle, report)
+        return
+    _write_composite_npz(destination, report)
 
 
 def _benchmark(
@@ -203,10 +162,19 @@ def _benchmark(
     )
 
 
+def _respondent_ids(n_respondents: int) -> list[str]:
+    """Return identifiers that require CSV quoting, as exported survey IDs often do."""
+    return [f"{_ID_PREFIX}{index}" for index in range(n_respondents)]
+
+
 def _check_text_rows(destination: Path, scores: np.ndarray, top: int) -> None:
     """Verify text preview identities against a complete stable ordering."""
     with _open_text_path(destination, "r") as handle:
-        rows = [int(line.strip().split("\t")[0]) for line in handle if "\t" in line]
+        rows = [
+            int(line.strip().split("\t")[0].removeprefix(_ID_PREFIX))
+            for line in handle
+            if "\t" in line
+        ]
     positions = np.arange(len(scores))
     expected = np.lexsort((-positions, scores))[::-1][: max(top, 0)]
     np.testing.assert_array_equal(rows, expected)
@@ -244,6 +212,11 @@ def main() -> None:
         default="none",
         help="Compress text, CSV, or JSON output with a standard-library codec",
     )
+    parser.add_argument(
+        "--respondent-ids",
+        action="store_true",
+        help="Label respondents with string identifiers that CSV must quote",
+    )
     args = parser.parse_args()
 
     if args.respondents < 1 or args.indices < 1 or args.repeats < 1:
@@ -256,6 +229,7 @@ def main() -> None:
         parser.error("--compression requires --format text, csv, or json")
 
     compression: Compression = args.compression
+    respondent_ids = _respondent_ids(args.respondents) if args.respondent_ids else None
 
     screen_result = (
         _make_screen_result(args.respondents, args.indices) if args.workflow == "screen" else None
@@ -280,7 +254,7 @@ def main() -> None:
     print(
         f"workflow={args.workflow} respondents={args.respondents} "
         f"indices={args.indices} flagged={args.flagged} probability={args.probability} "
-        f"compression={compression} top={args.top}"
+        f"compression={compression} top={args.top} respondent_ids={args.respondent_ids}"
     )
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
@@ -296,6 +270,7 @@ def main() -> None:
                     destination,
                     screen_result,
                     args.top,
+                    respondent_ids,
                 )
             else:
                 assert composite_result is not None
@@ -305,6 +280,7 @@ def main() -> None:
                     destination,
                     *composite_result,
                     args.top,
+                    respondent_ids,
                 )
             seconds, peak_mib, output_mib = _benchmark(
                 operation,

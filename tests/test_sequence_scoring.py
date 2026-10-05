@@ -15,6 +15,12 @@ def _longest_run(row: list[float]) -> float:
     return float(max((sum(1 for _ in group) for _, group in groupby(row)), default=0))
 
 
+def _mean_run(row: list[float]) -> float:
+    """Mirror careless::longstring(avg=TRUE): mean(rle(x)$lengths)."""
+    lengths = [sum(1 for _ in group) for _, group in groupby(row)]
+    return sum(lengths) / len(lengths) if lengths else math.nan
+
+
 def _longest_pattern(row: list[float], max_k: int) -> float:
     """Enumerate every candidate and compare responses directly."""
     best = 0
@@ -71,7 +77,10 @@ def test_sequences_match_scalar_definitions(
         np.testing.assert_array_equal(
             longstring_scores(data), [_longest_run(row) for row in observed_rows]
         )
-        for max_k in [1, 2, 5, 12]:
+        np.testing.assert_array_equal(
+            longstring_scores(data, avg=True), [_mean_run(row) for row in observed_rows]
+        )
+        for max_k in [2, 5, 12]:
             np.testing.assert_array_equal(
                 longstring_pattern(data, max_pattern_length=max_k),
                 [_longest_pattern(row, max_k) for row in observed_rows],
@@ -197,3 +206,65 @@ def test_missing_sequences_reject_strict_policy() -> None:
         for score in (longstring_scores, longstring_pattern, markov):
             with pytest.raises(ValueError, match="data contains missing values"):
                 score(data, na_rm=False)
+
+
+def test_average_runs_match_hand_counts() -> None:
+    np.testing.assert_array_equal(longstring_scores([[1, 1, 2, 2, 2, 3]], avg=True), [2.0])
+    np.testing.assert_array_equal(
+        longstring_scores([[4, 4, 4, 4], [1, 2, 3, 4], [1, 2, 2, 1]], avg=True),
+        [4.0, 1.0, 4 / 3],
+    )
+
+
+@pytest.mark.parametrize("rows", [3, 40])
+def test_average_runs_ignore_padding_and_leave_empty_rows_unavailable(rows: int) -> None:
+    data = np.full((rows, 6), np.nan)
+    data[0] = [1, np.nan, 1, 2, np.nan, 2]
+    data[2, :2] = [3, 3]
+    with patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 12):
+        actual = longstring_scores(data, avg=True)
+    expected = np.full(rows, np.nan)
+    # Missing responses are compacted, so the first row has runs [1, 1] and [2, 2].
+    expected[0] = 2.0
+    expected[2] = 2.0
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(
+        longstring_scores(np.full((2, 3), np.nan), avg=True), [np.nan] * 2
+    )
+
+
+def test_average_runs_on_single_items_and_extreme_categories() -> None:
+    np.testing.assert_array_equal(
+        longstring_scores([[2.5], [np.nan], [np.inf]], avg=True), [1.0, np.nan, 1.0]
+    )
+    bounds = np.iinfo(np.int64)
+    data = np.array([[bounds.max, bounds.max, bounds.min, bounds.max, bounds.min]])
+    np.testing.assert_array_equal(longstring_scores(data, avg=True), [1.25])
+    extremes = np.array([[np.inf, np.inf, -np.inf, 1e308, -1e308, -1e308]])
+    np.testing.assert_array_equal(longstring_scores(extremes, avg=True), [1.5])
+
+
+@pytest.mark.parametrize("avg", [1, None, "yes", np.bool_(True)])
+def test_average_run_mode_must_be_boolean(avg: object) -> None:
+    with pytest.raises(ValueError, match="avg must be a boolean"):
+        longstring_scores([[1, 2]], avg=avg)  # type: ignore[arg-type]
+
+
+def test_average_runs_reject_missing_values_under_strict_policy() -> None:
+    with pytest.raises(ValueError, match="data contains missing values"):
+        longstring_scores([[1.0, np.nan]], na_rm=False, avg=True)
+
+
+@pytest.mark.parametrize("value", [0, 1, -3, True, np.bool_(True), 2.5, math.nan, "5", None])
+def test_pattern_length_must_be_an_integer_of_at_least_two(value: object) -> None:
+    with pytest.raises(ValueError, match="max_pattern_length must be an integer of at least 2"):
+        longstring_pattern([[1, 2, 1, 2]], max_pattern_length=value)  # type: ignore[arg-type]
+
+
+def test_pattern_length_accepts_integer_like_values() -> None:
+    data = [[1, 2, 3, 1, 2, 3], [1, 2, 1, 2, 1, 2]]
+    expected = longstring_pattern(data, max_pattern_length=3)
+    np.testing.assert_array_equal(expected, [6.0, 6.0])
+    for value in (np.int64(3), np.uint8(3)):
+        np.testing.assert_array_equal(longstring_pattern(data, max_pattern_length=value), expected)
+    np.testing.assert_array_equal(longstring_pattern(data, max_pattern_length=2), [0.0, 6.0])

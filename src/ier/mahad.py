@@ -13,7 +13,7 @@ correlations of the data set.
 """
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Literal, overload
 
 import numpy as np
 
@@ -21,7 +21,37 @@ from ier._optional_imports import require_matplotlib_pyplot
 from ier._row_statistics import row_slices
 from ier._statistics import chi_square_quantile, chi_square_quantiles, normal_quantile
 from ier._summary import calculate_summary_stats
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_matrix_input, validate_probability
+
+
+@overload
+def mahad(
+    x: MatrixLike,
+    flag: Literal[False] = False,
+    confidence: float = 0.95,
+    na_rm: bool = False,
+    method: str = "chi2",
+) -> np.ndarray: ...
+
+
+@overload
+def mahad(
+    x: MatrixLike,
+    flag: Literal[True],
+    confidence: float = 0.95,
+    na_rm: bool = False,
+    method: str = "chi2",
+) -> tuple[np.ndarray, np.ndarray]: ...
+
+
+@overload
+def mahad(
+    x: MatrixLike,
+    flag: bool,
+    confidence: float = 0.95,
+    na_rm: bool = False,
+    method: str = "chi2",
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]: ...
 
 
 def mahad(
@@ -40,13 +70,19 @@ def mahad(
 
     Parameters:
     - x: Matrix of data where rows are observations and columns are variables.
-          Can be a 2D list or numpy array.
+          Any 2D array-like: nested lists or tuples, NumPy arrays, or DataFrames.
     - flag: If True, flags potential outliers based on the confidence level.
-    - confidence: Confidence level for flagging outliers (0–1). Default is 0.95.
+    - confidence: Confidence level for flagging outliers, a finite real number in
+                  [0, 1]: a Python or NumPy scalar, 0-d array, ``Decimal`` or
+                  ``Fraction``. Booleans and strings are rejected. Default is 0.95.
     - na_rm: If True, removes rows with missing data before computing distances,
              but reinserts NaNs in original positions. If False, raises error for missing data.
-    - method: Method for outlier detection. Options: "chi2" (chi-squared distribution),
-              "iqr" (interquartile range), "zscore" (z-score threshold).
+    - method: Method for outlier detection; every method flags only unusually large
+              distances. Options: "chi2" (squared distance above the chi-squared
+              quantile with one degree of freedom per variable), "iqr" (distance above
+              the upper fence Q3 + 1.5 * IQR; ``confidence`` is not used) and "zscore"
+              (standardized distance above the two-sided normal critical value for
+              ``confidence``, e.g. 1.96 at 0.95).
 
     Returns:
     - Mahalanobis distances (with NaNs where removed), or
@@ -54,24 +90,24 @@ def mahad(
 
     Raises:
     - ValueError: If inputs are invalid (empty data, invalid confidence, etc.)
-    - TypeError: If input is not a list or numpy array
+    - TypeError: If input is a scalar, string, mapping, or other non-array object.
+                 The exception also derives from ValueError.
 
     Example:
         >>> import numpy as np
-        >>> data = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [1, 1, 1]]
+        >>> data = [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5],
+        ...         [1, 2], [2, 1], [4, 5], [5, 4], [5, 1]]
         >>> distances = mahad(data)
-        >>> print(distances)
-        [0.87, 0.87, 0.87, 2.60]
+        >>> np.round(distances, 2).tolist()
+        [1.4, 0.74, 0.28, 0.74, 1.4, 1.42, 1.11, 1.42, 1.11, 2.52]
 
         >>> distances, flags = mahad(data, flag=True, confidence=0.95)
-        >>> print(flags)
-        [False, False, False, True]
+        >>> flags.tolist()  # the last respondent contradicts the item correlation
+        [False, False, False, False, False, False, False, False, False, True]
     """
 
     x_array = validate_matrix_input(x)
-
-    if confidence < 0 or confidence > 1:
-        raise ValueError("confidence must be between 0 and 1")
+    confidence = validate_probability(confidence, name="confidence")
 
     if method not in ["chi2", "iqr", "zscore"]:
         raise ValueError("method must be one of: 'chi2', 'iqr', 'zscore'")
@@ -181,10 +217,13 @@ def _flag_outliers(
     """
     Flag outliers based on Mahalanobis distances.
 
+    Distance is an upper-tail measure, so only unusually large distances are
+    flagged; distances near the multivariate center are never outliers.
+
     Parameters:
-    - distances: Array of Mahalanobis distances
+    - distances: Array of Mahalanobis distances, at least two of them available
     - confidence: Confidence level (0-1)
-    - method: Outlier detection method
+    - method: Outlier detection method, already validated by ``mahad``
     - n_features: Number of features (for chi2 degrees of freedom)
 
     Returns:
@@ -197,42 +236,32 @@ def _flag_outliers(
 
     elif method == "iqr":
         valid_distances = distances[~np.isnan(distances)]
-        if len(valid_distances) == 0:
-            return np.full_like(distances, False, dtype=bool)
-
         q1, q3 = np.percentile(valid_distances, [25, 75])
         iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
         upper_bound = q3 + 1.5 * iqr
 
         flags = np.full_like(distances, False, dtype=bool)
         valid_mask = ~np.isnan(distances)
-        flags[valid_mask] = (distances[valid_mask] < lower_bound) | (
-            distances[valid_mask] > upper_bound
-        )
+        flags[valid_mask] = distances[valid_mask] > upper_bound
         return flags
 
-    elif method == "zscore":
+    else:  # zscore
         valid_distances = distances[~np.isnan(distances)]
-        if len(valid_distances) == 0:
-            return np.full_like(distances, False, dtype=bool)
-
         mean_dist = np.mean(valid_distances)
         std_dist = np.std(valid_distances)
 
         if std_dist == 0:
             return np.full_like(distances, False, dtype=bool)
 
+        # Keep the historical two-sided critical value, so the upper-tail cutoff
+        # for a given confidence is unchanged; only the lower tail is dropped.
         z_threshold = normal_quantile(1 - (1 - confidence) / 2)
 
         flags = np.full_like(distances, False, dtype=bool)
         valid_mask = ~np.isnan(distances)
-        z_scores = np.abs((distances[valid_mask] - mean_dist) / std_dist)
+        z_scores = (distances[valid_mask] - mean_dist) / std_dist
         flags[valid_mask] = z_scores > z_threshold
         return flags
-
-    else:
-        raise ValueError(f"unknown method: {method}")
 
 
 def mahad_qqplot(
@@ -266,8 +295,8 @@ def mahad_qqplot(
         >>> data = [[1, 2], [3, 4], [5, 6], [7, 8]]
         >>> theoretical, observed = mahad_qqplot(data)
     """
-    distances = mahad(x, flag=False, na_rm=na_rm)
-    assert isinstance(distances, np.ndarray)
+    x_array = validate_matrix_input(x)
+    distances = mahad(x_array, na_rm=na_rm)
 
     valid_mask = ~np.isnan(distances)
     valid_distances = distances[valid_mask]
@@ -275,7 +304,6 @@ def mahad_qqplot(
     observed_sq = np.sort(valid_distances**2)
 
     n = len(observed_sq)
-    x_array = validate_matrix_input(x, check_type=False)
     p = x_array.shape[1]
 
     probabilities = (np.arange(1, n + 1) - 0.5) / n
@@ -306,25 +334,35 @@ def mahad_summary(x: MatrixLike, confidence: float = 0.95, na_rm: bool = False) 
     - na_rm: If True, removes rows with missing data
 
     Returns:
-    - Dictionary with summary statistics and outlier information
+    - Dictionary with distance summary statistics, the chi-squared outlier count
+      (``outliers``), and respondent counts ``n_total``, ``n_valid`` and
+      ``n_missing``. The same counts remain available as ``total``,
+      ``valid_count`` and ``missing_count`` for compatibility.
 
     Example:
-        >>> data = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [1, 1, 1]]
+        >>> data = [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5],
+        ...         [1, 2], [2, 1], [4, 5], [5, 4], [5, 1]]
         >>> summary = mahad_summary(data)
-        >>> print(summary)
-        {'mean': 1.55, 'std': 0.87, 'outliers': 1, 'total': 4, ...}
+        >>> summary["outliers"], summary["n_total"], summary["n_valid"], summary["n_missing"]
+        (1, 10, 10, 0)
+        >>> round(summary["max"], 2)
+        2.52
     """
 
     distances, flags = mahad(x, flag=True, confidence=confidence, na_rm=na_rm)
 
     valid_count = int(np.sum(~np.isnan(distances)))
+    missing_count = len(distances) - valid_count
     stats = calculate_summary_stats(distances)
     stats.update(
         {
-            "outliers": int(np.sum(flags)) if valid_count > 0 else 0,
+            "outliers": int(np.sum(flags)),
             "total": len(distances),
             "valid_count": valid_count,
-            "missing_count": int(np.sum(np.isnan(distances))),
+            "missing_count": missing_count,
+            "n_total": len(distances),
+            "n_valid": valid_count,
+            "n_missing": missing_count,
         }
     )
     return stats

@@ -12,7 +12,7 @@ from typing import Literal, overload
 import numpy as np
 
 from ier._response_sequences import sequence_batches, true_run_lengths
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_integer, validate_matrix_input
 
 
 def _run_length_encode(message: str) -> list[tuple[str, int]]:
@@ -21,14 +21,6 @@ def _run_length_encode(message: str) -> list[tuple[str, int]]:
         raise TypeError("message must be a string")
 
     return [(char, len(list(group))) for char, group in groupby(message)]
-
-
-def _run_length_decode(encoded_data: list[tuple[str, int]]) -> str:
-    """Decode run-length encoded ``(character, count)`` runs back to a string."""
-    if not isinstance(encoded_data, list):
-        raise TypeError("encoded_data must be a list")
-
-    return "".join([char * count for char, count in encoded_data])
 
 
 def _longstr_message(message: str) -> tuple[str, int] | None:
@@ -53,9 +45,6 @@ def _avgstr_message(message: str) -> float:
         return 0.0
 
     rle_list = _run_length_encode(message)
-    if not rle_list:
-        return 0.0
-
     total_len = sum(count for _, count in rle_list)
     return total_len / len(rle_list)
 
@@ -107,7 +96,7 @@ def longstring(
         >>> longstring("aaabbbcc")
         ('a', 3)
 
-        >>> longstring("aaabbbcc", avg=True)
+        >>> round(longstring("aaabbbcc", avg=True), 2)
         2.67
 
         >>> data = ["aaabbb", "cccc", "abc"]
@@ -179,6 +168,8 @@ def longstring_pattern(
     - x: A matrix of numeric data where rows are individuals and columns are
          item responses.
     - max_pattern_length: Maximum sub-pattern length to search for (default 5).
+                          Must be an integer of at least 2, the shortest
+                          repeating pattern.
     - na_rm: If True, removes NaN values before analysis. If False, raises
              error if NaN values are present.
 
@@ -187,14 +178,18 @@ def longstring_pattern(
       Returns 0 if no repeating pattern is found.
 
     Raises:
-    - ValueError: If inputs are invalid.
+    - ValueError: If inputs are invalid, including a Boolean, non-integer, or
+                  smaller ``max_pattern_length``.
 
     Example:
         >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 3, 4, 5, 6]]
-        >>> longstring_pattern(data)
-        array([6., 0.])
+        >>> longstring_pattern(data).tolist()
+        [6.0, 0.0]
     """
-    x_array = validate_matrix_input(x, min_columns=2, check_type=False)
+    max_pattern_length = validate_integer(
+        max_pattern_length, message="max_pattern_length must be an integer of at least 2", minimum=2
+    )
+    x_array = validate_matrix_input(x, min_columns=2)
 
     result = np.empty(len(x_array))
     for start, stop, block, counts in sequence_batches(x_array, na_rm=na_rm):
@@ -205,21 +200,60 @@ def longstring_pattern(
 def longstring_scores(
     x: MatrixLike,
     na_rm: bool = True,
+    avg: bool = False,
 ) -> np.ndarray:
     """
-    Compute longest run-length scores directly from matrix rows.
+    Compute longest or average run-length scores directly from matrix rows.
 
     This avoids value-collisions from string casting (e.g., 1 vs 1.0 vs 1.00)
     and preserves non-integer response values.
+
+    Parameters:
+    - x: A matrix of numeric data where rows are individuals and columns are
+         item responses.
+    - na_rm: If True, removes NaN values before analysis, so a run can continue
+             across a skipped item. R's ``rle()`` instead ends a run at ``NA``.
+             If False, raises an error if NaN values are present.
+    - avg: If True, return the average length of uninterrupted identical runs
+           (``avgstr``, the mean of ``rle(x)$lengths`` in R's ``careless``):
+           observed responses divided by the number of runs. If False (default),
+           return the longest run.
+
+    Returns:
+    - A numpy array of run lengths per respondent. Rows without observed
+      responses score 0 for the longest run and NaN for the average.
+
+    Raises:
+    - ValueError: If inputs are invalid or ``avg`` is not a boolean.
+
+    Example:
+        >>> data = [[1, 1, 2, 2, 2, 3], [4, 4, 4, 4, 4, 4]]
+        >>> longstring_scores(data).tolist()
+        [3.0, 6.0]
+        >>> longstring_scores(data, avg=True).tolist()
+        [2.0, 6.0]
     """
-    x_array = validate_matrix_input(x, min_columns=1, check_type=False)
+    if not isinstance(avg, bool):
+        raise ValueError("avg must be a boolean")
+    x_array = validate_matrix_input(x, min_columns=1)
 
     scores = np.empty(len(x_array))
     for start, stop, block, counts in sequence_batches(x_array, na_rm=na_rm):
-        lengths = true_run_lengths(block[:, 1:] == block[:, :-1])
-        block_scores = np.max(lengths, axis=1, initial=0).astype(float) + 1.0
-        if counts is not None:
-            block_scores[counts == 0] = 0.0
+        if avg:
+            changes = block[:, 1:] != block[:, :-1]
+            if counts is not None:
+                # NaN padding never equals itself; count only changes between
+                # observed responses, at positions j < counts - 1.
+                changes &= np.arange(1, block.shape[1]) < counts[:, None]
+            n_runs = np.count_nonzero(changes, axis=1) + 1
+            block_scores = (block.shape[1] if counts is None else counts) / n_runs
+            if counts is not None:
+                block_scores[counts == 0] = np.nan
+        else:
+            lengths = true_run_lengths(block[:, 1:] == block[:, :-1])
+            block_scores = np.max(lengths, axis=1, initial=0).astype(float) + 1.0
+            if counts is not None:
+                block_scores[counts == 0] = 0.0
         scores[start:stop] = block_scores
     return scores
 

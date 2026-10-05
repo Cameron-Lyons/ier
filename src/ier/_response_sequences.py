@@ -25,7 +25,8 @@ def true_run_lengths(matches: np.ndarray) -> np.ndarray:
     """Count consecutive true values ending at each position in bounded rows."""
     width = matches.shape[1]
     positions = np.arange(1, width + 1, dtype=np.min_scalar_type(width))
-    lengths = np.where(matches, 0, positions)
+    # An elementwise product avoids np.where's slower broadcast selection path.
+    lengths: np.ndarray = np.multiply(np.logical_not(matches), positions, dtype=positions.dtype)
     np.maximum.accumulate(lengths, axis=1, out=lengths)
     np.subtract(positions, lengths, out=lengths)
     return lengths

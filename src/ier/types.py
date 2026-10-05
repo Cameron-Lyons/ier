@@ -14,24 +14,40 @@ IndexFlagMap: TypeAlias = dict[str, BoolArray]
 IndexErrorMap: TypeAlias = dict[str, str]
 IndexThresholdMap: TypeAlias = dict[str, float | None]
 IndexPercentileMap: TypeAlias = dict[str, float | None]
-IndexThresholdSourceMap: TypeAlias = dict[str, Literal["fixed", "percentile", "presence"]]
+IndexThresholdSource: TypeAlias = Literal["fixed", "percentile", "presence"]
+IndexThresholdSourceMap: TypeAlias = dict[str, IndexThresholdSource]
 ScoreArchiveResultType: TypeAlias = Literal["screen", "composite"]
 
+FlagDirection: TypeAlias = Literal["high", "low"]
+FlagMode: TypeAlias = Literal["percentile", "present"]
+CombineMethod: TypeAlias = Literal["mean", "sum", "max"]
 CompositeMethod: TypeAlias = Literal["mean", "sum", "max", "best_subset"]
+EvenOddMethod: TypeAlias = Literal["item_pairs", "halves"]
 InfrequencyMissingPolicy: TypeAlias = Literal["pass", "fail", "omit", "propagate"]
-ResponseTimeFlagDirection: TypeAlias = Literal["high", "low"]
-ResponseTimeMetric: TypeAlias = Literal["mean", "median", "sd", "min", "consistency", "mixture"]
+ResponseTimeFlagDirection: TypeAlias = FlagDirection
+ResponseTimeMetric: TypeAlias = Literal[
+    "mean", "median", "sd", "min", "consistency", "mixture", "effort"
+]
+ItemCorrelationMode: TypeAlias = Literal["complete", "pairwise"]
+AgreementKind: TypeAlias = Literal["overlap", "jaccard", "spearman"]
 
 
 class IndexMetadata(TypedDict):
-    """Public metadata for one registered IER index."""
+    """Public metadata for one registered IER index.
 
-    flag_direction: Literal["high", "low"]
-    flag_mode: Literal["percentile", "present"]
+    ``required_options`` names ``IndexOptions`` fields that must all be set before
+    the index can run. ``alternative_options`` lists groups of interchangeable
+    fields; at least one field in each group must be set.
+    """
+
+    flag_direction: FlagDirection
+    flag_mode: FlagMode
     default_screen: bool
     default_composite: bool
     composite_enabled: bool
     required_options: tuple[str, ...]
+    alternative_options: tuple[tuple[str, ...], ...]
+    uses_keyed_responses: bool
 
 
 IndexCatalog: TypeAlias = dict[str, IndexMetadata]
@@ -80,6 +96,14 @@ class ScoreArchive(TypedDict):
     scores: IndexScoreMap
     respondent_ids: list[str] | None
     errors: IndexErrorMap
+
+
+class ScreenArchive(TypedDict):
+    """Complete screening results loaded from a validated versioned NPZ archive."""
+
+    schema_version: int
+    result: ScreenResult
+    respondent_ids: list[str] | None
 
 
 class ResponseTimeArchive(TypedDict):

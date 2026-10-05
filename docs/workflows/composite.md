@@ -80,7 +80,8 @@ Composite-enabled indices include:
 
 `irv`, `longstring`, `longstring_pattern`, `mahad`, `psychsyn`, `psychant`,
 `person_total`, `markov`, `guttman`, `individual_reliability`, `evenodd`, `mad`,
-`lz`, `semantic_syn`, `semantic_ant`, `infrequency`, `missing_rate`
+`lz`, `semantic_syn`, `semantic_ant`, `infrequency`, `missing_rate`, `avgstr`,
+`autocorrelation`, `gpoly`, `u3poly_fit`, `ht`
 
 Configure `missing_rate` with `IndexOptions(missing_item_indices=[...])` for a
 fixed required-item subset or `missing_applicable_mask=...` for respondent-specific
@@ -104,6 +105,11 @@ constructs and can dilute pattern/consistency signals.
 | `max` | Max of directed scores |
 | `best_subset` | Forces `["mad", "irv", "longstring", "lz"]` when MAD items are provided, else `["irv", "longstring", "lz"]`, combined with `mean` |
 
+Explicit indices are ignored with `best_subset`. Python callers receive a
+`DeprecationWarning`, and `ier composite --method best_subset --indices ...`
+prints a warning on standard error before ignoring `--indices`. Both
+combinations will become errors in a future release.
+
 Direction is handled automatically: low-is-bad indices are sign-flipped before
 combination so that higher composite always means more IER signal.
 
@@ -122,9 +128,10 @@ individual scoring helpers.
 
 ## Index weights
 
-All composite helpers accept a partial `weights` mapping. Values must be
-positive finite numbers, and every named index must be selected by the resolved
-method. Selected indices omitted from the mapping retain weight 1.
+All composite helpers accept a partial `weights` mapping, or a pandas Series
+indexed by index name. Values must be positive finite numbers, and every named
+index must be selected by the resolved method and named only once. Selected
+indices omitted from the mapping retain weight 1.
 
 Weights are applied after direction correction and optional standardization:
 
@@ -239,6 +246,38 @@ reweighted = composite_scores(
 
 Aggregate-only composite archives intentionally fail this load because they do
 not contain the raw registered-index vectors needed for a new combination.
+
+### Reusing screening scores
+
+Default `screen()` output also contains the screen-only response-style indices
+`u3_poly`, `midpoint`, and `acquiescence`, which `composite_scores()` rejects by
+default. Pass `unsupported="drop"` to omit every registered index that is not
+composite-enabled from both the scores and the retained failures, preserving the
+order of the remaining components:
+
+```python
+from ier import composite_scores, screen
+
+screened = screen(data)
+reused = composite_scores(
+    screened["scores"], errors=screened["errors"], unsupported="drop"
+)
+```
+
+Unknown index names still raise in this mode, and a mapping without any
+composite-enabled score raises a `ValueError` that names the dropped indices.
+Every remaining screen index contributes, including `longstring_pattern`,
+`markov`, and `guttman`, which a fresh `composite()` omits by default; select
+names explicitly when the reused composite must match the composite defaults.
+`composite_scores_summary()` accepts the same `unsupported` option.
+
+The CLI applies the same policy to a saved screening archive with
+`--skip-unsupported` and names the skipped indices on standard error:
+
+```bash
+ier screen data.csv --format npz --output screen.npz
+ier composite-scores screen.npz --skip-unsupported --weight irv=2 --format json
+```
 
 ## Composite completeness
 

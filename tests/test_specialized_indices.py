@@ -10,7 +10,7 @@ from ier.infrequency import infrequency, infrequency_flag
 from ier.longstring import longstring_pattern
 from ier.mad import mad, mad_flag
 from ier.mahad import mahad_qqplot
-from ier.markov import _transition_entropy, markov, markov_flag, markov_summary
+from ier.markov import markov, markov_flag, markov_summary
 from ier.onset import onset, onset_flag
 from ier.person_total import person_total
 from ier.reliability import individual_reliability, individual_reliability_flag
@@ -218,10 +218,15 @@ class TestGuttman(unittest.TestCase):
     """Tests for Guttman error functions."""
 
     @staticmethod
-    def _expanded_counts(data: np.ndarray, *, na_rm: bool = True) -> np.ndarray:
-        """Evaluate the direct item-pair definition for regression checks."""
-        item_difficulty = np.nanmean(data, axis=0) if na_rm else np.mean(data, axis=0)
-        ordered = data[:, np.argsort(item_difficulty)]
+    def _expanded_counts(data: np.ndarray) -> np.ndarray:
+        """Evaluate the direct item-pair definition for regression checks.
+
+        Items are ordered easiest first (largest available-response mean first,
+        ties by column) under either missing-data policy, so a pair counts when
+        the later, harder item has the strictly higher response.
+        """
+        item_difficulty = np.nanmean(data, axis=0)
+        ordered = data[:, np.argsort(-item_difficulty, kind="stable")]
         expected = np.zeros(data.shape[0])
         for column in range(1, data.shape[1]):
             expected += np.count_nonzero(
@@ -249,15 +254,19 @@ class TestGuttman(unittest.TestCase):
         """Dense category discovery and comparisons preserve representable values."""
         for dtype, offset in [(np.float16, 10_000), (np.float32, 1e8), (np.float64, 1e16)]:
             with self.subTest(dtype=dtype):
-                data = np.array([[offset, offset], [offset + 8, offset]], dtype=dtype)
-                np.testing.assert_array_equal(guttman(data), [0.0, 1.0])
-                np.testing.assert_array_equal(guttman(data, normalize=False), [0.0, 1.0])
+                data = np.array(
+                    [[offset + 8, offset], [offset + 8, offset], [offset, offset + 8]],
+                    dtype=dtype,
+                )
+                np.testing.assert_array_equal(guttman(data), [0.0, 0.0, 1.0])
+                np.testing.assert_array_equal(guttman(data, normalize=False), [0.0, 0.0, 1.0])
 
     def test_missing_values_exclude_only_unavailable_pairs(self) -> None:
         """Test missing responses leave all remaining ordered pairs available."""
         data = [[1, np.nan, 3, 2], [3, 2, np.nan, 1]]
         result = guttman(data)
-        np.testing.assert_allclose(result, [2.0 / 3.0, 2.0 / 3.0])
+        # Easiest-first order is columns 2, 0, 1, 3; each row keeps 3 valid pairs.
+        np.testing.assert_allclose(result, [1.0 / 3.0, 0.0])
 
     def test_sparse_categorical_fast_path_matches_pairwise_definition(self) -> None:
         """Sparse integer codes retain exact ordered-pair counts with missing data."""
@@ -296,9 +305,11 @@ class TestGuttman(unittest.TestCase):
     def test_high_cardinality_raw_counts(self) -> None:
         """Test the bounded-memory fallback on continuous-style response data."""
         n_items = 70
-        data = np.arange(n_items, dtype=float).reshape(1, -1)
+        increasing = np.arange(n_items, dtype=float)
+        # Item means fall left to right, so the increasing row reverses every pair.
+        data = np.vstack([increasing, -3.0 * increasing])
         result = guttman(data, normalize=False)
-        np.testing.assert_array_equal(result, [n_items * (n_items - 1) / 2])
+        np.testing.assert_array_equal(result, [n_items * (n_items - 1) / 2, 0.0])
 
     def test_high_cardinality_fallback_is_batched(self) -> None:
         """Continuous response data uses the same bounded row batches."""
@@ -325,7 +336,7 @@ class TestGuttman(unittest.TestCase):
     def test_strict_missing_policy_matches_direct_definition(self) -> None:
         """Strict scoring keeps the fixed denominator and direct pair semantics."""
         data = np.array([[1.0, np.nan, 3.0, 2.0], [3.0, 2.0, np.nan, 1.0]])
-        expected = self._expanded_counts(data, na_rm=False) / 6.0
+        expected = self._expanded_counts(data) / 6.0
         np.testing.assert_array_equal(guttman(data, na_rm=False), expected)
 
     def test_all_missing_data_returns_nan_without_warnings(self) -> None:
@@ -426,19 +437,17 @@ class TestIndividualReliability(unittest.TestCase):
         finally:
             np.random.set_state(original_state)
 
-    def test_unseeded_scoring_consumes_only_the_expected_permutations(self) -> None:
-        """The global stream advances once per requested item split."""
+    def test_unseeded_scoring_leaves_the_global_stream_untouched(self) -> None:
+        """Unseeded splits draw fresh entropy instead of advancing NumPy's global stream."""
         data = [[1, 2, 1, 2, 1, 2, 1], [1, 5, 2, 4, 3, 3, 2]]
         original_state = np.random.get_state()
         try:
             np.random.seed(20260803)
-            individual_reliability(data, n_splits=7)
-            actual_next = np.random.random()
+            expected_next = np.random.random()
 
             np.random.seed(20260803)
-            for _ in range(7):
-                np.random.permutation(7)
-            expected_next = np.random.random()
+            individual_reliability(data, n_splits=7)
+            actual_next = np.random.random()
 
             self.assertEqual(actual_next, expected_next)
         finally:
@@ -1148,10 +1157,32 @@ class TestMarkov(unittest.TestCase):
         self.assertTrue(np.isnan(result[0]))
         self.assertFalse(np.isnan(result[1]))
 
-    def test_zero_transition_matrix_entropy(self) -> None:
-        """Test empty transition matrices have zero entropy."""
-        trans = np.zeros((2, 2), dtype=float)
-        self.assertEqual(_transition_entropy(trans), 0.0)
+    def test_high_cardinality_entropy_matches_brute_force_counts(self) -> None:
+        """Sorted multiplicities match explicit transition counting above 64 states."""
+        rng = np.random.default_rng(1154)
+        data = rng.integers(0, 101, size=(40, 30)).astype(float)
+        data[::3, 10:20] = data[::3, :10]
+        data[1::4, ::2] = 7.0
+        data[2, 1:] = np.nan
+        data[5, 2:] = np.nan
+        data[rng.random(data.shape) < 0.1] = np.nan
+
+        expected = []
+        for row in data:
+            observed = row[~np.isnan(row)].tolist()
+            transitions = list(zip(observed[:-1], observed[1:], strict=True))
+            if not transitions:
+                expected.append(np.nan)
+                continue
+            entropy = 0.0
+            for source in set(observed[:-1]):
+                targets = [target for start, target in transitions if start == source]
+                for target in set(targets):
+                    count = targets.count(target)
+                    entropy -= count / len(transitions) * np.log2(count / len(targets))
+            expected.append(entropy)
+
+        np.testing.assert_allclose(markov(data), expected, rtol=0, atol=1e-13)
 
     def test_min_columns_raises(self) -> None:
         """Test that too few columns raises ValueError."""

@@ -9,15 +9,18 @@ import json
 import lzma
 import tempfile
 import unittest
+from array import array
 from io import StringIO
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
 
 from ier import composite, composite_flag, composite_probability, composite_summary
-from ier._cli_input import _load_input, _load_matrix
-from ier._cli_output import _emit_composite_json, _emit_composite_text, _write_composite_csv
+from ier._cli_composite import CompositeReport
+from ier._cli_input import _load_input
+from ier._cli_output import _emit_composite_text, _write_composite_csv, _write_composite_json
 from ier.cli import (
     _parse_configured_int_list,
     _parse_float_list,
@@ -29,6 +32,18 @@ from ier.cli import (
     _parse_weights,
     main,
 )
+
+
+def _load_matrix(path: Path, delimiter: str | None) -> np.ndarray:
+    """Load only the respondent-by-item matrix from command-line input."""
+    return _load_input(path, delimiter)[0]
+
+
+def _emit_composite_json(scores: np.ndarray, method: str, **kwargs: Any) -> str:
+    """Render composite JSON through the streaming writer."""
+    output = StringIO()
+    _write_composite_json(output, CompositeReport(scores, method, **kwargs))
+    return output.getvalue()
 
 
 class TestCli(unittest.TestCase):
@@ -996,36 +1011,43 @@ class TestCli(unittest.TestCase):
         self.assertEqual(len(out.read_text(encoding="utf-8").splitlines()), 4)
 
     def test_matrix_loader_converts_rows_incrementally(self) -> None:
-        converted_cells = 0
+        # Complete numeric rows use the whole-row path; blank cells use the per-cell path.
+        for first_row, expected_first in ((["1", "2"], [1.0, 2.0]), (["1", ""], [1.0, np.nan])):
+            with self.subTest(first_row=first_row):
+                buffers: list[array[float]] = []
 
-        def iter_rows(
-            path: Path,
-            delimiter: str | None,
-            skip_rows: int = 0,
-            *,
-            header_expected: bool = False,
-        ) -> object:
-            del path, delimiter
-            self.assertEqual(skip_rows, 0)
-            self.assertFalse(header_expected)
-            yield ["1", "2"]
-            self.assertEqual(converted_cells, 2)
-            yield ["3", "4"]
+                def make_buffer(typecode: str, buffers: list[array[float]] = buffers) -> object:
+                    buffer = array(typecode)
+                    buffers.append(buffer)
+                    return buffer
 
-        def parse_cell(cell: str) -> float:
-            nonlocal converted_cells
-            converted_cells += 1
-            return float(cell)
+                def iter_rows(
+                    path: Path,
+                    delimiter: str | None,
+                    skip_rows: int = 0,
+                    *,
+                    header_expected: bool = False,
+                    report: object = None,
+                    first_row: list[str] = first_row,
+                    buffers: list[array[float]] = buffers,
+                ) -> object:
+                    del path, delimiter
+                    self.assertEqual(skip_rows, 0)
+                    self.assertFalse(header_expected)
+                    self.assertIsNone(report)
+                    yield first_row
+                    self.assertEqual(len(buffers[0]), 2)
+                    yield ["3", "4"]
 
-        with (
-            patch("ier._cli_input._iter_rows", side_effect=iter_rows),
-            patch("ier._cli_input._parse_numeric_cell", side_effect=parse_cell),
-        ):
-            matrix = _load_matrix(Path("unused.csv"), None)
+                with (
+                    patch("ier._cli_input._iter_rows", side_effect=iter_rows),
+                    patch("ier._cli_input.array", side_effect=make_buffer),
+                ):
+                    matrix = _load_matrix(Path("unused.csv"), None)
 
-        np.testing.assert_array_equal(matrix, [[1.0, 2.0], [3.0, 4.0]])
-        matrix[0, 0] = 9.0
-        self.assertEqual(matrix[0, 0], 9.0)
+                np.testing.assert_array_equal(matrix, [expected_first, [3.0, 4.0]])
+                matrix[0, 0] = 9.0
+                self.assertEqual(matrix[0, 0], 9.0)
 
     def test_npy_input_is_memory_mapped_and_scores(self) -> None:
         path = self.root / "responses.npy"
@@ -1135,6 +1157,12 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("index\tdirection\tflag_mode", stdout.getvalue())
         self.assertIn("irv\tlow\tpercentile", stdout.getvalue())
+        rows = {line.split("\t")[0]: line.split("\t") for line in stdout.getvalue().splitlines()}
+        self.assertEqual(
+            rows["index"][-3:], ["required_options", "alternative_options", "keyed_responses"]
+        )
+        self.assertEqual(rows["evenodd"][-3:], ["evenodd_factors", "-", "yes"])
+        self.assertEqual(rows["irv"][-3:], ["-", "-", "no"])
 
     def test_indices_command_json_output(self) -> None:
         out = self.root / "indices.json"
@@ -1142,10 +1170,12 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(code, 0)
         payload = json.loads(out.read_text(encoding="utf-8"))
-        self.assertEqual(payload["n_indices"], 21)
+        self.assertEqual(payload["n_indices"], 26)
         self.assertEqual(payload["indices"]["onset"]["flag_mode"], "present")
         self.assertEqual(payload["indices"]["missing_rate"]["flag_direction"], "high")
         self.assertEqual(payload["indices"]["evenodd"]["required_options"], ["evenodd_factors"])
+        self.assertIs(payload["indices"]["guttman"]["uses_keyed_responses"], True)
+        self.assertIs(payload["indices"]["longstring"]["uses_keyed_responses"], False)
 
     def test_indices_command_csv_output(self) -> None:
         out = self.root / "indices.csv"
@@ -1153,9 +1183,12 @@ class TestCli(unittest.TestCase):
 
         self.assertEqual(code, 0)
         rows = list(csv.DictReader(StringIO(out.read_text(encoding="utf-8"))))
-        self.assertEqual(len(rows), 21)
+        self.assertEqual(len(rows), 26)
         onset = next(row for row in rows if row["index"] == "onset")
         self.assertEqual(onset["flag_mode"], "present")
+        self.assertEqual(onset["uses_keyed_responses"], "False")
+        lz_row = next(row for row in rows if row["index"] == "lz")
+        self.assertEqual(lz_row["uses_keyed_responses"], "True")
 
     def test_screen_missing_rate_index(self) -> None:
         missing = self.root / "missing-rate.csv"
@@ -1947,8 +1980,7 @@ class TestCli(unittest.TestCase):
 
     def test_composite_text_ranking_excludes_non_finite_scores(self) -> None:
         text = _emit_composite_text(
-            np.array([1.0, np.nan, np.inf, -np.inf], dtype=float),
-            "mean",
+            CompositeReport(np.array([1.0, np.nan, np.inf, -np.inf], dtype=float), "mean"),
             4,
         )
 
@@ -1962,17 +1994,16 @@ class TestCli(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be provided together"):
             _emit_composite_json(scores, "mean", component_scores={"irv": scores})
         with self.assertRaisesRegex(ValueError, "valid index count length"):
-            _write_composite_csv(
-                StringIO(),
+            CompositeReport(
                 scores,
+                "mean",
                 component_scores={"irv": scores},
                 valid_index_counts=np.array([1]),
             )
         with self.assertRaisesRegex(ValueError, "component score length for irv"):
-            _emit_composite_text(
+            CompositeReport(
                 scores,
                 "mean",
-                2,
                 component_scores={"irv": np.array([1.0])},
                 valid_index_counts=np.array([1, 1]),
             )
@@ -2003,11 +2034,7 @@ class TestCli(unittest.TestCase):
                 flag_percentile=101.0,
             )
         with self.assertRaisesRegex(ValueError, "flag length"):
-            _write_composite_csv(
-                StringIO(),
-                scores,
-                flags=np.array([True]),
-            )
+            CompositeReport(scores, "mean", flags=np.array([True]), flag_threshold=1.0)
         with self.assertRaisesRegex(ValueError, "probability length"):
             _emit_composite_json(
                 scores,
@@ -2019,7 +2046,7 @@ class TestCli(unittest.TestCase):
         output = StringIO()
         _write_composite_csv(
             output,
-            np.array([1.0, np.nan, np.inf, -np.inf], dtype=float),
+            CompositeReport(np.array([1.0, np.nan, np.inf, -np.inf], dtype=float), "mean"),
         )
 
         self.assertEqual(

@@ -10,7 +10,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from ier import load_score_archive, save_score_archive
+from ier import composite_scores, load_score_archive, save_score_archive
 from ier.cli import main
 
 if TYPE_CHECKING:
@@ -438,3 +438,31 @@ def test_score_only_composite_reuse_uses_selected_reduction_and_percentile(
     assert result["method"] == method
     assert result["threshold_source"] == "percentile"
     assert "components" not in result
+
+
+def test_default_screen_archive_composes_after_skipping_unsupported_indices(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    rng = np.random.default_rng(20261005)
+    source = tmp_path / "data.csv"
+    np.savetxt(source, rng.integers(1, 6, size=(30, 10)), delimiter=",", fmt="%d")
+    archive = tmp_path / "screen.npz"
+    destination = tmp_path / "composite.json"
+    assert main(["screen", str(source), "--format", "npz", "--output", str(archive)]) == 0
+    capsys.readouterr()
+
+    assert main(["composite-scores", str(archive)]) == 1
+    assert "invalid index 'u3_poly'" in capsys.readouterr().err
+    argv = ["composite-scores", str(archive), "--skip-unsupported", "--include-components"]
+    assert main([*argv, "--format", "json", "--output", str(destination)]) == 0
+
+    assert capsys.readouterr().err == (
+        "warning: skipped indices that are not composite-enabled: u3_poly, midpoint, acquiescence\n"
+    )
+    saved = load_score_archive(archive)["scores"]
+    expected = composite_scores(saved, unsupported="drop")
+    result = json.loads(destination.read_text())
+    np.testing.assert_allclose(result["scores"], expected, rtol=1e-15)
+    assert result["indices_used"] == [
+        name for name in saved if name not in {"u3_poly", "midpoint", "acquiescence"}
+    ]

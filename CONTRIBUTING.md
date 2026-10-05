@@ -100,6 +100,7 @@ uv run python benchmarks/bench_orchestration.py --method max --missing-rate 0 --
 uv run python benchmarks/bench_cli_output.py --format text --respondents 1000000 --top 10
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_markov.py --missing-rate 0.1
 uv run python benchmarks/bench_guttman.py --respondents 1000 --items 1000 --structure continuous
+OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_person_fit.py --respondents 55000 --items 20 --categories 2 --operations ht
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0.1
 OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 --operations longstring longstring_pattern
 uv run python benchmarks/bench_response_checks.py --checks 40
@@ -216,8 +217,9 @@ For Mahalanobis scoring, use `--na-rm` to measure complete-case handling on
 complete data, `--missing-row-rate`
 to mark a fraction of rows as incomplete, and `--order F` to compare layouts.
 Missing rows automatically enable complete-case handling.
-Use `--operation qq --items 2` to include theoretical chi-square quantiles and
-observed-distance sorting; `--items 1` exercises the normal-distribution special case.
+Use `--operation qq --items 20` to include theoretical chi-square quantiles from
+the general Newton solver and observed-distance sorting; `--items 2` and
+`--items 1` exercise the exponential and normal-distribution special cases.
 The psychometric synonym benchmark measures scoring, item discovery with
 `--operation psychsyn_critval`, or the shared item-correlation kernel with
 `--operation correlations`. Use `--structure independent` for sparse pair

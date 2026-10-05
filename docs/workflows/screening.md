@@ -36,6 +36,70 @@ print(result["errors"])
 | `summary` | Mean/std/min/max, valid/unavailable counts, flagged count, and valid-score flag rate per index |
 | `n_respondents` / `n_indices` | Size metadata |
 
+## Respondent tables
+
+`screen_table()` turns a result into an ordered mapping of respondent-aligned
+columns, matching the CLI CSV schema without its label column. Arrays are
+returned by reference, so the table itself copies nothing and should be treated
+as read-only; DataFrame constructors may still make their own copies:
+
+```python
+import pandas as pd
+from ier import IndexOptions, screen, screen_table
+
+df = pd.read_csv("responses.csv", index_col="participant_id")
+result = screen(df, options=IndexOptions(scale_min=1, scale_max=5))
+table = pd.DataFrame(screen_table(result), index=df.index)
+```
+
+For polars, or any consumer without a row index, add identifiers as a leading
+`respondent` column. They must be strings, one per respondent, and cannot end
+with a NUL character, which NumPy string arrays would silently drop:
+
+```python
+import polars as pl
+
+frame = pl.DataFrame(screen_table(result, respondent_ids=df.index.astype(str).tolist()))
+```
+
+Use `include_scores=False` or `include_flags=False` to keep only one kind of
+per-index column. `composite_table()` provides the same layout for
+`composite_summary()` and `composite_scores_summary()` results:
+`composite_score`, `valid_index_count`, then one `{name}_score` column per
+successfully scored component.
+
+## Index agreement
+
+Consensus flags are most informative when indices capture different behavior.
+`index_agreement(result, kind)` compares every pair of indices used:
+
+| Kind | Cell value |
+|------|------------|
+| `overlap` | Respondents flagged by both indices; the diagonal is each index's flagged count |
+| `jaccard` (default) | Shared flags divided by respondents flagged by either index; `NaN` when neither flags anyone |
+| `spearman` | Rank correlation of suspiciousness over respondents with finite scores on both indices, using average ranks for ties |
+
+Spearman scores are oriented by each index's flag direction before ranking:
+indices that flag low scores, such as `irv`, `psychsyn`, and `person_total`, are
+negated. A positive correlation therefore always means both indices rank the
+same respondents as more suspicious, even when one flags low scores and the
+other high scores. Unregistered score names keep their raw orientation. Spearman
+pairs with fewer than three shared scores, or with constant ranks, are `NaN`.
+Presence-flagged indices such as `onset` are excluded from Spearman matrices
+because their scores are event positions rather than severities.
+Co-flag matrices for 1,000,000 respondents and 11 indices take about 0.1 s.
+
+```python
+from ier import index_agreement, plot_index_agreement
+
+names, overlap = index_agreement(result, kind="overlap")
+fig = plot_index_agreement(result, kind="jaccard")
+```
+
+`plot_distributions(result)` marks each index's applied cutoff and shades its
+flagged tail, so percentile choices can be checked visually alongside
+`plot_flagged_heatmap(result)` and `plot_flag_counts(result)`.
+
 ## Defaults
 
 Default indices are NumPy-only and require no extra item metadata:
@@ -108,6 +172,47 @@ reverse-scored when measuring acquiescence (see
 scale, agreeing with all items scores 1, disagreeing with all items scores 0, and
 agreeing with one polarity while disagreeing with the other scores 0.5.
 
+## Reverse-keyed items
+
+Consistency and person-fit indices need reverse-worded items recoded, while
+sequence and response-style indices such as `longstring`, `irv`, and
+`acquiescence` need the responses as presented. Name the reverse-worded columns
+once and keep one screening run:
+
+```python
+from ier import IndexOptions, screen
+
+result = screen(
+    data,
+    indices=["evenodd", "individual_reliability", "guttman", "longstring", "irv"],
+    options=IndexOptions(
+        scale_min=1,
+        scale_max=5,
+        evenodd_factors=[6, 6],
+        evenodd_method="halves",
+        reliability_factors=[6, 6],
+        reverse_keyed_items=[1, 4, 7, 10],
+    ),
+)
+```
+
+```bash
+ier screen responses.csv --indices evenodd guttman longstring irv \
+  --scale-min 1 --scale-max 5 --evenodd-factors 6,6 --evenodd-method halves \
+  --reverse-keyed-items 1,4,7,10
+```
+
+The keyed indices `evenodd`, `individual_reliability`, `guttman`, `lz`, `gpoly`,
+`u3poly_fit`, and `ht` read one recoded copy made with `reverse_score()`; every
+other index reads `data` unchanged, so consensus flags combine both views.
+`ier indices` lists each index's input in its `keyed_responses` column, and
+`index_catalog()` reports it as `uses_keyed_responses`. Positions are 0-based in
+the scored matrix, and explicit scale bounds keep an unobserved endpoint from
+shifting the recoding.
+Invalid items or responses outside the bounds become soft failures of the keyed
+indices only, or a contextual error with `strict=True`. See
+[Reverse-keyed items](../indices.md#reverse-keyed-items) for the full table.
+
 ## Consensus completeness
 
 An unavailable component score is not a flag. When incomplete item data or a
@@ -154,6 +259,11 @@ ier screen data.csv --indices irv longstring infrequency \
 Set `infrequency_proportion=True` (or `--infrequency-proportion`) to score the
 failure share instead of the count. `infrequency_flag(..., proportion=True)`
 supports the same policy with an inclusive cutoff between zero and one.
+
+Bogus items and self-reported diligence items often accept several answers.
+Replace the expected responses with one inclusive range per item through
+`IndexOptions.infrequency_acceptable_ranges=[(1, 2), (5, float("inf"))]` or
+`--infrequency-acceptable-ranges '1:2,5:'`; responses outside a range fail.
 
 For production batches that require every requested index to succeed, enable
 strict mode. The first failed index raises a contextual `ValueError`:
@@ -360,11 +470,15 @@ ier response-time timings.csv --metric median --percentile 5
 ier response-time timings.csv --metric consistency --threshold 0.05 --format csv
 ier response-time timings.csv --metric mixture --components 2 --random-seed 42
 ier response-time timings.csv --metric median --format npz --output timing.npz
+ier response-time timings.csv --metric effort --effort-max-threshold 10 --format csv
 ```
 
 Direct timing metrics and consistency scores use low-tail flagging. Mixture
 probabilities use high-tail flagging. Fixed thresholds include equality; derived
 percentile cutoffs exclude ties, matching the other public flagging workflows.
+Response time effort (`--metric effort`) also uses the low tail but follows
+`response_time_effort_flag()`: it flags RTE strictly below a fixed 0.90 unless
+`--threshold` or `--percentile` supplies another cutoff.
 Retained direct scores use `direction="low"` by default; pass `direction="high"`
 for mixture probabilities. This sensitivity path never recomputes row summaries
 or refits the mixture. The NPZ loader also validates that archived flags agree
@@ -409,7 +523,10 @@ lets screen and composite commands ignore unselected metadata columns while
 preserving the requested item order. Repeatable `--item-column NAME` accepts one
 exact header name, including commas; mix both forms to retain command-line
 selection order. Any item-index options and applicability-mask columns refer to
-that selected order.
+that selected order. For survey exports with metadata columns, repeatable
+`--item-pattern 'Q*'` selects matching headers in header order, and repeatable
+`--exclude-column NAME` leaves named columns unscored after any selection (or,
+alone, scores every column except the ID column and the excluded names).
 
 Header detection defaults to `--header auto`. Use `--header present` when the
 first row contains ambiguous names such as numeric item codes, or `--header absent`

@@ -11,7 +11,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from typing import IO, Protocol
+    from typing import IO, Literal, Protocol
 
     from numpy.lib.npyio import NpzFile
 
@@ -62,7 +62,7 @@ def read_npz_member(archive: NpzFile, name: str) -> np.ndarray:
             if version == (1, 0)
             else np.lib.format.read_array_header_2_0,
         )
-        shape, _, dtype = reader(header_stream, max_header_size=_MAX_HEADER_SIZE)
+        shape, fortran_order, dtype = reader(header_stream, max_header_size=_MAX_HEADER_SIZE)
         if any(isinstance(dimension, bool) for dimension in shape):
             raise ValueError("NPY shape dimensions must be integers, not booleans")
         if any(dimension < 0 for dimension in shape):
@@ -91,19 +91,32 @@ def read_npz_member(archive: NpzFile, name: str) -> np.ndarray:
             # boundaries of this member. Stored lengths must therefore agree.
             if info.file_size != info.compress_size:
                 raise ValueError("stored ZIP member sizes are inconsistent")
-        else:
-            # The central directory's uncompressed size alone is not evidence
-            # that the compressed stream contains the claimed data. Verify it
-            # in bounded chunks before allocating; our own writers use stored
-            # members and do not need this extra decompression pass.
-            actual_bytes = 0
-            while chunk := member.read(1024 * 1024):
-                actual_bytes += len(chunk)
-            if actual_bytes != expected_bytes:
+            member.seek(0)
+            read_array = cast("Callable[[IO[bytes], bool], np.ndarray]", np.lib.format.read_array)
+            return read_array(member, False)
+
+        # The central directory's uncompressed size alone is not evidence that
+        # the compressed stream contains the claimed data. Decode once in bounded
+        # chunks, so allocation grows only with bytes actually present, and keep
+        # the verified payload instead of decompressing it again. Reading to the
+        # end of the stream also lets ZipFile verify the member's CRC.
+        payload = bytearray()
+        while chunk := member.read(min(1 << 20, expected_bytes - len(payload) + 1)):
+            payload += chunk
+            if len(payload) > expected_bytes:
                 raise ValueError(
                     f"NPY header declares {expected_bytes} payload bytes; "
-                    f"decompressed member contains {actual_bytes}"
+                    "decompressed member contains more"
                 )
-        member.seek(0)
-        read_array = cast("Callable[[IO[bytes], bool], np.ndarray]", np.lib.format.read_array)
-        return read_array(member, False)
+        if len(payload) != expected_bytes:
+            raise ValueError(
+                f"NPY header declares {expected_bytes} payload bytes; "
+                f"decompressed member contains {len(payload)}"
+            )
+        order: Literal["C", "F"] = "F" if fortran_order else "C"
+        if element_count == 0:
+            # Zero-width dtypes such as <U0 cannot be viewed from a buffer.
+            return np.empty(shape, dtype=dtype, order=order)
+        # The bytearray keeps the decoded array writable, matching read_array.
+        array = np.frombuffer(payload, dtype=dtype, count=element_count)
+        return array.reshape(shape, order=order)

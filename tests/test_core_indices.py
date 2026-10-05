@@ -14,14 +14,12 @@ from ier.irv import irv
 from ier.longstring import (
     _avgstr_message,
     _longstr_message,
-    _run_length_decode,
     _run_length_encode,
     longstring,
 )
 from ier.mahad import _compute_mahalanobis_distance, mahad, mahad_summary
 from ier.psychsyn import (
     _compute_person_scores,
-    _resample_missing_correlations,
     compute_person_correlations,
     get_highly_correlated_pairs,
     psychant,
@@ -54,21 +52,11 @@ class TestLongstring(unittest.TestCase):
         with self.assertRaises(TypeError):
             _run_length_encode(None)
 
-    def test_run_length_decode(self) -> None:
-        """Test run-length decoding reconstructs original string correctly."""
-        self.assertEqual(
-            _run_length_decode([("A", 3), ("B", 3), ("C", 2), ("D", 1), ("A", 2)]),
-            "AAABBBCCDAA",
-        )
-        self.assertEqual(_run_length_decode([("A", 1)]), "A")
-        self.assertEqual(_run_length_decode([]), "")
-
-    def test_run_length_decode_validation(self) -> None:
-        """Test run-length decoding raises TypeError for invalid inputs."""
-        with self.assertRaises(TypeError):
-            _run_length_decode("not a list")
-        with self.assertRaises(TypeError):
-            _run_length_decode(None)
+    def test_run_length_encoding_round_trips(self) -> None:
+        """Test run-length runs reconstruct the original string correctly."""
+        for message in ["AAABBBCCDAA", "A", ""]:
+            encoded = _run_length_encode(message)
+            self.assertEqual("".join(char * count for char, count in encoded), message)
 
     def test_longstr_message(self) -> None:
         """Test longest string message returns correct character and length."""
@@ -691,9 +679,7 @@ class TestPsychometricFunctions(unittest.TestCase):
         expected_diag = np.sum(~np.isnan(person_corrs), axis=1)
 
         with patch("ier.psychsyn._PSYCHSYN_BATCH_ELEMENTS", 760):
-            scores, diag = _compute_person_scores(
-                data, item_pairs, resample_na=False, rng=np.random.default_rng(42)
-            )
+            scores, diag = _compute_person_scores(data, item_pairs, pairwise=False)
             public_scores, public_diag = psychsyn(data, critval=0.8, diag=True)
 
         np.testing.assert_allclose(scores, expected_scores, rtol=0.0, atol=2e-15)
@@ -702,7 +688,7 @@ class TestPsychometricFunctions(unittest.TestCase):
         np.testing.assert_array_equal(public_diag, expected_diag)
 
     def test_missing_psychsyn_batches_match_expanded_formula(self) -> None:
-        """Missing and seeded-resampling paths preserve the expanded formula."""
+        """Missing responses in selected items preserve the expanded formula."""
         from ier._correlation import selected_row_correlations
 
         rng = np.random.default_rng(20260802)
@@ -722,14 +708,6 @@ class TestPsychometricFunctions(unittest.TestCase):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             expected_scores = np.nanmean(person_corrs, axis=1)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            resampled = _resample_missing_correlations(
-                person_corrs,
-                np.random.default_rng(42),
-            )
-        expected_resampled_scores = np.mean(resampled, axis=1)
-        expected_resampled_diag = np.sum(~np.isnan(resampled), axis=1)
 
         with (
             patch("ier.psychsyn._PSYCHSYN_BATCH_ELEMENTS", len(item_pairs)),
@@ -741,18 +719,7 @@ class TestPsychometricFunctions(unittest.TestCase):
                 "ier.psychsyn.selected_row_correlations", wraps=selected_row_correlations
             ) as contracted,
         ):
-            scores, diag = _compute_person_scores(
-                data,
-                item_pairs,
-                resample_na=False,
-                rng=np.random.default_rng(42),
-            )
-            resampled_scores, resampled_diag = _compute_person_scores(
-                data,
-                item_pairs,
-                resample_na=True,
-                rng=np.random.default_rng(42),
-            )
+            scores, diag = _compute_person_scores(data, item_pairs, pairwise=False)
 
         self.assertGreater(contracted.call_count, 2)
         self.assertTrue(
@@ -760,34 +727,6 @@ class TestPsychometricFunctions(unittest.TestCase):
         )
         np.testing.assert_allclose(scores, expected_scores, rtol=0.0, atol=2e-15, equal_nan=True)
         np.testing.assert_array_equal(diag, expected_diag)
-        np.testing.assert_allclose(
-            resampled_scores,
-            expected_resampled_scores,
-            rtol=0.0,
-            atol=2e-15,
-        )
-        np.testing.assert_array_equal(resampled_diag, expected_resampled_diag)
-
-    def test_resample_missing_correlations_edge_cases(self) -> None:
-        """Test missing-correlation resampling covers all-missing and partial rows."""
-        no_missing = np.array([[0.5, -0.5]])
-        np.testing.assert_array_equal(
-            _resample_missing_correlations(no_missing, np.random.default_rng(42)),
-            no_missing,
-        )
-
-        person_corrs = np.array(
-            [
-                [np.nan, np.nan],
-                [0.5, np.nan],
-                [0.25, -0.25],
-            ]
-        )
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            result = _resample_missing_correlations(person_corrs, np.random.default_rng(42))
-        self.assertFalse(np.isnan(result).any())
-        np.testing.assert_array_equal(result[2], person_corrs[2])
 
     def test_psychsyn_edge_cases(self) -> None:
         """Test psychsyn handles edge cases like high thresholds and constant data."""

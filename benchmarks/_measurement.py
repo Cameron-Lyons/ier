@@ -2,11 +2,15 @@
 
 Inputs and warmups belong to the caller. Timed calls run without allocation
 tracing; one additional call measures peak traced allocation, not process RSS.
+Each benchmark process reports its BLAS/OpenMP thread variables once, because
+default multithreaded BLAS changes small-matrix and parallel-scoring timings.
 """
 
 from __future__ import annotations
 
+import functools
 import gc
+import os
 import statistics
 import time
 import tracemalloc
@@ -17,6 +21,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
 T = TypeVar("T")
+_THREAD_VARIABLES = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS")
 
 
 @dataclass(frozen=True)
@@ -30,6 +35,16 @@ class Measurement(Generic[T]):
     @property
     def median_seconds(self) -> float:
         return statistics.median(self.timings)
+
+
+def thread_settings() -> str:
+    """Describe the BLAS/OpenMP thread variables that recorded timings depend on."""
+    return " ".join(f"{name}={os.environ.get(name, 'unset')}" for name in _THREAD_VARIABLES)
+
+
+@functools.cache
+def _report_thread_settings() -> None:
+    print(f"threads: {thread_settings()}", flush=True)
 
 
 def measure(operation: Callable[[], T], repeats: int) -> Measurement[T]:
@@ -53,6 +68,7 @@ def measure_many(
         raise ValueError("at least one operation is required")
     if tracemalloc.is_tracing():
         raise RuntimeError("disable allocation tracing before measuring runtime")
+    _report_thread_settings()
 
     labels = tuple(operations)
     timings: dict[str, list[float]] = {name: [] for name in labels}

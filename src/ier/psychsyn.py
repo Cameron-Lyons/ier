@@ -14,10 +14,12 @@ from typing import Any, Literal, overload
 
 import numpy as np
 
-from ier._column_statistics import column_correlations
+from ier._column_statistics import column_correlations, pairwise_column_correlations
 from ier._correlation import selected_row_correlations
+from ier._flagging import threshold_flags
 from ier._summary import calculate_summary_stats
 from ier._validation import MatrixLike, validate_matrix_input
+from ier.types import ItemCorrelationMode
 
 _PSYCHSYN_BATCH_ELEMENTS = 262_144
 
@@ -33,6 +35,15 @@ def _validate_correlation_cutoff(value: object, *, name: str) -> float:
     if not np.isfinite(cutoff):
         raise ValueError(f"{name} must be a finite number")
     return cutoff
+
+
+def _item_correlations(x: np.ndarray, item_correlations: object) -> tuple[np.ndarray, bool]:
+    """Correlate items in the requested missing-data mode, reporting pairwise scoring."""
+    if not isinstance(item_correlations, str) or item_correlations not in ("complete", "pairwise"):
+        raise ValueError("item_correlations must be 'complete' or 'pairwise'")
+    if item_correlations == "pairwise":
+        return pairwise_column_correlations(x), True
+    return column_correlations(x), False
 
 
 def get_highly_correlated_pairs(
@@ -94,6 +105,8 @@ def psychsyn(
     resample_na: bool = False,
     random_seed: int | None = None,
     _return_item_info: Literal[False] = False,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
 ) -> np.ndarray:
     pass
 
@@ -107,6 +120,8 @@ def psychsyn(
     resample_na: bool = False,
     random_seed: int | None = None,
     _return_item_info: Literal[False] = False,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
 ) -> tuple[np.ndarray, np.ndarray]:
     pass
 
@@ -119,7 +134,24 @@ def psychsyn(
     diag: bool = False,
     resample_na: bool = False,
     random_seed: int | None = None,
+    _return_item_info: Literal[False] = False,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    pass
+
+
+@overload
+def psychsyn(
+    x: MatrixLike,
+    critval: float = 0.60,
+    anto: bool = False,
+    diag: bool = False,
+    resample_na: bool = False,
+    random_seed: int | None = None,
     _return_item_info: Literal[True] = True,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     pass
 
@@ -132,6 +164,8 @@ def psychsyn(
     resample_na: bool = False,
     random_seed: int | None = None,
     _return_item_info: bool = False,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
 ) -> np.ndarray | tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate psychometric synonym (or antonym) scores based on the provided item response matrix.
@@ -150,27 +184,56 @@ def psychsyn(
             (highly negatively correlated items).
     - diag: Boolean to optionally return the number of item pairs available for each observation.
             A single available pair still cannot provide a respondent correlation.
-    - resample_na: Boolean to indicate resampling when encountering NA for a respondent.
-    - random_seed: Optional seed for random number generation when resample_na=True.
+    - resample_na: Accepted for compatibility with ``careless::psychsyn``; it has no
+                   effect on scores. Complete discovery selects only fully observed
+                   items, pairwise mode leaves respondents with fewer than two
+                   answered pairs unavailable, and zero within-pair variance scores
+                   0.0 (careless returns ``NA``), so no score is left to resample.
+    - random_seed: Accepted for compatibility; it has no effect on scores.
+    - item_correlations: Missing-data policy for item pair discovery. ``"complete"``
+                         (the default) treats an item with any missing response as
+                         undefined, as in ``np.corrcoef``. ``"pairwise"`` correlates
+                         each item pair over the respondents who answered both, as
+                         ``careless::psychsyn`` does, and scores each respondent over
+                         the selected pairs they answered. Pairs need at least three
+                         shared respondents, so with fewer than three respondents
+                         pairwise mode finds no pairs. Otherwise, without missing
+                         responses both modes discover the same pairs.
 
     Returns:
     - A numpy array of psychometric synonym/antonym scores. Fewer than two selected
-      pairs produce unavailable (``NaN``) scores. Undefined item correlations do
-      not qualify as pairs, including when critval=0.
-    - A tuple of (scores, diagnostic_values) if diag=True.
+      (or, in pairwise mode, answered) pairs produce unavailable (``NaN``) scores.
+      Undefined item correlations do not qualify as pairs, including when critval=0.
+    - A tuple of (scores, diagnostic_values) if diag=True. In pairwise mode the
+      diagnostics count each respondent's answered pairs.
 
     Raises:
     - ValueError: If inputs are invalid (empty data, invalid critval, etc.)
-    - TypeError: If input is not a list or numpy array
+    - TypeError: If input is not array-like (for example, a scalar or string)
 
     Example:
-        >>> data = [[1, 2, 3, 4, 5, 6], [2, 3, 4, 5, 6, 7], [1, 1, 1, 4, 5, 6]]
-        >>> scores = psychsyn(data, critval=0.5)
-        >>> print(scores)
-        [0.87, 0.92, 0.45]
+        >>> data = [
+        ...     [1, 1, 2, 3, 5, 5],
+        ...     [1, 1, 4, 4, 1, 1],
+        ...     [5, 5, 1, 1, 2, 1],
+        ...     [2, 2, 2, 1, 5, 3],
+        ...     [1, 1, 1, 2, 5, 5],
+        ...     [2, 4, 4, 3, 5, 3],
+        ... ]
+        >>> scores, pairs = psychsyn(data, diag=True)
+        >>> np.round(scores, 2).tolist()
+        [0.96, 1.0, 0.97, 0.87, 0.97, -0.94]
+        >>> pairs.tolist()
+        [3, 3, 3, 3, 3, 3]
 
-        >>> scores, diag = psychsyn(data, critval=0.5, diag=True)
-        >>> print(f"Scores: {scores}, Pairs per person: {diag}")
+        One missing response removes its whole item from complete discovery,
+        while pairwise discovery keeps the pair and skips only that response:
+
+        >>> data[4][3] = float("nan")
+        >>> np.round(psychsyn(data), 2).tolist()
+        [1.0, 0.0, 1.0, 1.0, 1.0, -1.0]
+        >>> np.round(psychsyn(data, item_correlations="pairwise"), 2).tolist()
+        [0.96, 1.0, 0.97, 0.87, 1.0, -0.94]
     """
 
     x_array = validate_matrix_input(x, min_columns=2)
@@ -183,11 +246,9 @@ def psychsyn(
     if not anto and critval < 0:
         raise ValueError("critval should be positive for synonym analysis")
 
-    rng = np.random.default_rng(random_seed)
+    item_corr, pairwise = _item_correlations(x_array, item_correlations)
 
-    item_correlations = column_correlations(x_array)
-
-    item_pairs = get_highly_correlated_pairs(item_correlations, critval, anto)
+    item_pairs = get_highly_correlated_pairs(item_corr, critval, anto)
 
     if len(item_pairs) == 0:
         empty_scores = np.full(x_array.shape[0], np.nan)
@@ -199,12 +260,7 @@ def psychsyn(
         else:
             return empty_scores
 
-    scores, diag_values = _compute_person_scores(
-        x_array,
-        item_pairs,
-        resample_na=resample_na,
-        rng=rng,
-    )
+    scores, diag_values = _compute_person_scores(x_array, item_pairs, pairwise=pairwise)
 
     if _return_item_info:
         return (scores, diag_values, item_pairs)
@@ -215,13 +271,14 @@ def psychsyn(
 
 
 def _compute_person_scores(
-    x: np.ndarray,
-    item_pairs: np.ndarray,
-    *,
-    resample_na: bool,
-    rng: np.random.Generator,
+    x: np.ndarray, item_pairs: np.ndarray, *, pairwise: bool
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Score selected pairs in bounded batches, including missing-response inputs."""
+    """Score selected pairs in bounded batches, including missing-response inputs.
+
+    Complete scoring requires every selected response. Pairwise scoring
+    correlates each respondent's answered pairs instead, and respondents with
+    fewer than two answered pairs stay unavailable.
+    """
     n_rows = len(x)
     n_pairs = len(item_pairs)
     scores = np.full(n_rows, np.nan)
@@ -233,11 +290,32 @@ def _compute_person_scores(
     batch_rows = max(1, _PSYCHSYN_BATCH_ELEMENTS // max(x.shape[1], 2 * n_pairs, 16))
     selected_items = np.unique(item_pairs)
     left_indices, right_indices = item_pairs[:, 0], item_pairs[:, 1]
+    # Pair positions among the selected items count answered pairs from one mask.
+    left_selected, right_selected = np.searchsorted(selected_items, item_pairs.T)
 
     for start in range(0, n_rows, batch_rows):
         stop = min(start + batch_rows, n_rows)
         block = x[start:stop]
-        finite_rows = np.isfinite(block[:, selected_items]).all(axis=1)
+        finite = np.isfinite(block[:, selected_items])
+        finite_rows = finite.all(axis=1)
+        if pairwise and not np.all(finite_rows):
+            pair_counts = np.count_nonzero(
+                finite[:, left_selected] & finite[:, right_selected], axis=1
+            )
+            diag_values[start:stop] = pair_counts
+            if n_pairs < 2:
+                continue
+            batch_scores = selected_row_correlations(
+                block,
+                left_indices,
+                right_indices,
+                has_missing=True,
+                zero_variance=0.0,
+            )
+            # Fewer than two answered pairs cannot supply a respondent correlation.
+            batch_scores[pair_counts < 2] = np.nan
+            scores[start:stop] = batch_scores
+            continue
         diag_values[start:stop] = finite_rows * n_pairs
         if n_pairs < 2 or not np.any(finite_rows):
             continue
@@ -250,78 +328,15 @@ def _compute_person_scores(
             has_missing=False,
             zero_variance=0.0,
         )
-
-    missing_rows = np.isnan(scores)
-    if n_pairs < 2 or not resample_na or not np.any(missing_rows):
-        return scores, diag_values
-
-    overall_mean = 0.0 if np.all(missing_rows) else float(np.abs(np.mean(scores[~missing_rows])))
-
-    missing_indices = np.flatnonzero(missing_rows)
-    for start in range(0, len(missing_indices), batch_rows):
-        row_indices = missing_indices[start : start + batch_rows]
-        random_signs = rng.choice([-1, 1], size=(len(row_indices), n_pairs))
-        scores[row_indices] = np.mean(random_signs, axis=1) * overall_mean
-
-    diag_values[missing_rows] = n_pairs
     return scores, diag_values
 
 
-def _resample_missing_correlations(
-    person_corrs: np.ndarray, rng: np.random.Generator
-) -> np.ndarray:
-    """
-    Resample missing correlations based on available data.
-
-    Parameters:
-    - person_corrs: Array of person correlations with potential NaN values
-
-    Returns:
-    - Array with resampled values replacing NaN
-    """
-    missing_mask = np.isnan(person_corrs)
-    total_missing = missing_mask.sum()
-
-    if total_missing == 0:
-        return person_corrs
-
-    result = person_corrs.copy()
-    n_pairs = result.shape[1]
-
-    all_nan_rows = missing_mask.all(axis=1)
-
-    with np.errstate(invalid="ignore"):
-        row_means = np.abs(np.nanmean(result, axis=1))
-
-    overall_mean = np.abs(np.nanmean(result))
-    row_means[all_nan_rows] = overall_mean if not np.isnan(overall_mean) else 0.0
-
-    random_signs = rng.choice([-1, 1], size=total_missing)
-
-    if all_nan_rows.any():
-        all_nan_count = all_nan_rows.sum() * n_pairs
-        result[all_nan_rows] = (
-            random_signs[:all_nan_count].reshape(-1, n_pairs) * row_means[all_nan_rows, np.newaxis]
-        )
-        remaining_signs = random_signs[all_nan_count:]
-    else:
-        remaining_signs = random_signs
-
-    has_some_valid = ~all_nan_rows & missing_mask.any(axis=1)
-    if has_some_valid.any():
-        partial_missing_mask = missing_mask & has_some_valid[:, np.newaxis]
-        row_indices = np.broadcast_to(np.arange(result.shape[0])[:, np.newaxis], result.shape)[
-            partial_missing_mask
-        ]
-        result[partial_missing_mask] = (
-            remaining_signs[: partial_missing_mask.sum()] * row_means[row_indices]
-        )
-
-    return result
-
-
 def psychsyn_critval(
-    x: MatrixLike, anto: bool = False, min_correlation: float = 0.0
+    x: MatrixLike,
+    anto: bool = False,
+    min_correlation: float = 0.0,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
 ) -> list[tuple[int, int, float]]:
     """
     Calculate and order pairwise correlations for all items in the provided item response matrix.
@@ -333,15 +348,27 @@ def psychsyn_critval(
     - x: A matrix of data where rows are individuals and columns are their item responses.
     - anto: Boolean indicating whether to order correlations by largest negative values.
     - min_correlation: Finite, nonnegative correlation magnitude to include in results.
+    - item_correlations: ``"complete"`` (default) or ``"pairwise"`` missing-data
+                         policy for item correlations, as in ``psychsyn``.
 
     Returns:
     - A list of tuples containing (item_i, item_j, correlation), ordered by magnitude.
 
     Example:
-        >>> data = [[1, 2, 3, 4], [2, 3, 4, 5], [1, 1, 1, 4]]
-        >>> pairs = psychsyn_critval(data, min_correlation=0.3)
-        >>> print(pairs[:3])
-        [(0, 1, 0.87), (1, 2, 0.82), (0, 2, 0.65)]
+        >>> data = [
+        ...     [1, 1, 2, 3, 5, 5],
+        ...     [1, 1, 4, 4, 1, 1],
+        ...     [5, 5, 1, 1, 2, 1],
+        ...     [2, 2, 2, 1, 5, 3],
+        ...     [1, 1, 1, 2, 5, 5],
+        ...     [2, 4, 4, 3, 5, 3],
+        ... ]
+        >>> pairs = psychsyn_critval(data, min_correlation=0.6)
+        >>> items = [(i, j) for i, j, _ in pairs]
+        >>> items
+        [(0, 1), (4, 5), (2, 3), (0, 3)]
+        >>> np.round([correlation for _, _, correlation in pairs], 2).tolist()
+        [0.88, 0.85, 0.77, -0.64]
     """
 
     x_array = validate_matrix_input(x, min_columns=2)
@@ -350,11 +377,11 @@ def psychsyn_critval(
     if min_correlation < 0:
         raise ValueError("min_correlation must be nonnegative")
 
-    item_correlations = column_correlations(x_array)
-    n_items = item_correlations.shape[0]
+    item_corr, _ = _item_correlations(x_array, item_correlations)
+    n_items = item_corr.shape[0]
 
     i_indices, j_indices = np.triu_indices(n_items, k=1)
-    corr_values = item_correlations[i_indices, j_indices]
+    corr_values = item_corr[i_indices, j_indices]
 
     valid_mask = ~np.isnan(corr_values) & (np.abs(corr_values) >= min_correlation)
     i_filtered = i_indices[valid_mask]
@@ -378,6 +405,8 @@ def psychant(
     diag: Literal[False] = False,
     resample_na: bool = False,
     random_seed: int | None = None,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
 ) -> np.ndarray:
     pass
 
@@ -389,7 +418,22 @@ def psychant(
     diag: Literal[True] = True,
     resample_na: bool = False,
     random_seed: int | None = None,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
 ) -> tuple[np.ndarray, np.ndarray]:
+    pass
+
+
+@overload
+def psychant(
+    x: MatrixLike,
+    critval: float = -0.60,
+    diag: bool = False,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     pass
 
 
@@ -399,6 +443,8 @@ def psychant(
     diag: bool = False,
     resample_na: bool = False,
     random_seed: int | None = None,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
 ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
     """
     Calculate the psychometric antonym score.
@@ -411,42 +457,45 @@ def psychant(
     - critval: Minimum magnitude of negative correlation for items to be considered antonyms.
                Default is -0.60.
     - diag: Boolean to optionally return the number of item pairs available for each observation.
-    - resample_na: Boolean to indicate resampling when encountering NA for a respondent.
-    - random_seed: Optional seed for random number generation when resample_na=True.
+    - resample_na: Accepted for compatibility; it has no effect on scores (see ``psychsyn``).
+    - random_seed: Accepted for compatibility; it has no effect on scores.
+    - item_correlations: ``"complete"`` (default) or ``"pairwise"`` missing-data
+                         policy for pair discovery and scoring, as in ``psychsyn``.
 
     Returns:
     - A numpy array of psychometric antonym scores, or
     - A tuple of (scores, diagnostic_values) if diag=True.
 
     Example:
-        >>> data = [[1, 2, 3, 4, 5, 6], [2, 3, 4, 5, 6, 7], [1, 1, 1, 4, 5, 6]]
-        >>> scores = psychant(data, critval=-0.5)
-        >>> print(scores)
-        [0.23, 0.18, 0.45]
+        >>> data = [
+        ...     [1, 5, 2, 3, 5, 1],
+        ...     [1, 5, 4, 2, 1, 5],
+        ...     [5, 1, 1, 5, 2, 5],
+        ...     [2, 4, 2, 5, 5, 3],
+        ...     [1, 5, 1, 4, 5, 1],
+        ...     [2, 2, 4, 3, 5, 3],
+        ... ]
+        >>> np.round(psychant(data), 2).tolist()
+        [-0.96, -1.0, -0.97, -0.87, -0.97, 0.94]
     """
-    if diag:
-        return psychsyn(
-            x,
-            critval=critval,
-            anto=True,
-            diag=True,
-            resample_na=resample_na,
-            random_seed=random_seed,
-            _return_item_info=False,
-        )
-
     return psychsyn(
         x,
         critval=critval,
         anto=True,
-        diag=False,
+        diag=diag,
         resample_na=resample_na,
         random_seed=random_seed,
-        _return_item_info=False,
+        item_correlations=item_correlations,
     )
 
 
-def psychsyn_summary(x: MatrixLike, critval: float = 0.60, anto: bool = False) -> dict[str, Any]:
+def psychsyn_summary(
+    x: MatrixLike,
+    critval: float = 0.60,
+    anto: bool = False,
+    *,
+    item_correlations: ItemCorrelationMode = "complete",
+) -> dict[str, Any]:
     """
     Calculate summary statistics for psychometric synonym/antonym analysis.
 
@@ -454,29 +503,166 @@ def psychsyn_summary(x: MatrixLike, critval: float = 0.60, anto: bool = False) -
     - x: A matrix of data where rows are individuals and columns are their item responses.
     - critval: Critical value for correlation threshold.
     - anto: If True, analyze antonyms; if False, analyze synonyms.
+    - item_correlations: ``"complete"`` (default) or ``"pairwise"`` missing-data
+                         policy for pair discovery and scoring, as in ``psychsyn``.
 
     Returns:
-    - Dictionary with summary statistics and item pair information.
+    - Dictionary with score summary statistics (``mean_score``, ``std_score``,
+      ``min_score``, ``max_score``, ``median_score``), the number of selected
+      ``item_pairs``, and respondent counts ``n_total``, ``n_valid`` and
+      ``n_missing``, as in ``mahad_summary()`` and ``markov_summary()``. The same
+      counts remain available as ``total_individuals``, ``valid_individuals``
+      and ``missing_individuals`` for compatibility.
 
     Example:
-        >>> data = [[1, 2, 3, 4, 5, 6], [2, 3, 4, 5, 6, 7], [1, 1, 1, 4, 5, 6]]
-        >>> summary = psychsyn_summary(data, critval=0.5)
-        >>> print(summary)
-        {'mean_score': 0.75, 'std_score': 0.24, 'item_pairs': 3, ...}
+        >>> data = [
+        ...     [1, 1, 2, 3, 5, 5],
+        ...     [1, 1, 4, 4, 1, 1],
+        ...     [5, 5, 1, 1, 2, 1],
+        ...     [2, 2, 2, 1, 5, 3],
+        ...     [1, 1, 1, 2, 5, 5],
+        ...     [2, 4, 4, 3, 5, 3],
+        ... ]
+        >>> summary = psychsyn_summary(data)
+        >>> summary["item_pairs"], summary["n_total"], summary["n_valid"], summary["n_missing"]
+        (3, 6, 6, 0)
+        >>> round(summary["median_score"], 2)
+        0.97
     """
 
     scores, _, item_pairs = psychsyn(
-        x, critval=critval, anto=anto, diag=True, _return_item_info=True
+        x,
+        critval=critval,
+        anto=anto,
+        diag=True,
+        _return_item_info=True,
+        item_correlations=item_correlations,
     )
 
     valid_count = int(np.sum(~np.isnan(scores)))
+    missing_count = len(scores) - valid_count
     summary = calculate_summary_stats(scores, suffix="_score")
     summary.update(
         {
             "item_pairs": len(item_pairs),
             "total_individuals": len(scores),
             "valid_individuals": valid_count,
-            "missing_individuals": len(scores) - valid_count,
+            "missing_individuals": missing_count,
+            "n_total": len(scores),
+            "n_valid": valid_count,
+            "n_missing": missing_count,
         }
     )
     return summary
+
+
+def psychsyn_flag(
+    x: MatrixLike,
+    critval: float = 0.60,
+    threshold: float | None = None,
+    percentile: float = 5.0,
+    *,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+    item_correlations: ItemCorrelationMode = "complete",
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute psychometric synonym scores and flag respondents with low consistency.
+
+    Parameters:
+    - x: A matrix of data where rows are individuals and columns are their item responses.
+    - critval: Minimum item correlation for synonym pairs (default 0.60).
+    - threshold: Absolute score threshold at or below which to flag. If None, uses percentile.
+    - percentile: Percentile below which to flag (default 5th percentile).
+    - resample_na: Accepted for compatibility; it has no effect on scores (see ``psychsyn``).
+    - random_seed: Accepted for compatibility; it has no effect on scores.
+    - item_correlations: ``"complete"`` (default) or ``"pairwise"`` missing-data
+                         policy, as in ``psychsyn``.
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for flagged respondents.
+      Unavailable (``NaN``) scores are never flagged.
+
+    Example:
+        >>> data = [
+        ...     [1, 1, 2, 3, 5, 5],
+        ...     [1, 1, 4, 4, 1, 1],
+        ...     [5, 5, 1, 1, 2, 1],
+        ...     [2, 2, 2, 1, 5, 3],
+        ...     [1, 1, 1, 2, 5, 5],
+        ...     [2, 4, 4, 3, 5, 3],
+        ... ]
+        >>> scores, flags = psychsyn_flag(data)
+        >>> flags.tolist()
+        [False, False, False, False, False, True]
+    """
+    scores = psychsyn(
+        x,
+        critval=critval,
+        resample_na=resample_na,
+        random_seed=random_seed,
+        item_correlations=item_correlations,
+    )
+
+    # Mirrors INDEX_REGISTRY["psychsyn"].flag_direction; importing it here is circular.
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="low")
+
+    return scores, flags
+
+
+def psychant_flag(
+    x: MatrixLike,
+    critval: float = -0.60,
+    threshold: float | None = None,
+    percentile: float = 95.0,
+    *,
+    resample_na: bool = False,
+    random_seed: int | None = None,
+    item_correlations: ItemCorrelationMode = "complete",
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute psychometric antonym scores and flag the highest scores.
+
+    Attentive respondents answer antonym pairs in opposite directions, giving
+    strongly negative scores. Scores near zero or above are suspicious, so flags
+    follow the high direction that ``screen()`` applies to ``psychant``.
+
+    Parameters:
+    - x: A matrix of data where rows are individuals and columns are their item responses.
+    - critval: Maximum (negative) item correlation for antonym pairs (default -0.60).
+    - threshold: Absolute score threshold at or above which to flag. If None, uses percentile.
+    - percentile: Percentile above which to flag (default 95th percentile).
+    - resample_na: Accepted for compatibility; it has no effect on scores (see ``psychsyn``).
+    - random_seed: Accepted for compatibility; it has no effect on scores.
+    - item_correlations: ``"complete"`` (default) or ``"pairwise"`` missing-data
+                         policy, as in ``psychsyn``.
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for flagged respondents.
+      Unavailable (``NaN``) scores are never flagged.
+
+    Example:
+        >>> data = [
+        ...     [1, 5, 2, 3, 5, 1],
+        ...     [1, 5, 4, 2, 1, 5],
+        ...     [5, 1, 1, 5, 2, 5],
+        ...     [2, 4, 2, 5, 5, 3],
+        ...     [1, 5, 1, 4, 5, 1],
+        ...     [2, 2, 4, 3, 5, 3],
+        ... ]
+        >>> scores, flags = psychant_flag(data, threshold=0.0)
+        >>> np.round(scores[flags], 2).tolist()
+        [0.94]
+    """
+    scores = psychant(
+        x,
+        critval=critval,
+        resample_na=resample_na,
+        random_seed=random_seed,
+        item_correlations=item_correlations,
+    )
+
+    # Mirrors INDEX_REGISTRY["psychant"].flag_direction; importing it here is circular.
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="high")
+
+    return scores, flags

@@ -12,8 +12,9 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from ier import composite_scores
+from ier._composite_reductions import standardize_index_scores
 from ier._registry import INDEX_REGISTRY
-from ier.composite import _combine_scores, _standardize_index_scores
+from ier.composite import _combine_scores
 
 _MAX = float(np.finfo(float).max)
 _MIN = float(np.nextafter(0.0, 1.0))
@@ -47,6 +48,23 @@ _CASES = [
         {"longstring": 1.0, "mahad": math.nextafter(1.0, 0.0)},
     ),
 ]
+
+
+def _summation_tolerance(
+    scores: dict[str, np.ndarray], weights: dict[str, float], row: int
+) -> float:
+    """Return the float64 summation error bound for one weighted mean.
+
+    Only catastrophic cancellation is repaired exactly. Ordinary rows retain the
+    usual bound of a few rounding units of the largest absolute weighted terms.
+    """
+    terms, mass = Fraction(0), Fraction(0)
+    for name, values in scores.items():
+        if not np.isnan(values[row]):
+            weight = Fraction(weights[name])
+            terms += abs(Fraction(float(values[row])) * weight)
+            mass += weight
+    return 8 * float(np.finfo(float).eps) * float(terms / mass) if mass else 0.0
 
 
 def _reference(
@@ -100,7 +118,7 @@ def test_common_weight_scale_preserves_means_with_missing_scores(
     }
     weights = {name: scale * (index + 1) for index, name in enumerate(scores)}
     prepared = {
-        name: _standardize_index_scores(values) if standardize else values
+        name: standardize_index_scores(values) if standardize else values
         for name, values in scores.items()
     }
     expected = _reference(prepared, weights)
@@ -116,7 +134,7 @@ def test_single_component_mean_omits_its_weight(
 ) -> None:
     scores = np.array([np.nan, _MAX / 2, _MAX, np.nan])
     scores.flags.writeable = False
-    prepared = _standardize_index_scores(scores) if standardize else scores
+    prepared = standardize_index_scores(scores) if standardize else scores
     expected = prepared * INDEX_REGISTRY[name].composite_multiplier
     actual = composite_scores({name: scores}, standardize=standardize, weights={name: weight})
     np.testing.assert_array_equal(actual, expected)
@@ -179,10 +197,10 @@ def test_finite_weighted_means_match_fraction_oracle(
     weights = dict(zip(names, masses, strict=True))
     actual = composite_scores(scores, weights=weights, standardize=False)
     expected = _reference(scores, weights)
-    for value, reference in zip(actual, expected, strict=True):
+    for row, (value, reference) in enumerate(zip(actual, expected, strict=True)):
         assert (math.isnan(value) and math.isnan(reference)) or math.isclose(
             value,
             reference,
             rel_tol=5e-14,
-            abs_tol=0,
+            abs_tol=_summation_tolerance(scores, weights, row),
         )

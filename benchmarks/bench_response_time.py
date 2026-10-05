@@ -4,6 +4,7 @@ Usage:
     uv run python benchmarks/bench_response_time.py
     uv run python benchmarks/bench_response_time.py --respondents 200000 --items 40
     uv run python benchmarks/bench_response_time.py --operation median --order F
+    uv run python benchmarks/bench_response_time.py --operation effort --items 40
 """
 
 from __future__ import annotations
@@ -17,6 +18,8 @@ from _measurement import measure, measure_many
 from ier import (
     response_time,
     response_time_consistency,
+    response_time_effort,
+    response_time_effort_flag,
     response_time_flag,
     response_time_mixture,
     response_time_score_flags,
@@ -55,7 +58,7 @@ def main() -> None:
     parser.add_argument("--components", type=int, default=2)
     parser.add_argument("--missing-rate", type=float, default=0.1)
     parser.add_argument("--order", choices=("C", "F"), default="C")
-    parser.add_argument("--operation", choices=("all", "median"), default="all")
+    parser.add_argument("--operation", choices=("all", "median", "effort"), default="all")
     parser.add_argument("--scale", type=float, default=1.0)
     parser.add_argument("--no-log-transform", dest="log_transform", action="store_false")
     parser.add_argument(
@@ -125,6 +128,19 @@ def main() -> None:
             available=available,
         )
         print(f"median: median={seconds:.4f}s peak={peak:.1f} MiB")
+        return
+    if args.operation == "effort":
+        # Positive timings give every answered item a usable normative threshold.
+        effort_operations: dict[str, Callable[[], np.ndarray]] = {
+            "effort": lambda: response_time_effort(timings),
+            "capped effort": lambda: response_time_effort(timings, max_threshold=0.5),
+            "effort flags": lambda: response_time_effort_flag(timings)[0],
+        }
+        for name, operation in effort_operations.items():
+            seconds, peak = _measure(
+                operation, repeats=args.repeats, warmup=args.warmup, available=available
+            )
+            print(f"{name}: median={seconds:.4f}s peak={peak:.1f} MiB")
         return
 
     retained_scores = response_time(timings, metric="median")

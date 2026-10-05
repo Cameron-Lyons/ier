@@ -4,7 +4,7 @@ Usage:
     uv run python benchmarks/bench_mahad.py
     uv run python benchmarks/bench_mahad.py --respondents 200000 --items 100
     uv run python benchmarks/bench_mahad.py --na-rm --missing-row-rate 0.1
-    uv run python benchmarks/bench_mahad.py --operation qq --items 2 --respondents 10000
+    uv run python benchmarks/bench_mahad.py --operation qq --items 20 --respondents 20000
 
 Timing excludes allocation tracing; peak allocation is measured separately.
 """

@@ -3,9 +3,15 @@
 Usage:
     uv run python benchmarks/bench_markov.py
     uv run python benchmarks/bench_markov.py --respondents 200000 --items 100 --states 7
+    uv run python benchmarks/bench_markov.py --respondents 20000 --items 50 --states 64
+    uv run python benchmarks/bench_markov.py --respondents 20000 --items 50 --states 101
     uv run python benchmarks/bench_markov.py --missing-rate 0.1
+    uv run python benchmarks/bench_markov.py --respondents 4000 --items 500 --states 45
 
 Wall-clock timing and peak traced allocation are measured in separate runs.
+The last example sits near the dense/sorted kernel boundary, whose position
+depends on the NumPy major version; compare it under NumPy 1.26 and 2.x after
+changing the dispatch rule.
 """
 
 from __future__ import annotations

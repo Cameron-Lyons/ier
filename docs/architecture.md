@@ -25,7 +25,21 @@ _validation / _flagging    ← shared input checks and threshold helpers
   plotting helpers.
 - **Registry.** `src/ier/_registry.py` maps string names to scorers, default
   screen/composite membership, flag direction, and required `IndexOptions`
-  fields (e.g. `evenodd_factors`).
+  fields (e.g. `evenodd_factors`). Missing required fields become soft errors
+  whose messages derive from that metadata, so the published catalog and the
+  enforced configuration cannot drift; infrequency keeps a custom check because
+  acceptable ranges can replace expected responses. Per-index thresholds,
+  percentiles, and weights share one override validator.
+- **Keyed input.** Specs with `keyed_input=True` (`evenodd`,
+  `individual_reliability`, `guttman`, `lz`, `gpoly`, `u3poly_fit`, `ht`) assume every item is keyed in one
+  direction, and the catalog publishes the flag as `uses_keyed_responses`. When
+  `IndexOptions.reverse_keyed_items` is set and such an index is selected,
+  `score_registered_indices()` builds one reverse-scored copy before sequential
+  scoring or thread submission and passes it only to those scorers;
+  `reverse_score()` checks and recodes the selected columns in bounded row
+  batches, so that copy is its only full-size allocation. Other
+  indices read the validated input without a copy, and a failed recoding is a
+  soft error of each keyed index, like other configuration errors.
 - **Soft per-index errors.** `score_registered_indices()` catches validation /
   runtime failures per index and returns them in an `errors` dict instead of
   aborting the whole screen. Public orchestration APIs also accept `strict=True`
@@ -35,6 +49,12 @@ _validation / _flagging    ← shared input checks and threshold helpers
   by default. `workers>1` uses a lazily imported standard-library thread pool,
   then records scores and failures in selection order. This keeps default import
   cost and resource use stable while allowing NumPy-heavy scorers to overlap.
+  NumPy wheels bundle a multithreaded OpenBLAS, and every concurrently scored
+  index can start its own full set of BLAS threads. Default BLAS threading did
+  not slow single calls on a quiet machine, but `screen(workers=4)` was about
+  twice as slow as with single-threaded BLAS. Set `OPENBLAS_NUM_THREADS=1` (and
+  `OMP_NUM_THREADS=1` for OpenMP builds) when using `workers>1`. Benchmark
+  headers print both variables so recorded timings remain reproducible.
 - **Bounded reductions.** Screening flag counts, valid-score counts, and summary
   coverage share one index-at-a-time pass; composite mean, sum, and maximum values
   use the same bounded approach. Orchestration retains its documented per-index
@@ -92,24 +112,35 @@ _validation / _flagging    ← shared input checks and threshold helpers
 
 The command-line path is split by responsibility:
 
-- `cli.py` defines arguments, converts index options, and coordinates commands.
+- `cli.py` defines arguments, converts index options, and registers one handler
+  per command with `set_defaults(handler=...)`. Handlers share input loading,
+  cutoff flagging, and a single text, JSON, CSV, or NPZ output dispatch.
+- `_cli_config.py` converts `--config` TOML tables into arguments for the
+  running command, rejects two keys that set one option, validates them with
+  that command's own argparse actions and the list and table parsers `cli.py`
+  supplies, and fills only the options the command line left unset.
 - `_cli_streams.py` owns suffix-selected, standard-library text compression.
 - `_cli_input.py` owns forward-only delimited input, preamble removal,
-  named-column selection, and memory-mapped NumPy input.
-- `_cli_composite.py` validates shared respondent alignment and flag metadata
-  contracts for every composite serializer.
+  named-column selection, and memory-mapped NumPy input. An optional report
+  records delimiter, header, and column decisions outside the row loop.
+- `_cli_inspect.py` summarizes those decisions, missing cells, and observed
+  values for `ier inspect` in bounded row blocks.
+- `_cli_composite.py` defines the composite and response-time reports that every
+  serializer receives, validating respondent alignment and flag metadata once.
 - `_cli_output.py` renders text plus bounded strict JSON and CSV results.
-- `_cli_npz.py` assembles complete command result payloads and delegates the
-  low-level typed, pickle-free NumPy writer.
+- `_cli_npz.py` assembles composite result payloads for the low-level typed,
+  pickle-free NumPy writer and delegates screen and response-time results to
+  the public archive writers.
 - `_atomic_output.py` stages regular result files for replacement after every
   stream closes, sharing permission and symbolic-link handling between text and
   archive writers. Special-file destinations retain direct streaming.
 - `archive.py` owns the shared archive stream writer and
-  public validated save/load boundaries for reusable registered score vectors
-  and response-time results.
+  public validated save/load boundaries for reusable registered score vectors,
+  complete screen results, and response-time results.
 - `_archive_input.py` checks bounded NPY headers, shape ranges, and actual payload
   sizes before allocating arrays. Stored ZIP members use their physical byte
-  boundaries; compressed members verify decompressed sizes in bounded chunks.
+  boundaries; compressed members decode once in bounded chunks and must produce
+  exactly the declared payload size.
 
 Screen and composite commands carry the registry's ordered soft-failure map
 through text, JSON, and NPZ serializers and mirror failures to standard error
@@ -118,7 +149,7 @@ respondent table.
 
 Detailed composite output is explicit through `--include-components`. The CLI
 reuses `composite_summary()` so scoring still runs once, JSON wraps each
-component in the bounded array writer, CSV emits one row at a time, and NPZ
+component in the bounded array writer, CSV converts bounded row chunks, and NPZ
 writes separate typed members without stacking another respondent-by-index
 matrix. The default aggregate-only path does not allocate or serialize these
 details.
@@ -131,7 +162,7 @@ the resulting values. CSV intentionally remains a respondent-only table.
 Optional composite flagging runs after aggregate scoring and reuses that score
 vector. Cutoff resolution and boolean comparison use the same shared helpers as
 the public flagging APIs. JSON writes the flag vector in bounded chunks, CSV
-streams it row by row, and NPZ stores it as a boolean member; no component is
+streams it in row chunks, and NPZ stores it as a boolean member; no component is
 rescored and the score-only path allocates no flag vector.
 
 Keeping parsing, matrix construction, serialization, and orchestration separate
@@ -213,6 +244,11 @@ flags, counts, and eligibility decision for audit.
 
 `composite()` z-combines selected indices with direction multipliers so that
 higher composite values mean more evidence of careless responding.
+`composite()`, `composite_flag()`, `composite_summary()`, and
+`composite_probability()` share one validation, scoring, and reduction
+pipeline, and the precomputed `composite_scores*()` helpers reuse its
+reduction step, so every entry point applies identical directions, weights, and
+completeness rules.
 Optional positive weights are applied after direction correction and
 standardization. Weighted means renormalize over available scores per
 respondent, so an unavailable index does not silently dilute the remaining
@@ -243,7 +279,12 @@ items from the ability score equation, information, and likelihood reductions
 when `na_rm=True`; entirely missing rows remain unavailable. With `na_rm=False`,
 missing responses propagate through ability estimation. This shares one solver
 and likelihood implementation across both input paths without per-respondent
-Python loops.
+Python loops. The safeguarded Newton solver drops each row from its workspace
+once its score or step converges, so the few roots beyond the [-4, 4] bracket,
+which bisect toward a bound for dozens of iterations, no longer keep the whole
+batch iterating. Row reductions are independent and each iterate keeps the
+precision of its starting estimate, so every estimate is unchanged, including
+those for float32 and float16 binary inputs.
 Binary response matrices are reused without modification; polytomous inputs
 allocate a converted matrix and fill it in bounded blocks. Difficulty estimation
 shares the bounded item-mean reduction used by Guttman and person-total scoring,
@@ -285,10 +326,18 @@ does not recalculate row summaries or refit EM.
 
 Markov transition entropy discovers and encodes categories once per bounded
 sequence block, reusing the encoded values for transition counting. Dense tables
-contain only the block's observed states, up to 64; higher-cardinality blocks
-use each row's observed states and pairs. Integral labels retain their original
-precision, including adjacent 64-bit integers beyond floating-point precision.
-Both paths evaluate the equivalent count form of conditional entropy.
+contain only the block's observed states, up to 64, and serve blocks whose state
+square stays within a multiple of `k log2 k` for rows of `k` items, the cost of
+sorting a row. The multiple depends on the NumPy major version: 0.5 with NumPy
+2's vectorized sorts and 1.5 with NumPy 1.x, chosen so the sorted kernel is used
+only where it measured at least as fast; long rows therefore keep dense tables.
+Other blocks sort each row's source states and transition pairs and sum
+`c log2 c` over runs of equal values with unmasked pairwise summation, so their
+workspace grows with the items rather than the states and long rows keep full
+precision.
+Integral labels retain their original precision, including adjacent 64-bit
+integers beyond floating-point precision. Both paths evaluate the equivalent
+count form of conditional entropy.
 
 Longstring and repeating-pattern scoring share bounded sequence preparation for
 complete and missing-response inputs. Batches with missing responses compact
@@ -296,7 +345,7 @@ observed values in their original order; NaN padding and observed lengths exclud
 artificial runs and overlong candidate patterns. Both indices reuse a cumulative
 run-length kernel that counts consecutive matches without per-column Python loops
 or scalar fallbacks. Markov scoring reuses the same sequence preparation, masks
-padded transitions, and retains its sparse fallback for high-cardinality responses.
+padded transitions, and gives padding distinct sentinels in its sorted kernel.
 All-missing rows still return zero for longstring indices and NaN for Markov
 entropy, and `na_rm=False` still rejects missing responses. These paths use NumPy
 kernels without requiring a native extension or compiler.
@@ -353,17 +402,42 @@ in bounded respondent batches, centering owned pair-selection buffers in place.
 Complete and missing inputs share this path. Finiteness checks inspect selected
 items once per block, and rows with unavailable selected responses skip correlation
 work. Missing responses therefore do not trigger a complete respondent-by-pair
-contribution matrix, and seeded resampling is also reduced in bounded chunks.
+contribution matrix. The compatibility `resample_na` and `random_seed` parameters
+do not enter scoring.
 Undefined item correlations never become candidate pairs; fewer than two selected
 pairs leave respondent scores unavailable. Common summary reductions filter missing
 scores once and return unavailable statistics when no observed scores remain.
 Item correlations for synonym, antonym, and cutoff discovery share a centered
 cross-product reduction over bounded row blocks. Items with unavailable means
-are excluded from multiplication and restored as undefined correlations; this
-preserves column-wise missing-value propagation rather than introducing
-pairwise deletion. Constant items and samples with fewer than two respondents
-also have undefined correlations. Centering no longer copies the full response
-matrix, while the item-by-item output still needs quadratic space in item count.
+are excluded from multiplication and restored as undefined correlations; the
+default `item_correlations="complete"` mode thereby preserves column-wise
+missing-value propagation. Constant items and samples with fewer than two
+respondents also have undefined correlations. The opt-in `"pairwise"` mode
+introduces pairwise deletion only when a floating input actually contains a
+missing response; otherwise it reuses the complete reduction unchanged, after
+leaving every pair undefined when there are fewer than three respondents. Each
+row block then contributes four item-by-item matrix products: shared counts,
+sums, squares, and cross-products over the rows where both items are observed.
+Items are scaled by a power of two and shifted by a median observation from the
+first block that observes them, so moments cannot overflow and integer-valued
+responses accumulate exactly. A sparsely observed first block can still supply
+an outlying shift, and one-pass moments then lose about `eps * squares /
+variance` of their relative precision. Pairs whose variance falls below `1e-2`
+of their squares, whose correlation is nonfinite, or whose variance nears the
+underflow range for an item with responses far below its largest one are
+recomputed exactly from their shared rows with the complete reduction, which
+bounds the remaining error near `eps / 1e-2`. Ordinary responses take none of
+these repairs. Pairs need three shared respondents. The moments are finished in
+place: peak workspace is the four item-by-item accumulators, Boolean pair masks
+of one byte per pair, and bounded blocks. Transposed finishing steps run in
+row-batch slices, and each block's cross-product update allocates at most four
+row-batch budgets (8 MiB by default), so a full item-by-item product is formed
+only for about 1,000 items or fewer, where NumPy's symmetric `block.T @ block`
+product is fastest. The cross-product accumulator becomes the returned matrix
+when every item is usable. Pairwise respondent scoring reuses the
+row-correlation kernel over each respondent's answered pairs. Centering no
+longer copies the full response matrix, while the item-by-item output still
+needs quadratic space in item count.
 Cross-products are normalized directly, avoiding the covariance divisor that
 cancels in a correlation. Constant candidates are verified against their original
 observations and left undefined without repeating the full matrix calculation.
@@ -440,6 +514,13 @@ Wider large-integer profiles shift by their observed minimum before conversion
 to double precision. Unsigned differences preserve the full signed and unsigned
 64-bit range; missing partners are excluded when choosing that minimum. Even–odd
 scoring retains the original integer matrix until its bounded correlation work.
+Half-scale even–odd scoring and scale-aware split-half reliability share one
+bounded kernel. Equally sized half-scale groups are gathered item position first,
+so a single exact row-mean reduction covers every group of a respondent batch
+with long vector operations instead of one narrow reduction per factor. The
+resulting factor half means feed the shared correlation kernel. Constant profiles
+are excluded first, because rounded half means of a constant decimal profile can
+differ by one unit in the last place.
 Complete-response onset detection derives stable sliding-window variability
 from rolling means and bounded deviation buffers. Windows of at least 16 items
 use cumulative first and second moments for integer-valued responses only when
@@ -543,6 +624,10 @@ extreme lower tails are solved in logarithmic coordinates using the shared
 gamma series, preserving probabilities and quantiles below the normal floating-point
 range. These cases follow the [NIST gamma identities](https://dlmf.nist.gov/8.4);
 regression tests include independently calculated high-precision lower-tail values.
+Array quantiles solve the remaining probabilities with shared safeguarded Newton
+iterations in bounded batches. A batch with fewer than 192 such probabilities
+uses the scalar solver instead, which is faster at that size; both paths give
+results identical to scalar quantiles.
 Plotting remains optional and reports a centralized install hint from
 `_optional_imports.py`: `pip install 'insufficient-effort[plot]'`.
 
@@ -563,6 +648,8 @@ for measurement details and historical-comparison guidance.
 - Predefined semantic/MAD pair throughput and memory: `benchmarks/bench_pair_differences.py`.
 - Mahalanobis covariance and distance throughput and memory: `benchmarks/bench_mahad.py`.
 - Guttman error-scoring throughput and memory: `benchmarks/bench_guttman.py`.
+- Item-step person-fit (`gpoly`, `u3poly`, `ht`) throughput and memory beside
+  Guttman errors: `benchmarks/bench_person_fit.py`.
 - Split-half reliability throughput and memory: `benchmarks/bench_reliability.py`.
 - Carelessness-onset throughput and memory: `benchmarks/bench_onset.py`.
 - Person–total correlation throughput and memory: `benchmarks/bench_person_total.py`.

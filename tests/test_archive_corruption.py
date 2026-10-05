@@ -9,7 +9,8 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 import numpy as np
 import pytest
 
-from ier import load_response_time_archive, load_score_archive
+from ier import load_response_time_archive, load_score_archive, save_score_archive
+from ier._archive_input import read_npz_member
 
 ArchiveLoader = Callable[[Path], Any]
 
@@ -420,3 +421,153 @@ def test_boolean_shape_dimension_has_contextual_error_before_decode(
     monkeypatch.setattr(np.lib.format, "read_array", guarded_read)
     with pytest.raises(ValueError, match="member index_names is malformed"):
         load_score_archive(destination)
+
+
+def _write_members(
+    destination: Path,
+    values: dict[str, np.ndarray],
+    *,
+    compression: int,
+    version: tuple[int, int] | None = None,
+) -> None:
+    with ZipFile(destination, "w", compression=compression) as archive:
+        for name, value in values.items():
+            encoded = io.BytesIO()
+            np.lib.format.write_array(encoded, value, version=version, allow_pickle=False)
+            archive.writestr(f"{name}.npy", encoded.getvalue())
+
+
+def _assert_matches_numpy(destination: Path, names: list[str]) -> None:
+    with np.load(destination, allow_pickle=False) as archive:
+        for name in names:
+            expected = archive[name]
+            actual = read_npz_member(archive, name)
+            assert actual.dtype == expected.dtype, name
+            assert actual.shape == expected.shape, name
+            assert actual.flags.c_contiguous == expected.flags.c_contiguous, name
+            assert actual.flags.f_contiguous == expected.flags.f_contiguous, name
+            assert actual.flags.writeable, name
+            np.testing.assert_array_equal(actual, expected, err_msg=name)
+
+
+@pytest.mark.parametrize("version", [(1, 0), (2, 0), (3, 0)])
+@pytest.mark.parametrize("compression", [ZIP_STORED, ZIP_DEFLATED])
+def test_member_reader_matches_numpy_for_layouts_byte_orders_and_dtypes(
+    tmp_path: Path,
+    version: tuple[int, int],
+    compression: int,
+) -> None:
+    values = {
+        "fortran": np.asfortranarray(np.arange(12, dtype=np.float64).reshape(3, 4)),
+        "fortran_cube": np.asfortranarray(np.arange(24, dtype=">i8").reshape(2, 3, 4)),
+        "big_endian": np.asarray([0.25, -2.0, np.nan], dtype=">f8"),
+        "integers": np.arange(-3, 3, dtype=np.int16),
+        "unsigned": np.arange(4, dtype=">u4"),
+        "booleans": np.asarray([True, False, True]),
+        "unicode": np.asarray(["α", "beta", ""], dtype="<U4"),
+        "big_unicode": np.asarray(["😀", "x"], dtype=">U2"),
+        "structured": np.asarray([(1.5, 2), (-1.0, 3)], dtype=[("score", ">f8"), ("n", "<i4")]),
+        "scalar": np.asarray(3.5),
+        "empty": np.empty(0, dtype=np.float64),
+        "empty_matrix": np.empty((0, 3), dtype=np.int32),
+        "zero_width": np.empty(0, dtype="<U0"),
+    }
+    destination = tmp_path / "layouts.npz"
+    _write_members(destination, values, compression=compression, version=version)
+
+    _assert_matches_numpy(destination, list(values))
+
+
+@pytest.mark.parametrize("compression", [ZIP_STORED, ZIP_DEFLATED])
+def test_member_reader_supports_utf8_field_names_in_v3_headers(
+    tmp_path: Path, compression: int
+) -> None:
+    values = {"labels": np.zeros(2, dtype=[("名前", "<f8"), ("回数", ">i2")])}
+    destination = tmp_path / "v3.npz"
+    _write_members(destination, values, compression=compression, version=(3, 0))
+
+    _assert_matches_numpy(destination, ["labels"])
+
+
+def test_deflated_members_decode_once_without_numpy_read_array(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "compressed.npz"
+    scores = {"irv": np.asarray([0.25, np.nan, 2.0]), "longstring": np.asarray([3.0, 1.0, 9.0])}
+    save_score_archive(
+        destination,
+        scores,
+        respondent_ids=["α", "b", "c"],
+        errors={"mad": "item pairs were not configured"},
+        compressed=True,
+    )
+
+    def reject(*args: object, **kwargs: object) -> np.ndarray:
+        raise AssertionError("a deflated member reached numpy.lib.format.read_array")
+
+    monkeypatch.setattr(np.lib.format, "read_array", reject)
+    loaded = load_score_archive(destination)
+    assert loaded["respondent_ids"] == ["α", "b", "c"]
+    assert loaded["errors"] == {"mad": "item pairs were not configured"}
+    for name, values in scores.items():
+        np.testing.assert_array_equal(loaded["scores"][name], values)
+        assert loaded["scores"][name].flags.writeable
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (lambda data: data + b"\0" * 8, "decompressed member contains more"),
+        (lambda data: data + b"\0", "decompressed member contains more"),
+        (lambda data: data[:-8], "decompressed member contains 8$"),
+        (lambda data: data[:-1], "decompressed member contains 15$"),
+    ],
+    ids=["one-item-long", "one-byte-long", "one-item-short", "one-byte-short"],
+)
+def test_decompressed_stream_length_must_match_npy_header(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    change: Callable[[bytes], bytes],
+    message: str,
+) -> None:
+    destination = tmp_path / "length.npz"
+    _write_members(destination, {"values": np.asarray([1.0, 2.0])}, compression=ZIP_DEFLATED)
+    with np.load(destination, allow_pickle=False) as archive:
+        open_member = archive.zip.open
+
+        def altered(name: Any, *args: Any, **kwargs: Any) -> io.BytesIO:
+            # Emulate a decoder that disagrees with the central directory size.
+            with open_member(name, *args, **kwargs) as member:
+                return io.BytesIO(change(member.read()))
+
+        monkeypatch.setattr(archive.zip, "open", altered)
+        with pytest.raises(ValueError, match=message):
+            read_npz_member(archive, "values")
+
+
+@pytest.mark.parametrize(
+    ("loader", "result_type", "member"),
+    [
+        (load_score_archive, "screen", "score__irv"),
+        (load_response_time_archive, "response_time", "scores"),
+    ],
+)
+def test_bad_deflated_member_checksum_has_contextual_corruption_error(
+    tmp_path: Path,
+    loader: ArchiveLoader,
+    result_type: str,
+    member: str,
+) -> None:
+    destination = tmp_path / "bad-deflated-checksum.npz"
+    with ZipFile(destination, "w", compression=ZIP_DEFLATED) as archive:
+        for name, value in _payload(result_type).items():
+            archive.writestr(f"{name}.npy", _npy_bytes(value))
+    member_name = f"{member}.npy"
+    damaged = bytearray(destination.read_bytes())
+    central_offset = damaged.rindex(member_name.encode()) - 46
+    assert damaged[central_offset : central_offset + 4] == b"PK\x01\x02"
+    # The decoded payload is intact; only its recorded CRC-32 disagrees.
+    damaged[central_offset + 16] ^= 1
+    destination.write_bytes(damaged)
+    with pytest.raises(ValueError, match=f"member {member} cannot be read:.*CRC"):
+        loader(destination)

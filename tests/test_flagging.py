@@ -19,6 +19,7 @@ from ier._flagging import (
     validate_percentile,
     validate_threshold,
 )
+from ier.composite import _CompositeRun
 
 
 class TestFlaggingValidation(unittest.TestCase):
@@ -103,7 +104,7 @@ class TestFlaggingValidation(unittest.TestCase):
         scores = np.array([1.0, 2.0, 3.0, np.nan])
         high_calls = [
             ("ier.acquiescence.acquiescence", lambda: acquiescence_flag([[1.0]], threshold=2.0)),
-            ("ier.composite.composite", lambda: composite_flag([[1.0]], threshold=2.0)),
+            ("ier.composite._run_composite", lambda: composite_flag([[1.0]], threshold=2.0)),
             ("ier.mad.mad", lambda: mad_flag([[1.0]], threshold=2.0)),
         ]
         low_calls = [
@@ -114,8 +115,17 @@ class TestFlaggingValidation(unittest.TestCase):
             ),
         ]
 
+        # Composite flagging thresholds the reduced vector of one shared composite run.
+        returns = {
+            "ier.composite._run_composite": _CompositeRun(
+                scores, {}, {}, "mean", True, {}, None, None
+            )
+        }
         for target, call in high_calls:
-            with self.subTest(target=target), patch(target, return_value=scores):
+            with (
+                self.subTest(target=target),
+                patch(target, return_value=returns.get(target, scores)),
+            ):
                 _, flags = call()
                 np.testing.assert_array_equal(flags, [False, True, True, False])
         for target, call in low_calls:

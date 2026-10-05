@@ -5,6 +5,8 @@ Usage:
     uv run python benchmarks/bench_sequence_scoring.py --missing-rate 0 --respondents 200
     uv run python benchmarks/bench_sequence_scoring.py --respondents 100 --items 1000 \
         --operations longstring longstring_pattern
+    OPENBLAS_NUM_THREADS=1 uv run python benchmarks/bench_sequence_scoring.py \
+        --respondents 23000 --items 40 --missing-rate 0 --operations autocorrelation
 
 Wall-clock timings exclude allocation tracing. Peak traced allocation is measured
 in a separate run, excluding input generation and imports.
@@ -19,7 +21,15 @@ from typing import TYPE_CHECKING
 import numpy as np
 from _measurement import measure
 
-from ier import IndexOptions, composite, longstring_pattern, longstring_scores, markov, screen
+from ier import (
+    IndexOptions,
+    autocorrelation,
+    composite,
+    longstring_pattern,
+    longstring_scores,
+    markov,
+    screen,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -36,7 +46,14 @@ def main() -> None:
     parser.add_argument(
         "--operations",
         nargs="+",
-        choices=["longstring", "longstring_pattern", "markov", "screen", "composite"],
+        choices=[
+            "longstring",
+            "longstring_pattern",
+            "markov",
+            "autocorrelation",
+            "screen",
+            "composite",
+        ],
         help="Measure only selected operations (default: all)",
     )
     args = parser.parse_args()
@@ -53,9 +70,13 @@ def main() -> None:
         "longstring": lambda: longstring_scores(data),
         "longstring_pattern": lambda: longstring_pattern(data),
         "markov": lambda: markov(data),
+        "autocorrelation": lambda: autocorrelation(data),
         "screen": lambda: screen(data, options=options),
         "composite": lambda: composite(data),
     }
+    if args.items < 4:
+        # One usable autocorrelation lag needs at least four items.
+        del operations["autocorrelation"]
     print(f"Python {platform.python_version()} / NumPy {np.__version__}")
     print(f"shape={data.shape} missing_rate={args.missing_rate} repeats={args.repeats}")
     for name, operation in operations.items():

@@ -62,7 +62,7 @@ def missing_rate(
         >>> missing_rate([[1, np.nan, 3], [np.nan, np.nan, 2]])
         array([0.33333333, 0.66666667])
     """
-    x_array = validate_matrix_input(x, dtype=float, check_type=False)
+    x_array = validate_matrix_input(x, dtype=float)
     selected = (
         slice(None)
         if item_indices is None

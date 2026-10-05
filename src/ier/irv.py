@@ -9,12 +9,11 @@ persons with high IRV scores - reflecting highly random responses
 """
 
 from itertools import pairwise
-from operator import index
 
 import numpy as np
 
 from ier._row_statistics import _row_mean_std_block, row_slices, row_std
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_integer, validate_matrix_input
 
 
 def irv(
@@ -68,7 +67,7 @@ def irv(
         [0.81649658 0.40824829]
     """
 
-    x_array = validate_matrix_input(x, check_type=False)
+    x_array = validate_matrix_input(x)
 
     groups = (
         _split_groups(x_array.shape[1], num_split, split_points)
@@ -142,12 +141,10 @@ def _split_groups(
     if split_points is not None:
         if not isinstance(split_points, list) or len(split_points) < 2:
             raise ValueError("split_points must be a list with at least 2 elements")
-        if any(isinstance(point, (bool, np.bool_)) for point in split_points):
-            raise ValueError("split_points must contain integer column positions")
-        try:
-            split_points = [index(point) for point in split_points]
-        except TypeError as error:
-            raise ValueError("split_points must contain integer column positions") from error
+        split_points = [
+            validate_integer(point, message="split_points must contain integer column positions")
+            for point in split_points
+        ]
         if split_points[0] != 0:
             raise ValueError("first split point must be 0")
         if split_points[-1] != n_columns:
@@ -164,14 +161,9 @@ def _split_groups(
                 groups.append((first, last, width))
         return groups
 
-    if isinstance(num_split, (bool, np.bool_)):
-        raise ValueError("num_split must be a positive integer")
-    try:
-        num_split = index(num_split)
-    except TypeError as error:
-        raise ValueError("num_split must be a positive integer") from error
-    if num_split < 1:
-        raise ValueError("num_split must be a positive integer")
+    num_split = validate_integer(
+        num_split, message="num_split must be a positive integer", minimum=1
+    )
     # Extra empty sections do not contribute to IRV; avoid constructing them.
     num_split = min(num_split, n_columns)
     width, extra = divmod(n_columns, num_split)

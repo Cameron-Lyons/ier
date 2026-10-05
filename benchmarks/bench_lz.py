@@ -3,6 +3,7 @@
 Usage:
     uv run python benchmarks/bench_lz.py
     uv run python benchmarks/bench_lz.py --respondents 20000 --items 100 --repeats 5
+    uv run python benchmarks/bench_lz.py --respondents 50000 --items 60
     uv run python benchmarks/bench_lz.py --missing-rate 0.1 --order F
     uv run python benchmarks/bench_lz.py --categories 5 --missing-rate 0.1
     uv run python benchmarks/bench_lz.py --operation discrimination --missing-rate 0.1
