@@ -29,11 +29,15 @@ structure, and base rate of IER.
 7. **Report sensitivity.** Show how results change under alternate cutoffs
    (e.g., 90th vs 95th vs 99th percentile).
 
-Percentile-based public flagging helpers reject non-finite thresholds and
-percentiles outside `[0, 100]` instead of silently returning misleading flags.
-Their boundary rule matches `screen()`: fixed cutoffs are inclusive (at or
-beyond the cutoff), while sample-percentile cutoffs use strict tail comparisons
-so ties at the estimated percentile are not flagged.
+Public flagging helpers reject non-finite fixed thresholds, Boolean lookalikes,
+and nonscalar arrays instead of silently returning misleading flags. Numeric
+strings and zero-dimensional numeric arrays remain accepted for compatibility;
+values too large to convert to a finite float raise `ValueError`. Percentile-based
+helpers additionally reject percentiles outside `[0, 100]`. Their boundary rule
+matches `screen()`: fixed cutoffs are inclusive (at or beyond the cutoff), while
+sample-percentile cutoffs use strict tail comparisons so ties at the estimated
+percentile are not flagged. The legacy `lz_flag()` and
+`individual_reliability_flag()` helpers use strict low-side comparisons.
 
 Screen percentile overrides use the same directional convention as the global
 setting: a value `p` resolves high-direction indices at `p` and low-direction
