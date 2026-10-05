@@ -81,6 +81,7 @@ def _sdist_support_files() -> dict[str, bytes]:
         *(root / "scripts").rglob("*.py"),
         *(root / "scripts").rglob("*.sh"),
         *(root / "benchmarks").rglob("*.py"),
+        *(root / "docs").rglob("*.md"),
         root / "uv.lock",
         root / "pyproject.toml",
         root / "MANIFEST.in",

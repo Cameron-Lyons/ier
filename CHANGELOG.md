@@ -233,6 +233,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flagging, and output; CLI index defaults come from `IndexOptions()`; screen
   and composite entry points share one validation and reduction pipeline; and
   coverage excludes `@overload` stubs. Output and scores are unchanged.
+- Source distributions include `docs/*.md`, and the distribution check requires
+  them, so the bundled test suite can verify documented commands and claims
+  against an installed wheel.
 
 ### Deprecated
 
