@@ -2,12 +2,30 @@
 
 import math
 from fractions import Fraction
+from typing import Any
 
 import numpy as np
 
 from ier.types import FlagDirection
 
 _MIN_NORMAL = np.finfo(float).tiny
+
+
+def _finite_number(value: Any, message: str) -> float:
+    """Return one finite numeric option after rejecting Boolean and array lookalikes."""
+    if isinstance(value, np.ndarray):
+        if value.ndim != 0:
+            raise ValueError(message)
+        value = value[()]
+    if isinstance(value, (bool, np.bool_)):
+        raise ValueError(message)
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(message) from error
+    if not math.isfinite(result):
+        raise ValueError(message)
+    return result
 
 
 def _percentile_threshold(scores: np.ndarray, percentile: float) -> float:
@@ -57,14 +75,10 @@ def _percentile_threshold(scores: np.ndarray, percentile: float) -> float:
 
 def validate_percentile(percentile: float) -> float:
     """Return a finite percentile in ``[0, 100]`` or raise ``ValueError``."""
-    if isinstance(percentile, bool):
-        raise ValueError("percentile must be a finite number between 0 and 100")
-    try:
-        result = float(percentile)
-    except (TypeError, ValueError) as error:
-        raise ValueError("percentile must be a finite number between 0 and 100") from error
-    if not np.isfinite(result) or not 0.0 <= result <= 100.0:
-        raise ValueError("percentile must be a finite number between 0 and 100")
+    message = "percentile must be a finite number between 0 and 100"
+    result = _finite_number(percentile, message)
+    if not 0.0 <= result <= 100.0:
+        raise ValueError(message)
     return result
 
 
@@ -72,15 +86,7 @@ def validate_threshold(threshold: float | None) -> float | None:
     """Return a finite optional threshold or raise ``ValueError``."""
     if threshold is None:
         return None
-    if isinstance(threshold, bool):
-        raise ValueError("threshold must be a finite number")
-    try:
-        result = float(threshold)
-    except (TypeError, ValueError) as error:
-        raise ValueError("threshold must be a finite number") from error
-    if not np.isfinite(result):
-        raise ValueError("threshold must be a finite number")
-    return result
+    return _finite_number(threshold, "threshold must be a finite number")
 
 
 def resolve_threshold(

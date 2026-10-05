@@ -1,6 +1,7 @@
 """Tests for shared threshold and percentile validation."""
 
 import unittest
+from fractions import Fraction
 from typing import Any, cast
 from unittest.mock import patch
 
@@ -9,6 +10,8 @@ import numpy as np
 from ier import (
     acquiescence_flag,
     composite_flag,
+    individual_reliability_flag,
+    lz_flag,
     mad_flag,
     markov_flag,
     response_time_flag,
@@ -26,7 +29,19 @@ class TestFlaggingValidation(unittest.TestCase):
     def test_percentile_validation(self) -> None:
         self.assertEqual(validate_percentile(95), 95.0)
         self.assertEqual(validate_percentile(cast("Any", "5")), 5.0)
-        for value in [False, -0.1, 100.1, np.nan, np.inf, "bad", None]:
+        self.assertEqual(validate_percentile(cast("Any", np.array(95.0))), 95.0)
+        for value in [
+            False,
+            np.bool_(True),
+            -0.1,
+            100.1,
+            np.nan,
+            np.inf,
+            "bad",
+            None,
+            np.array([95.0]),
+            Fraction(10**400),
+        ]:
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "percentile"):
                 validate_percentile(cast("Any", value))
 
@@ -34,9 +49,54 @@ class TestFlaggingValidation(unittest.TestCase):
         self.assertIsNone(validate_threshold(None))
         self.assertEqual(validate_threshold(1), 1.0)
         self.assertEqual(validate_threshold(cast("Any", "1.5")), 1.5)
-        for value in [False, np.nan, np.inf, -np.inf, "bad"]:
+        self.assertEqual(validate_threshold(cast("Any", np.array(1.5))), 1.5)
+        for value in [
+            False,
+            np.bool_(True),
+            np.nan,
+            np.inf,
+            -np.inf,
+            "bad",
+            np.array([1.5]),
+            Fraction(10**400),
+        ]:
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "threshold"):
                 validate_threshold(cast("Any", value))
+
+    def test_fixed_cutoff_helpers_validate_before_scoring(self) -> None:
+        calls = [
+            (
+                "ier.lz.lz",
+                lambda value: lz_flag([[1, 1, 0, 0]], threshold=value),
+            ),
+            (
+                "ier.reliability.individual_reliability",
+                lambda value: individual_reliability_flag(
+                    [[1, 2, 3, 4]], threshold=value, n_splits=1, random_seed=0
+                ),
+            ),
+        ]
+        invalid = [np.nan, np.inf, True, np.bool_(True), "bad", None, Fraction(10**400)]
+        for target, call in calls:
+            for value in invalid:
+                with (
+                    self.subTest(target=target, value=value),
+                    patch(target) as scorer,
+                    self.assertRaisesRegex(ValueError, "threshold must be a finite number"),
+                ):
+                    call(cast("Any", value))
+                scorer.assert_not_called()
+
+    def test_fixed_cutoff_helpers_accept_numeric_strings(self) -> None:
+        with patch("ier.lz.lz", return_value=np.array([-0.5, 0.5])):
+            _, flags = lz_flag([[1, 1, 0, 0]], threshold=cast("Any", "0"))
+        np.testing.assert_array_equal(flags, [True, False])
+
+        with patch(
+            "ier.reliability.individual_reliability", return_value=np.array([0.2, 0.4, np.nan])
+        ):
+            flags = individual_reliability_flag([[1, 2, 3, 4]], threshold=cast("Any", "0.3"))
+        np.testing.assert_array_equal(flags, [True, False, True])
 
     def test_explicit_threshold_still_requires_a_valid_percentile(self) -> None:
         with self.assertRaisesRegex(ValueError, "percentile"):

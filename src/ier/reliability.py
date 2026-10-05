@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from ier._correlation import row_correlations, selected_row_correlations
+from ier._flagging import validate_threshold
 from ier._row_statistics import row_slices
 from ier._scale_halves import (
     HalfMeans,
@@ -255,12 +256,19 @@ def individual_reliability_flag(
     Returns:
     - Boolean array where True indicates potentially careless responding.
 
+    Raises:
+    - ValueError: If ``threshold`` is not a finite number or scoring inputs are invalid.
+
     Example:
         >>> data = [[1, 1, 3, 3, 5, 5], [1, 5, 5, 1, 2, 4], [3, 3, 3, 3, 3, 3]]
         >>> flags = individual_reliability_flag(data, n_splits=20, factors=[2, 2, 2])
         >>> print(flags.tolist())
         [False, True, True]
     """
+    validated_threshold = validate_threshold(threshold)
+    if validated_threshold is None:
+        raise ValueError("threshold must be a finite number")
+
     rel = individual_reliability(x, n_splits=n_splits, random_seed=random_seed, factors=factors)
-    result: np.ndarray = (rel < threshold) | np.isnan(rel)
+    result: np.ndarray = (rel < validated_threshold) | np.isnan(rel)
     return result

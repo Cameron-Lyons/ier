@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.1] - 2026-10-05
+
+### Fixed
+
+- Shared threshold and percentile validation now rejects NumPy booleans,
+  nonscalar arrays, and numeric values that overflow during float conversion
+  with consistent `ValueError` messages. Zero-dimensional numeric arrays and
+  numeric strings remain supported.
+- `lz_flag()` and `individual_reliability_flag()` now require finite thresholds
+  before running their scoring work instead of silently producing misleading
+  flags for `NaN` or infinite cutoffs.
+
 ## [1.13.0] - 2026-10-05
 
 ### Added

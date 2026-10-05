@@ -21,6 +21,7 @@ from fractions import Fraction
 import numpy as np
 
 from ier._column_statistics import column_mean
+from ier._flagging import validate_threshold
 from ier._row_statistics import row_slices, row_sum
 from ier._statistics import logistic_transform
 from ier._validation import MatrixLike, validate_matrix_input, validate_score_array
@@ -151,12 +152,19 @@ def lz_flag(
     Returns:
     - Tuple of (lz_scores, flags) where flags is True for suspected careless responders.
 
+    Raises:
+    - ValueError: If ``threshold`` is not a finite number or scoring inputs are invalid.
+
     Example:
         >>> data = [[1, 1, 1, 0, 0], [0, 0, 1, 1, 1], [1, 1, 0, 1, 0]]
         >>> scores, flags = lz_flag(data, difficulty=[-2, -1, 0, 1, 2], model="1pl")
         >>> flags.tolist()
         [False, True, False]
     """
+    validated_threshold = validate_threshold(threshold)
+    if validated_threshold is None:
+        raise ValueError("threshold must be a finite number")
+
     scores = lz(
         x,
         difficulty=difficulty,
@@ -168,7 +176,7 @@ def lz_flag(
 
     flags = np.zeros(len(scores), dtype=bool)
     valid_mask = ~np.isnan(scores)
-    flags[valid_mask] = scores[valid_mask] < threshold
+    flags[valid_mask] = scores[valid_mask] < validated_threshold
 
     return scores, flags
 
