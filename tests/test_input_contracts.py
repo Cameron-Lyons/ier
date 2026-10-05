@@ -12,6 +12,11 @@ from ier import IndexOptions, irv, missing_rate, screen
 from ier._registry import INDEX_REGISTRY
 from ier._validation import validate_matrix_input, validate_probability
 
+# Finite where long double extends float64 (x86 Linux) and infinite elsewhere.
+# Arithmetic overflow honours errstate; parsing "1e400" would warn at collection.
+with np.errstate(over="ignore"):
+    _BEYOND_FLOAT64 = np.longdouble(np.finfo(np.float64).max) * np.longdouble(10)
+
 REAL_NUMERIC_MESSAGE = r"input data must contain real numeric responses \(got dtype "
 
 
@@ -217,7 +222,7 @@ def test_probabilities_reject_non_real_values_with_the_reason(value: object) -> 
         np.inf,
         -np.inf,
         np.float64(1.5),
-        np.longdouble("1e400"),
+        _BEYOND_FLOAT64,
         Decimal("NaN"),
         Decimal("sNaN"),
         Decimal("Infinity"),
