@@ -40,7 +40,7 @@ test = [
 integration = [
     { include-group = "test" },
     "pandas>=2.2.0,<4",
-    "polars>=1.0.0,!=1.43.0,<2",
+    "polars>=1.0.0,!=1.43.0,<3",
 ]
 lint = [
     "matplotlib>=3.8.0,<4",
