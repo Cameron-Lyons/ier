@@ -567,7 +567,7 @@ integration = [
     { name = "hypothesis", specifier = ">=6.150.0,<7" },
     { name = "matplotlib", specifier = ">=3.8.0,<4" },
     { name = "pandas", specifier = ">=2.2.0,<4" },
-    { name = "polars", specifier = ">=1.0.0,!=1.43.0,<2" },
+    { name = "polars", specifier = ">=1.0.0,!=1.43.0,<3" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-cov", specifier = ">=7.0.0,<8" },
 ]
