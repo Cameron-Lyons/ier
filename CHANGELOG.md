@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.2] - 2026-10-12
+
+### Fixed
+
+- Response-style, paired-item, and reverse-scoring scale options now reject
+  Boolean lookalikes, text, nonscalar arrays, `NaN`, and values that overflow
+  during float conversion with consistent `ValueError` messages. Numeric
+  scalars, zero-dimensional arrays, `Decimal`, and `Fraction` remain supported,
+  and exact integer bounds stay exact.
+- `midpoint_responding()` now applies the same scalar contract to `tolerance`
+  instead of accepting Booleans or leaking NumPy errors for malformed values.
+
 ## [1.13.1] - 2026-10-05
 
 ### Fixed

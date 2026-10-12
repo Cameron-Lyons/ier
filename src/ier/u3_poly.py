@@ -16,7 +16,12 @@ import numpy as np
 
 from ier._flagging import threshold_flags
 from ier._row_statistics import _row_mean_std_counts_block, row_slices
-from ier._validation import MatrixLike, resolve_scale_bounds, validate_matrix_input
+from ier._validation import (
+    MatrixLike,
+    resolve_scale_bounds,
+    validate_matrix_input,
+    validate_scale_bound,
+)
 
 
 def _endpoint_matcher(
@@ -188,8 +193,10 @@ def midpoint_responding(
     """
     x_array = validate_matrix_input(x, min_columns=1)
 
-    if not np.isfinite(tolerance) or tolerance < 0:
+    validated_tolerance = validate_scale_bound(tolerance, name="tolerance", finite=True)
+    if validated_tolerance is None or validated_tolerance < 0:
         raise ValueError("tolerance must be finite and nonnegative")
+    tolerance = float(validated_tolerance)
     bounds = resolve_scale_bounds(x_array, scale_min=scale_min, scale_max=scale_max)
     if bounds is None:
         return np.full(len(x_array), np.nan)

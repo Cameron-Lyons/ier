@@ -6,7 +6,7 @@ import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from decimal import Decimal
 from operator import index
-from typing import Any, Protocol, TypeAlias
+from typing import Any, Protocol, TypeAlias, cast
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -72,6 +72,53 @@ def validate_probability(value: object, *, name: str) -> float:
     return probability
 
 
+def _real_scalar(value: object, *, message: str, finite: bool) -> int | float:
+    """Return one real scalar, preserving exact integer endpoints."""
+    if isinstance(value, np.ndarray):
+        if value.ndim != 0:
+            raise ValueError(message)
+        value = value[()]
+    numpy_floating = isinstance(value, np.floating)
+    rejected = (bool, np.bool_, str, bytes, np.datetime64, np.timedelta64)
+    if isinstance(value, rejected) or not isinstance(value, (numbers.Real, Decimal)):
+        raise ValueError(message)
+    try:
+        converted = float(value)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(message) from error
+    if math.isnan(converted):
+        raise ValueError(message)
+    if math.isinf(converted):
+        source_is_finite = (
+            bool(np.isfinite(cast("Any", value))) if numpy_floating else math.isfinite(value)
+        )
+        if finite or source_is_finite:
+            # Do not turn a finite extended-precision or arbitrary-precision
+            # endpoint into an unintended open bound during float conversion.
+            raise ValueError(message)
+    return int(value) if isinstance(value, numbers.Integral) else converted
+
+
+def validate_scale_bound(
+    value: object,
+    *,
+    name: str,
+    finite: bool = False,
+) -> int | float | None:
+    """Return one optional response-scale endpoint with consistent scalar validation.
+
+    Python and NumPy real scalars, zero-dimensional real arrays, ``Decimal``,
+    and ``Fraction`` values are accepted. Integers retain their exact value.
+    Booleans, text, temporal values, nonscalar arrays, NaN, and finite values
+    outside float range are rejected. Infinite endpoints are accepted unless
+    ``finite=True``.
+    """
+    if value is None:
+        return None
+    requirement = "a finite real number or None" if finite else "a real number or None"
+    return _real_scalar(value, message=f"{name} must be {requirement}", finite=finite)
+
+
 def validate_column_index(value: object, n_columns: int, *, name: str) -> int:
     """Return one in-bounds zero-based column index as a Python int."""
     item_index = validate_integer(value, message=f"{name} must contain integer column indices")
@@ -87,12 +134,14 @@ def resolve_scale_bounds(
     scale_max: float | None,
 ) -> tuple[float, float] | None:
     """Resolve ordered endpoints, returning None when an endpoint is unavailable."""
+    given_min = validate_scale_bound(scale_min, name="scale_min")
+    given_max = validate_scale_bound(scale_max, name="scale_max")
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore", message="All-NaN slice encountered", category=RuntimeWarning
         )
-        resolved_min = np.nanmin(x) if scale_min is None else scale_min
-        resolved_max = np.nanmax(x) if scale_max is None else scale_max
+        resolved_min = np.nanmin(x) if given_min is None else given_min
+        resolved_max = np.nanmax(x) if given_max is None else given_max
 
     # Keep exact integer endpoints while avoiding fixed-width scalar arithmetic.
     if isinstance(resolved_min, np.generic):
