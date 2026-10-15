@@ -1,7 +1,6 @@
 """Reverse-score reverse-keyed items before consistency and person-fit scoring."""
 
 import math
-import numbers
 from collections.abc import Sequence
 from fractions import Fraction
 
@@ -14,6 +13,7 @@ from ier._validation import (
     resolve_scale_bounds,
     validate_item_indices,
     validate_matrix_input,
+    validate_scale_bound,
 )
 
 
@@ -136,19 +136,9 @@ def _exact_bound(bound: float) -> float | Fraction:
     return _exact_value(endpoint) if isinstance(endpoint, np.floating) else bound
 
 
-def _validate_bound(value: object, name: str) -> float | None:
-    """Return None or a finite real endpoint, keeping integer endpoints exact."""
-    if value is None:
-        return None
-    if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
-        raise ValueError(f"{name} must be a finite real number or None")
-    try:
-        finite = math.isfinite(value)
-    except OverflowError:
-        finite = False
-    if not finite:
-        raise ValueError(f"{name} must be a finite real number or None")
-    return int(value) if isinstance(value, numbers.Integral) else float(value)
+def _validate_bound(value: object, name: str) -> int | float | None:
+    """Validate a finite reverse-scoring endpoint through the shared contract."""
+    return validate_scale_bound(value, name=name, finite=True)
 
 
 def _reverse_integers(

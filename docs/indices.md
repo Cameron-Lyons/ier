@@ -259,7 +259,12 @@ using `scale_min` and `scale_max`, so agreement with every item scores 1 and
 disagreement with every item scores 0.
 
 Response-style indices infer omitted scale bounds from observed responses and
-require `scale_min <= scale_max`. If the data cannot supply an omitted bound,
+require `scale_min <= scale_max`. Explicit bounds accept Python and NumPy real
+scalars, zero-dimensional real arrays, `Decimal`, and `Fraction`; they reject
+Booleans, text, nonscalar arrays, `NaN`, and finite values outside float range.
+Integer bounds retain their exact values, and infinite bounds remain available
+for response-style comparisons with open or unreachable endpoints. Reverse
+scoring requires finite bounds. If the data cannot supply an omitted bound,
 `u3_poly`, `midpoint_responding`, and `acquiescence` return unavailable (`NaN`)
 scores. Missing respondents remain unavailable even on a constant scale, where
 acquiescence assigns 0.5 to respondents with a usable mean. Balanced-pair mode
