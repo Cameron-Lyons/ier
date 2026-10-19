@@ -21,7 +21,12 @@ from ier._optional_imports import require_matplotlib_pyplot
 from ier._row_statistics import row_slices
 from ier._statistics import chi_square_quantile, chi_square_quantiles, normal_quantile
 from ier._summary import calculate_summary_stats
-from ier._validation import MatrixLike, validate_matrix_input, validate_probability
+from ier._validation import (
+    MatrixLike,
+    validate_boolean,
+    validate_matrix_input,
+    validate_probability,
+)
 
 
 @overload
@@ -105,7 +110,7 @@ def mahad(
         >>> flags.tolist()  # the last respondent contradicts the item correlation
         [False, False, False, False, False, False, False, False, False, True]
     """
-
+    flag = validate_boolean(flag, name="flag")
     x_array = validate_matrix_input(x)
     confidence = validate_probability(confidence, name="confidence")
 

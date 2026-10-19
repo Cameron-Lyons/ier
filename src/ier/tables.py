@@ -16,6 +16,7 @@ import numpy as np
 from ier._column_statistics import column_correlations
 from ier._registry import INDEX_REGISTRY
 from ier._row_statistics import row_slices
+from ier._validation import validate_boolean
 from ier.types import AgreementKind, CompositeSummary, FloatArray, ScreenResult
 
 _AGREEMENT_KINDS = ("overlap", "jaccard", "spearman")
@@ -29,9 +30,7 @@ _UNORDERED_ID_CONTAINERS: tuple[tuple[type, str], ...] = (
 
 def _validate_flag(value: bool, name: str) -> bool:
     """Return a validated Boolean column-selection control."""
-    if not isinstance(value, bool):
-        raise ValueError(f"{name} must be a boolean")
-    return value
+    return validate_boolean(value, name=name)
 
 
 def _respondent_id_values(

@@ -39,7 +39,12 @@ from ier._registry import (
 )
 from ier._statistics import logistic_transform
 from ier._summary import observed_summary_stats
-from ier._validation import MatrixLike, validate_matrix_input, validate_score_vectors
+from ier._validation import (
+    MatrixLike,
+    validate_boolean,
+    validate_matrix_input,
+    validate_score_vectors,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -496,6 +501,7 @@ def composite(
         >>> list(errors)  # three respondents cannot support a five-item covariance
         ['mahad']
     """
+    return_diagnostics = validate_boolean(return_diagnostics, name="return_diagnostics")
     run = _run_composite(
         x, indices, method, standardize, options, weights, min_valid_indices, strict, workers
     )
@@ -590,6 +596,7 @@ def composite_flag(
       careless responders.
     """
     # Decision arguments fail before the matrix is converted or any index is scored.
+    return_diagnostics = validate_boolean(return_diagnostics, name="return_diagnostics")
     threshold = validate_threshold(threshold)
     percentile = validate_percentile(percentile)
     run = _run_composite(
@@ -742,6 +749,7 @@ def composite_probability(
     also receive ordered per-index soft-failure messages.
     Unrepresentable weighted sums or maxima raise ``ValueError`` before transformation.
     """
+    return_diagnostics = validate_boolean(return_diagnostics, name="return_diagnostics")
     run = _run_composite(
         x, indices, method, True, options, weights, min_valid_indices, strict, workers
     )

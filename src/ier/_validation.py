@@ -72,6 +72,13 @@ def validate_probability(value: object, *, name: str) -> float:
     return probability
 
 
+def validate_boolean(value: object, *, name: str) -> bool:
+    """Return a strict Python Boolean without accepting numeric lookalikes."""
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a boolean")
+    return value
+
+
 def _real_scalar(value: object, *, message: str, finite: bool) -> int | float:
     """Return one real scalar, preserving exact integer endpoints."""
     if isinstance(value, np.ndarray):

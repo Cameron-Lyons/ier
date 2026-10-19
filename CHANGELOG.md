@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.3] - 2026-10-19
+
+### Fixed
+
+- Public switches that select a function's return shape now require Python
+  `bool` values. `diag`, `flag`, `avg`, `return_lags`, `return_item_flags`, and
+  `return_diagnostics` reject integers, strings, arrays, and NumPy Boolean
+  scalars instead of silently changing the returned type or tuple length.
+- Return-shape switches are validated before matrix conversion or scoring, so
+  malformed options fail immediately even for large inputs.
+
 ## [1.13.2] - 2026-10-12
 
 ### Fixed

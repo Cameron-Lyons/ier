@@ -15,7 +15,7 @@ from ier._scale_halves import (
     validate_factor_columns,
     validate_factors,
 )
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_boolean, validate_matrix_input
 from ier.types import EvenOddMethod
 
 
@@ -130,6 +130,7 @@ def evenodd(
         >>> print(available.tolist())
         [3, 3, 3]
     """
+    diag = validate_boolean(diag, name="diag")
     if method not in ("item_pairs", "halves"):
         raise ValueError("method must be 'item_pairs' or 'halves'")
     factor_sizes = validate_factors(factors)

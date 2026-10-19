@@ -88,6 +88,15 @@
         - plot_composite
         - plot_index_agreement
 
+## Return-shape controls
+
+Boolean options that select a documented return type are strict Python
+Booleans. This includes `diag`, `flag`, `avg`, `return_lags`,
+`return_item_flags`, and `return_diagnostics`. Passing `0` or `1`, a string,
+an array, or a NumPy Boolean scalar raises `ValueError` before the input matrix
+is converted or scored. This keeps runtime return types aligned with the
+published overloads.
+
 ## Persisting screening results
 
 `save_screen_archive()` and `load_screen_archive()` persist a complete
