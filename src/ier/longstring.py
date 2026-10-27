@@ -12,7 +12,7 @@ from typing import Literal, overload
 import numpy as np
 
 from ier._response_sequences import sequence_batches, true_run_lengths
-from ier._validation import MatrixLike, validate_integer, validate_matrix_input
+from ier._validation import MatrixLike, validate_boolean, validate_integer, validate_matrix_input
 
 
 def _run_length_encode(message: str) -> list[tuple[str, int]]:
@@ -108,7 +108,7 @@ def longstring(
         >>> longstring(arr, avg=True)
         [3.0, 4.0, 1.0]
     """
-
+    avg = validate_boolean(avg, name="avg")
     if messages is None:
         raise ValueError("messages cannot be None")
 
@@ -233,8 +233,7 @@ def longstring_scores(
         >>> longstring_scores(data, avg=True).tolist()
         [2.0, 6.0]
     """
-    if not isinstance(avg, bool):
-        raise ValueError("avg must be a boolean")
+    avg = validate_boolean(avg, name="avg")
     x_array = validate_matrix_input(x, min_columns=1)
 
     scores = np.empty(len(x_array))

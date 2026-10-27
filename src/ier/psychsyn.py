@@ -18,7 +18,7 @@ from ier._column_statistics import column_correlations, pairwise_column_correlat
 from ier._correlation import selected_row_correlations
 from ier._flagging import threshold_flags
 from ier._summary import calculate_summary_stats
-from ier._validation import MatrixLike, validate_matrix_input
+from ier._validation import MatrixLike, validate_boolean, validate_matrix_input
 from ier.types import ItemCorrelationMode
 
 _PSYCHSYN_BATCH_ELEMENTS = 262_144
@@ -235,7 +235,8 @@ def psychsyn(
         >>> np.round(psychsyn(data, item_correlations="pairwise"), 2).tolist()
         [0.96, 1.0, 0.97, 0.87, 1.0, -0.94]
     """
-
+    diag = validate_boolean(diag, name="diag")
+    _return_item_info = validate_boolean(_return_item_info, name="_return_item_info")
     x_array = validate_matrix_input(x, min_columns=2)
 
     critval = _validate_correlation_cutoff(critval, name="critval")

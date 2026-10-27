@@ -27,6 +27,7 @@ from ier._row_statistics import (
 )
 from ier._validation import (
     MatrixLike,
+    validate_boolean,
     validate_integer,
     validate_matrix_input,
     validate_probability,
@@ -307,8 +308,7 @@ def response_time_effort(
         >>> response_time_effort(times, thresholds=15).tolist()
         [0.6666666666666666, 0.3333333333333333, 0.5, 0.6666666666666666]
     """
-    if not isinstance(return_item_flags, bool):
-        raise ValueError("return_item_flags must be a boolean")
+    return_item_flags = validate_boolean(return_item_flags, name="return_item_flags")
     fraction = validate_probability(normative_fraction, name="normative_fraction")
     if fraction == 0.0:
         raise ValueError("normative_fraction must be greater than 0")

@@ -21,7 +21,7 @@ import numpy as np
 from ier._flagging import threshold_flags
 from ier._response_sequences import sequence_batches
 from ier._row_statistics import _integer_offsets
-from ier._validation import MatrixLike, validate_integer, validate_matrix_input
+from ier._validation import MatrixLike, validate_boolean, validate_integer, validate_matrix_input
 
 AutocorrelationStatistic: TypeAlias = Literal["max_abs", "sum_abs"]
 
@@ -154,8 +154,7 @@ def autocorrelation(
         )
     if not isinstance(statistic, str) or statistic not in ("max_abs", "sum_abs"):
         raise ValueError("statistic must be 'max_abs' or 'sum_abs'")
-    if not isinstance(return_lags, bool):
-        raise ValueError("return_lags must be a boolean")
+    return_lags = validate_boolean(return_lags, name="return_lags")
     x_array = validate_matrix_input(x, min_columns=min_lag + _MIN_PAIRS)
     width = x_array.shape[1]
     top = width - _MIN_PAIRS if max_lag is None else min(max_lag, width - _MIN_PAIRS)
