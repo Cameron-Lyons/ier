@@ -102,19 +102,20 @@ two halves of `size // 2` items, as in resampled individual reliability (Curran,
 2016; Huang et al., 2012). A respondent's two vectors of scale half means are
 correlated across scales, valid correlations are averaged over resamples, and
 the Spearman–Brown correction `2r / (1 + r)` is applied and clamped below at -1.
-Each half mean is its exact mean rounded once, as in `evenodd`, so a split whose
-half means do not vary is unusable rather than scored from rounding noise.
+Half means are exact or rounded only once, as in `evenodd`, so a split whose half
+means do not vary is unusable rather than scored from rounding noise.
 A respondent whose responses are integers, the usual survey case, is scored from
 their exact half means: each is scaled to an integer by a common multiple `L` of
 the possible half sizes (their least common multiple for a complete respondent,
 and that of 1 to the largest half size for one with missing responses), and many
 resamples are correlated at once from exact moments, so only the final square
-roots and quotient round. This takes 1.5 to 2 times less time than correlating
-rounded half means with two scales and 2 to 6 times less with three or more.
-Respondents with fractional or infinite responses, or whose scaled moments could
-exceed 2^53 (`n * L * max|response|` above 2^26.5 for `n` scales, as for long
-scales with missing responses), are scored from the correctly rounded half means
-instead. The choice depends only on the respondent's own responses, so one
+roots and quotient round. Compared with correlating rounded half means, this
+is about 1.1 to 2.8 times faster with two scales (least for short scales with
+missing responses) and 2 to 6 times faster with three or more. Respondents with
+fractional or infinite responses, or whose scaled moments could exceed 2^53
+(`n * L * max|response|` above 2^26.5, where `n` counts the scales of at least
+two items, as for long scales with missing responses), are scored from the
+correctly rounded half means instead and gain little. The choice depends only on the respondent's own responses, so one
 respondent's answers never change another's score. Both scorers agree to about
 1e-15 for ordinary rating scales; far from zero, where rounding half means to
 double precision is coarse relative to their spread, the exact scorer matches the

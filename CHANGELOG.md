@@ -28,13 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose responses are integers from their exact half means. Half totals of many
   resamples come from small exact matrix products per scale, half means are
   scaled to exact integers, and correlations are formed from exact moments, so
-  only the final square roots and quotient round. This is 1.5 to 2 times faster
-  with two scales and 2 to 6 times faster with three or more: 20,000
-  respondents by 40 items in four scales with 100 splits took about 50 ms
-  instead of 250 ms with complete responses and 95 ms instead of 305 ms with 1%
-  missing. Respondents with fractional or infinite responses, or whose scaled
-  moments could exceed 2^53 (such as long scales with missing responses), keep
-  the correctly rounded half-mean scorer, chosen per respondent so that no
+  only the final square roots and quotient round. This is about 1.1 to 2.8
+  times faster with two scales (least for short scales with missing responses)
+  and 2 to 6 times faster with three or more: 20,000 respondents by 40 items in
+  four scales with 100 splits took about 50 ms instead of 250 ms with complete
+  responses and 95 ms instead of 305 ms with 1% missing. Respondents with
+  fractional or infinite responses, or whose scaled moments could exceed 2^53
+  (such as long scales with missing responses), keep the correctly rounded
+  half-mean scorer and gain little; it is chosen per respondent so that no
   respondent's answers affect another's score. The random split sequence is
   unchanged. Scores agree with the previous release to about 1e-15 for ordinary
   rating scales; for integer responses far from zero they now match the exact

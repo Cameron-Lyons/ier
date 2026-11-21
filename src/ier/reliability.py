@@ -59,10 +59,11 @@ def individual_reliability(
     With ``factors`` (recommended), each resample randomly splits every scale into
     two halves of ``size // 2`` items (Curran, 2016; Huang et al., 2012). Each
     respondent's two vectors of scale half means, ignoring missing responses, are
-    correlated across scales. Each half mean is its exact mean rounded once, so a
-    split whose half means do not vary is unusable rather than scored from rounding
-    noise. The valid correlations are averaged over resamples
-    and Spearman–Brown corrected as ``2r / (1 + r)``, clamped below at -1. Scales
+    correlated across scales. Half means are exact for integer responses and
+    otherwise rounded once from their exact values, so a split whose half means do
+    not vary is unusable rather than scored from rounding noise. The valid
+    correlations are averaged over resamples and Spearman–Brown corrected as
+    ``2r / (1 + r)``, clamped below at -1. Scales
     with fewer than two items contribute no halves.
 
     Without ``factors``, the legacy method pairs randomly permuted items across the
