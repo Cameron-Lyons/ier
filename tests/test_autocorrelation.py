@@ -651,3 +651,30 @@ def test_cli_rejects_invalid_maximum_lags(value: str, capsys: pytest.CaptureFixt
         "argument --autocorrelation-max-lag: must be 'none' or an integer of at least 1"
         in capsys.readouterr().err
     )
+
+
+def test_minimum_lag_reaches_screen_and_the_cli() -> None:
+    data = _responses()
+    assert IndexOptions().autocorrelation_min_lag == 1
+    options = IndexOptions(autocorrelation_max_lag=6, autocorrelation_min_lag=3)
+    result = screen(data, indices=["autocorrelation"], options=options)
+    expected = autocorrelation(data, max_lag=6, min_lag=3)
+    np.testing.assert_array_equal(result["scores"]["autocorrelation"], expected)
+    assert not np.array_equal(expected, autocorrelation(data, max_lag=6), equal_nan=True)
+
+    # A minimum above the maximum is a soft failure of this index alone.
+    invalid = IndexOptions(autocorrelation_max_lag=2, autocorrelation_min_lag=3)
+    failed = screen(data, indices=["autocorrelation", "irv"], options=invalid)
+    assert "autocorrelation" in failed["errors"] and "irv" in failed["scores"]
+
+    args = _build_parser().parse_args(["screen", "responses.csv", "--autocorrelation-min-lag", "2"])
+    assert _options_from_args(args) == IndexOptions(autocorrelation_min_lag=2)
+    assert _build_parser().parse_args(["screen", "responses.csv"]).autocorrelation_min_lag == 1
+
+
+@pytest.mark.parametrize("value", ["0", "1.5", "none"])
+def test_cli_rejects_invalid_minimum_lags(value: str, capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as error:
+        main(["screen", "responses.csv", "--autocorrelation-min-lag", value])
+    assert error.value.code == 2
+    assert "argument --autocorrelation-min-lag" in capsys.readouterr().err

@@ -51,7 +51,7 @@ def guttman(
     Raises:
     - ValueError: If inputs are invalid
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> # Items get harder from left to right; the last row reverses [1, 1, 0, 0].
         >>> data = [[1, 1, 1, 0], [1, 1, 0, 0], [1, 0, 0, 0], [1, 1, 0, 0], [0, 0, 1, 1]]
@@ -268,7 +268,7 @@ def guttman_flag(
                   converted with ``float()``, or is not finite, or if inputs
                   are invalid.
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 1, 0], [1, 1, 0, 0], [1, 0, 0, 0], [1, 1, 0, 0], [0, 0, 1, 1]]
         >>> guttman_flag(data, threshold=0.5).tolist()
         [False, False, False, False, True]

@@ -11,6 +11,7 @@ from typing import Literal, overload
 
 import numpy as np
 
+from ier._flagging import threshold_flags
 from ier._response_sequences import sequence_batches, true_run_lengths
 from ier._validation import MatrixLike, validate_boolean, validate_integer, validate_matrix_input
 
@@ -92,7 +93,7 @@ def longstring(
     - TypeError: If input is not a string or contains non-string values
     - ValueError: If input is empty or a numpy array is not one-dimensional
 
-    Example:
+    Examples:
         >>> longstring("aaabbbcc")
         ('a', 3)
 
@@ -181,7 +182,7 @@ def longstring_pattern(
     - ValueError: If inputs are invalid, including a Boolean, non-integer, or
                   smaller ``max_pattern_length``.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 3, 4, 5, 6]]
         >>> longstring_pattern(data).tolist()
         [6.0, 0.0]
@@ -226,7 +227,7 @@ def longstring_scores(
     Raises:
     - ValueError: If inputs are invalid or ``avg`` is not a boolean.
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 2, 2, 2, 3], [4, 4, 4, 4, 4, 4]]
         >>> longstring_scores(data).tolist()
         [3.0, 6.0]
@@ -255,6 +256,77 @@ def longstring_scores(
                 block_scores[counts == 0] = 0.0
         scores[start:stop] = block_scores
     return scores
+
+
+def longstring_flag(
+    x: MatrixLike,
+    threshold: float | None = None,
+    percentile: float = 95.0,
+    na_rm: bool = True,
+    avg: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute run-length scores and flag respondents with unusually long identical runs.
+
+    Scores come from ``longstring_scores``, so ``avg=False`` reproduces the
+    ``longstring`` index of ``screen()`` and ``avg=True`` its ``avgstr`` index.
+
+    Parameters:
+    - x: A matrix of numeric data where rows are individuals and columns are
+         item responses.
+    - threshold: Absolute run length at or above which to flag. If None, uses percentile.
+    - percentile: Percentile above which to flag (default 95th percentile, as in
+                  ``screen()``).
+    - na_rm, avg: Passed to ``longstring_scores``.
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for flagged respondents.
+      Unavailable (``NaN``) scores are never flagged.
+
+    Examples:
+        >>> data = [[1, 2, 3, 4, 5, 4], [3, 3, 3, 3, 3, 3], [1, 1, 2, 2, 1, 1]]
+        >>> scores, flags = longstring_flag(data, threshold=5)
+        >>> scores.tolist(), flags.tolist()
+        ([1.0, 6.0, 2.0], [False, True, False])
+    """
+    scores = longstring_scores(x, na_rm=na_rm, avg=avg)
+    # Mirrors the "longstring" and "avgstr" registry flag directions.
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="high")
+    return scores, flags
+
+
+def longstring_pattern_flag(
+    x: MatrixLike,
+    threshold: float | None = None,
+    percentile: float = 95.0,
+    max_pattern_length: int = 5,
+    na_rm: bool = True,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute repeating-pattern lengths and flag respondents with long cyclic patterns.
+
+    Parameters:
+    - x: A matrix of numeric data where rows are individuals and columns are
+         item responses.
+    - threshold: Absolute pattern length at or above which to flag. If None, uses
+                 percentile.
+    - percentile: Percentile above which to flag (default 95th percentile, as in
+                  ``screen()``).
+    - max_pattern_length, na_rm: Passed to ``longstring_pattern``.
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for flagged respondents.
+
+    Examples:
+        >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 3, 4, 5, 6], [2, 4, 3, 5, 1, 2]]
+        >>> scores, flags = longstring_pattern_flag(data, threshold=4)
+        >>> scores.tolist(), flags.tolist()
+        ([6.0, 0.0, 0.0], [True, False, False])
+    """
+    scores = longstring_pattern(x, max_pattern_length=max_pattern_length, na_rm=na_rm)
+    # Mirrors INDEX_REGISTRY["longstring_pattern"].flag_direction.
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="high")
+    return scores, flags
 
 
 def _longest_repeating_patterns(

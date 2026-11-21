@@ -132,7 +132,7 @@ def autocorrelation(
                   ``return_lags`` is not a boolean, or the data has fewer than
                   ``min_lag + 3`` columns.
 
-    Example:
+    Examples:
         >>> seesaw = [1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5]
         >>> cycle = [2, 3, 4, 2, 3, 4, 2, 3, 4, 2, 3, 4]
         >>> attentive = [4, 2, 5, 3, 3, 1, 4, 4, 2, 5, 3, 2]
@@ -219,7 +219,7 @@ def autocorrelation_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> cycle = [2, 3, 4, 2, 3, 4, 2, 3, 4, 2, 3, 4]
         >>> attentive = [4, 2, 5, 3, 3, 1, 4, 4, 2, 5, 3, 2]
         >>> scores, flags = autocorrelation_flag([cycle, attentive], threshold=0.9, max_lag=3)

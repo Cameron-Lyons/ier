@@ -211,7 +211,7 @@ def psychsyn(
     - ValueError: If inputs are invalid (empty data, invalid critval, etc.)
     - TypeError: If input is not array-like (for example, a scalar or string)
 
-    Example:
+    Examples:
         >>> data = [
         ...     [1, 1, 2, 3, 5, 5],
         ...     [1, 1, 4, 4, 1, 1],
@@ -355,7 +355,7 @@ def psychsyn_critval(
     Returns:
     - A list of tuples containing (item_i, item_j, correlation), ordered by magnitude.
 
-    Example:
+    Examples:
         >>> data = [
         ...     [1, 1, 2, 3, 5, 5],
         ...     [1, 1, 4, 4, 1, 1],
@@ -467,7 +467,7 @@ def psychant(
     - A numpy array of psychometric antonym scores, or
     - A tuple of (scores, diagnostic_values) if diag=True.
 
-    Example:
+    Examples:
         >>> data = [
         ...     [1, 5, 2, 3, 5, 1],
         ...     [1, 5, 4, 2, 1, 5],
@@ -515,7 +515,7 @@ def psychsyn_summary(
       counts remain available as ``total_individuals``, ``valid_individuals``
       and ``missing_individuals`` for compatibility.
 
-    Example:
+    Examples:
         >>> data = [
         ...     [1, 1, 2, 3, 5, 5],
         ...     [1, 1, 4, 4, 1, 1],
@@ -584,7 +584,7 @@ def psychsyn_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [
         ...     [1, 1, 2, 3, 5, 5],
         ...     [1, 1, 4, 4, 1, 1],
@@ -642,7 +642,7 @@ def psychant_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [
         ...     [1, 5, 2, 3, 5, 1],
         ...     [1, 5, 4, 2, 1, 5],

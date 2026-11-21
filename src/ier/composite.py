@@ -261,7 +261,7 @@ def composite_scores(
     - ValueError: If a final weighted sum or maximum exceeds the finite float
                   range. Reduce weights or choose ``method="mean"``.
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> from ier import composite_scores, composite_summary, screen
         >>> data = [
@@ -491,7 +491,7 @@ def composite(
     Passing ``indices`` with ``method="best_subset"`` is deprecated: the explicit
     indices are ignored with a ``DeprecationWarning`` and will raise in a future release.
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> from ier import IndexOptions, composite
         >>> data = [[1, 2, 3, 4, 5], [3, 3, 3, 3, 3], [5, 4, 3, 2, 1]]

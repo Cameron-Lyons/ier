@@ -6,6 +6,7 @@ from typing import Literal, overload
 import numpy as np
 
 from ier._correlation import row_correlations
+from ier._flagging import threshold_flags
 from ier._row_statistics import row_slices
 from ier._scale_halves import (
     HalfMeans,
@@ -117,7 +118,7 @@ def evenodd(
                   is empty, if method is unknown, or if ``method="halves"`` receives
                   fewer than two factors.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 3, 4, 5, 6], [2, 3, 4, 5, 6, 7]]
         >>> factors = [6]
         >>> scores = evenodd(data, factors)
@@ -175,6 +176,42 @@ def evenodd(
     )
 
     return (avg_correlations, diag_vals) if diag else avg_correlations
+
+
+def evenodd_flag(
+    x: MatrixLike,
+    factors: Sequence[int],
+    threshold: float | None = None,
+    percentile: float = 5.0,
+    *,
+    method: EvenOddMethod = "item_pairs",
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute even-odd consistency scores and flag respondents with low consistency.
+
+    Parameters:
+    - x: A matrix of data where rows are individuals and columns are their responses.
+    - factors: Positive integers specifying the length of each factor; see ``evenodd``.
+    - threshold: Absolute score at or below which to flag. If None, uses percentile.
+    - percentile: Percentile below which to flag (default 5th percentile, as in
+                  ``screen()``).
+    - method: ``"item_pairs"`` (default) or ``"halves"`` (recommended); see ``evenodd``.
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for flagged respondents.
+      Unavailable (``NaN``) scores, such as straight-lined profiles with
+      ``method="halves"``, are never flagged.
+
+    Examples:
+        >>> data = [[1, 1, 3, 3, 5, 5], [1, 5, 5, 1, 2, 4], [2, 2, 4, 4, 3, 3]]
+        >>> scores, flags = evenodd_flag(data, [2, 2, 2], threshold=0.0, method="halves")
+        >>> np.round(scores, 2).tolist(), flags.tolist()
+        ([1.0, -1.0, 1.0], [False, True, False])
+    """
+    scores = evenodd(x, factors, method=method)
+    # Mirrors INDEX_REGISTRY["evenodd"].flag_direction; importing it here is circular.
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="low")
+    return scores, flags
 
 
 def _half_scale_scores(x: np.ndarray, factor_sizes: list[int]) -> tuple[np.ndarray, np.ndarray]:

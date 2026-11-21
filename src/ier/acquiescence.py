@@ -62,7 +62,7 @@ def acquiescence(
     - ValueError: If inputs are invalid, paired lists differ in length, or item
                   indices are not integers within the matrix bounds.
 
-    Example:
+    Examples:
         >>> data = [[5, 5, 5, 5], [1, 1, 1, 1], [3, 3, 3, 3]]
         >>> scores = acquiescence(data, scale_min=1, scale_max=5)
         >>> print(scores.tolist())
@@ -221,7 +221,7 @@ def acquiescence_flag(
     - Tuple of (acquiescence_scores, flags) where flags is True for suspected
       biased responders.
 
-    Example:
+    Examples:
         >>> data = [[5, 5, 5, 5], [3, 3, 3, 3], [1, 1, 1, 1]]
         >>> scores, flags = acquiescence_flag(data, scale_min=1, scale_max=5)
     """

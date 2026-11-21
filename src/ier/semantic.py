@@ -53,7 +53,7 @@ def semantic_syn(
     - ValueError: If item_pairs is empty, a pair does not contain two distinct
                   integer column indices, or an index is outside the matrix bounds.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 5, 4], [1, 1, 5, 5], [3, 1, 3, 5]]
         >>> pairs = [(0, 1), (2, 3)]  # semantic synonym pairs
         >>> scores = semantic_syn(data, pairs)
@@ -180,7 +180,7 @@ def semantic_ant(
     Returns:
     - A numpy array of consistency scores for each individual.
 
-    Example:
+    Examples:
         >>> data = [[1, 5, 2, 4], [1, 5, 1, 5], [3, 3, 3, 3]]
         >>> pairs = [(0, 1), (2, 3)]  # semantic antonym pairs (e.g., happy/sad)
         >>> scores = semantic_ant(data, pairs)

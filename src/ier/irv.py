@@ -12,6 +12,7 @@ from itertools import pairwise
 
 import numpy as np
 
+from ier._flagging import threshold_flags
 from ier._row_statistics import _row_mean_std_block, row_slices, row_std
 from ier._validation import MatrixLike, validate_integer, validate_matrix_input
 
@@ -52,7 +53,7 @@ def irv(
     Raises:
     - ValueError: If inputs are invalid (empty data, invalid split parameters, etc.)
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 3, 4, 5, 6], [1, 1, 1, 4, 5, 6]]
         >>> irv_scores = irv(data)
         >>> print(irv_scores)
@@ -90,6 +91,43 @@ def irv(
                 )
         groups = separate
     return _split_irv_scores(x_array, groups, ignore_nan=na_rm)
+
+
+def irv_flag(
+    x: MatrixLike,
+    threshold: float | None = None,
+    percentile: float = 5.0,
+    na_rm: bool = True,
+    split: bool = False,
+    num_split: int = 1,
+    split_points: list[int] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute IRV scores and flag respondents with unusually little response variability.
+
+    Low IRV reflects straightlining (Dunn et al., 2018), the tail ``screen()`` flags.
+
+    Parameters:
+    - x: A matrix of data where rows are individuals and columns are their responses.
+    - threshold: Absolute IRV at or below which to flag. If None, uses percentile.
+    - percentile: Percentile below which to flag (default 5th percentile, as in
+                  ``screen()``).
+    - na_rm, split, num_split, split_points: Passed to ``irv``.
+
+    Returns:
+    - Tuple of (scores, flags) where flags is True for flagged respondents.
+      Unavailable (``NaN``) scores are never flagged.
+
+    Examples:
+        >>> data = [[1, 2, 3, 4, 5, 4], [3, 3, 3, 3, 3, 3], [1, 5, 1, 5, 1, 5]]
+        >>> scores, flags = irv_flag(data, threshold=0.5)
+        >>> flags.tolist()
+        [False, True, False]
+    """
+    scores = irv(x, na_rm=na_rm, split=split, num_split=num_split, split_points=split_points)
+    # Mirrors INDEX_REGISTRY["irv"].flag_direction; importing it here is circular.
+    flags = threshold_flags(scores, threshold=threshold, percentile=percentile, direction="low")
+    return scores, flags
 
 
 def _split_irv_scores(

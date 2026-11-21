@@ -988,7 +988,7 @@ def save_score_archive(
     - compression_level: Optional DEFLATE level from 1 (fastest) to 9 (smallest)
       for ``compressed=True``. ``None`` uses level 1; any level loads the same way.
 
-    Example:
+    Examples:
         >>> from ier import load_score_archive, save_score_archive, screen_scores
         >>> scores = {"irv": [0.1, 0.7, 0.4], "longstring": [3.0, 8.0, 5.0]}
         >>> save_score_archive("scores.npz", scores, respondent_ids=["a", "b", "c"])
@@ -1083,7 +1083,7 @@ def save_screen_archive(
     - compression_level: Optional DEFLATE level from 1 (fastest) to 9 (smallest)
       for ``compressed=True``. ``None`` uses level 1; any level loads the same way.
 
-    Example:
+    Examples:
         >>> from ier import load_screen_archive, save_screen_archive, screen_scores
         >>> result = screen_scores(
         ...     {"irv": [0.1, 0.7, 0.4, 0.9], "longstring": [3.0, 8.0, 5.0, 8.0]},
@@ -1217,7 +1217,7 @@ def save_response_time_archive(
     - compression_level: Optional DEFLATE level from 1 (fastest) to 9 (smallest)
       for ``compressed=True``. ``None`` uses level 1; any level loads the same way.
 
-    Example:
+    Examples:
         >>> from ier import response_time_score_flags, save_response_time_archive
         >>> scores = [0.5, 1.2, 2.0]
         >>> flags = response_time_score_flags(scores, threshold=1.0)
@@ -1278,7 +1278,7 @@ def load_score_archive(path: str | Path) -> ScoreArchive:
     - A ``ScoreArchive`` containing ordered raw score vectors, result metadata,
       optional respondent IDs, and any recorded per-index soft failures.
 
-    Example:
+    Examples:
         >>> from ier import composite_scores, load_score_archive, save_score_archive
         >>> from ier import screen_scores
         >>> save_score_archive(
@@ -1331,7 +1331,7 @@ def load_screen_archive(path: str | Path) -> ScreenArchive:
     - A ``ScreenArchive`` with the schema version, the restored ``ScreenResult``,
       and optional respondent identifiers.
 
-    Example:
+    Examples:
         >>> from ier import load_screen_archive, save_screen_archive, screen_scores
         >>> original = screen_scores(
         ...     {"irv": [0.1, 0.7, 0.4], "onset": [float("nan"), 2.0, float("nan")]},
@@ -1374,7 +1374,7 @@ def load_response_time_archive(path: str | Path) -> ResponseTimeArchive:
     - A ``ResponseTimeArchive`` containing scores, flags, cutoff metadata, and
       optional respondent identifiers.
 
-    Example:
+    Examples:
         >>> from ier import load_response_time_archive, response_time_score_flags
         >>> from ier import save_response_time_archive
         >>> scores = [0.5, 1.2, 2.0, 3.1]

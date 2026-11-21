@@ -52,7 +52,7 @@ def onset(
     Raises:
     - ValueError: If sizes are not integers, window_size < 2, or min_items < window_size.
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> attentive = [[1, 4, 4, 3, 3, 5, 1, 4, 2, 1, 3, 5, 4, 4, 4]]
         >>> careless = np.full((1, 15), 3)
@@ -170,7 +170,7 @@ def onset_flag(
     Returns:
     - Boolean array where True indicates a carelessness onset was detected.
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> attentive = [[1, 4, 4, 3, 3, 5, 1, 4, 2, 1, 3, 5, 4, 4, 4]]
         >>> careless = np.full((1, 15), 3)

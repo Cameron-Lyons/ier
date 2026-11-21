@@ -98,7 +98,7 @@ def mahad(
     - TypeError: If input is a scalar, string, mapping, or other non-array object.
                  The exception also derives from ValueError.
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> data = [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5],
         ...         [1, 2], [2, 1], [4, 5], [5, 4], [5, 1]]
@@ -296,7 +296,7 @@ def mahad_qqplot(
     - RuntimeError: If plot=True and matplotlib is not available.
     - ValueError: If inputs are invalid.
 
-    Example:
+    Examples:
         >>> data = [[1, 2], [3, 4], [5, 6], [7, 8]]
         >>> theoretical, observed = mahad_qqplot(data)
     """
@@ -344,7 +344,7 @@ def mahad_summary(x: MatrixLike, confidence: float = 0.95, na_rm: bool = False) 
       ``n_missing``. The same counts remain available as ``total``,
       ``valid_count`` and ``missing_count`` for compatibility.
 
-    Example:
+    Examples:
         >>> data = [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5],
         ...         [1, 2], [2, 1], [4, 5], [5, 4], [5, 1]]
         >>> summary = mahad_summary(data)

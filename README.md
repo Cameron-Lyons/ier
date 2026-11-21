@@ -24,7 +24,12 @@ For a comprehensive methods review, see
   diligence items with one expected answer or inclusive acceptable ranges
 - Response times: row summaries, consistency, Gaussian mixtures, and item-level
   response time effort with normative NT10 thresholds
-- `*_flag()` helpers for every index, plus `reverse_score()` for reverse-keyed items
+- `*_flag()` helpers for every screening index, plus `reverse_score()` for
+  reverse-keyed items. Percentile-based helpers default to the tails `screen()`
+  flags; `guttman_flag()`, `lz_flag()`, `individual_reliability_flag()`,
+  `infrequency_flag()`, and `response_time_effort_flag()` apply fixed
+  conventional cutoffs, `onset_flag()` flags a detected onset, and
+  `mahad(flag=True)` applies chi-squared, IQR, or z-score outlier rules
 
 **Screening and composites**
 
@@ -91,7 +96,7 @@ compatibility alias.
 
 ```python
 import numpy as np
-from ier import IndexOptions, composite, composite_probability, irv, screen
+from ier import IndexOptions, composite, composite_probability, irv, irv_flag, screen
 
 data = np.array([
     [1, 2, 3, 4, 5, 4],
@@ -101,6 +106,10 @@ data = np.array([
 ], dtype=float)
 
 print("IRV:", irv(data))
+
+# Standalone helpers return (scores, flags); fixed cutoffs include ties.
+scores, straightlined = irv_flag(data, threshold=0.5)
+print("Straightlined:", straightlined)
 
 result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print("Indices:", result["indices_used"])

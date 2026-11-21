@@ -80,7 +80,7 @@ def plot_distributions(
     - ValueError: If show_thresholds is not a boolean.
     - RuntimeError: If matplotlib is not available.
 
-    Example:
+    Examples:
         >>> from ier import plot_distributions, screen_scores
         >>> result = screen_scores(
         ...     {"irv": [0.1, 0.4, 0.9, 1.2], "longstring": [8.0, 3.0, 2.0, 7.0]},
@@ -217,7 +217,7 @@ def plot_flagged_heatmap(
       not recognized.
     - RuntimeError: If matplotlib is not available.
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> from ier import plot_flagged_heatmap, screen_scores
         >>> irv = np.ones(5000)
@@ -322,7 +322,7 @@ def plot_flag_counts(
     Raises:
     - RuntimeError: If matplotlib is not available.
 
-    Example:
+    Examples:
         >>> from ier import plot_flag_counts, screen_scores
         >>> result = screen_scores(
         ...     {"irv": [0.1, 0.4, 0.9, 1.2], "longstring": [8.0, 3.0, 2.0, 7.0]},
@@ -407,7 +407,7 @@ def plot_composite(
       NaN, threshold is not finite, or flags are not aligned booleans.
     - RuntimeError: If matplotlib is not available.
 
-    Example:
+    Examples:
         >>> from ier import plot_composite
         >>> scores = [-1.0, -0.2, 0.1, 0.4, 2.5]
         >>> fig = plot_composite(scores, threshold=2.0)
@@ -491,7 +491,7 @@ def plot_index_agreement(
     - ValueError: If kind is not recognized or annotate is not a boolean.
     - RuntimeError: If matplotlib is not available.
 
-    Example:
+    Examples:
         >>> from ier import plot_index_agreement, screen_scores
         >>> result = screen_scores(
         ...     {"irv": [0.1, 0.2, 0.9, 1.2], "longstring": [8.0, 3.0, 2.0, 7.0]},

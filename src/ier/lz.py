@@ -86,7 +86,7 @@ def lz(
     Raises:
     - ValueError: If inputs are invalid.
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 0, 0, 1], [1, 0, 0, 0, 0], [0, 0, 0, 0, 0]]
         >>> lz_scores = lz(data)
         >>> np.round(lz_scores, 2).tolist()
@@ -155,7 +155,7 @@ def lz_flag(
     Raises:
     - ValueError: If ``threshold`` is not a finite number or scoring inputs are invalid.
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 1, 0, 0], [0, 0, 1, 1, 1], [1, 1, 0, 1, 0]]
         >>> scores, flags = lz_flag(data, difficulty=[-2, -1, 0, 1, 2], model="1pl")
         >>> flags.tolist()

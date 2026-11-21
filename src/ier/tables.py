@@ -128,7 +128,7 @@ def screen_table(
       character, a column has the wrong length, or an include option is not a
       boolean.
 
-    Example:
+    Examples:
         >>> from ier import screen_scores, screen_table
         >>> result = screen_scores(
         ...     {"irv": [0.1, 0.9, 1.2], "longstring": [8.0, 2.0, 3.0]},
@@ -192,7 +192,7 @@ def composite_table(
       character, a column has the wrong length, or include_components is not a
       boolean.
 
-    Example:
+    Examples:
         >>> from ier import composite_scores_summary, composite_table
         >>> summary = composite_scores_summary(
         ...     {"irv": [0.2, 1.0, 1.4], "longstring": [6.0, 2.0, 1.0]}
@@ -338,7 +338,7 @@ def index_agreement(
     Raises:
     - ValueError: If kind is not recognized.
 
-    Example:
+    Examples:
         >>> from ier import index_agreement, screen_scores
         >>> result = screen_scores(
         ...     {"irv": [0.1, 0.2, 0.9, 1.2], "longstring": [8.0, 3.0, 2.0, 7.0]},

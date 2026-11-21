@@ -62,7 +62,7 @@ def reverse_score(
                   selected response lies outside the bounds. Responses are compared
                   with the bounds exactly, whatever their precision.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 5], [4, 5, 1], [3, 3, 2]]
         >>> print(reverse_score(data, [2], scale_min=1, scale_max=5).tolist())
         [[1, 2, 1], [4, 5, 5], [3, 3, 4]]

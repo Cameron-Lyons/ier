@@ -2,6 +2,7 @@
 
 import inspect
 from collections.abc import Callable
+from functools import partial
 from typing import Any
 from unittest.mock import patch
 
@@ -9,7 +10,7 @@ import numpy as np
 import pytest
 
 import ier
-from ier import screen
+from ier import IndexOptions, screen
 from ier._flagging import threshold_flags
 from ier._registry import INDEX_REGISTRY
 
@@ -22,8 +23,14 @@ _HELPERS: list[tuple[str, FlagHelper, str]] = [
     ("person_total", ier.person_total_flag, "ier.person_total"),
     ("u3_poly", ier.u3_poly_flag, "ier.u3_poly"),
     ("midpoint", ier.midpoint_responding_flag, "ier.u3_poly"),
+    ("irv", ier.irv_flag, "ier.irv"),
+    ("longstring", ier.longstring_flag, "ier.longstring"),
+    ("longstring_pattern", ier.longstring_pattern_flag, "ier.longstring"),
 ]
 _IDS = [name for name, _, _ in _HELPERS]
+# Run-length indices score a respondent without observed responses 0, not NaN.
+_RUN_LENGTHS = {"longstring", "longstring_pattern"}
+_NAN_WHEN_MISSING = [helper for helper in _HELPERS if helper[0] not in _RUN_LENGTHS]
 
 
 def _responses(seed: int = 20261005) -> np.ndarray:
@@ -58,7 +65,11 @@ def test_default_percentile_flags_match_screen(name: str, helper: FlagHelper, mo
     assert 0 < np.count_nonzero(flags) < len(data)
 
 
-@pytest.mark.parametrize(("name", "helper", "module"), _HELPERS, ids=_IDS)
+@pytest.mark.parametrize(
+    ("name", "helper", "module"),
+    _NAN_WHEN_MISSING,
+    ids=[name for name, _, _ in _NAN_WHEN_MISSING],
+)
 def test_fixed_thresholds_include_ties_and_skip_unavailable_scores(
     name: str, helper: FlagHelper, module: str
 ) -> None:
@@ -98,8 +109,33 @@ def test_fixed_thresholds_include_ties_and_skip_unavailable_scores(
             {"scale_min": 1, "scale_max": 6, "tolerance": 0.5},
             lambda x: ier.midpoint_responding(x, scale_min=1, scale_max=6, tolerance=0.5),
         ),
+        (
+            ier.irv_flag,
+            {"na_rm": False, "split": True, "split_points": [0, 4, 12]},
+            lambda x: ier.irv(x, na_rm=False, split=True, split_points=[0, 4, 12]),
+        ),
+        (
+            ier.irv_flag,
+            {"split": True, "num_split": 3},
+            lambda x: ier.irv(x, split=True, num_split=3),
+        ),
+        (
+            ier.longstring_flag,
+            {"avg": True},
+            lambda x: ier.longstring_scores(x, avg=True),
+        ),
+        (
+            ier.longstring_pattern_flag,
+            {"max_pattern_length": 3},
+            lambda x: ier.longstring_pattern(x, max_pattern_length=3),
+        ),
+        (
+            ier.evenodd_flag,
+            {"factors": [4, 4, 4], "method": "halves"},
+            lambda x: ier.evenodd(x, [4, 4, 4], method="halves"),
+        ),
     ],
-    ids=_IDS,
+    ids=[*_IDS[:5], "irv-split-points", "irv-num-split", "avgstr", "longstring_pattern", "evenodd"],
 )
 def test_scorer_options_pass_through(
     helper: FlagHelper, keywords: dict[str, Any], scorer: Callable[[np.ndarray], np.ndarray]
@@ -183,3 +219,77 @@ def test_new_helpers_and_psychsyn_tools_are_exported() -> None:
     assert ier.psychsyn_critval is psychsyn_critval
     assert ier.psychsyn_summary is psychsyn_summary
     assert all(callable(getattr(ier, name)) for name in names)
+
+
+def test_irv_threshold_includes_tied_straightliners() -> None:
+    data = _responses()
+    scores, flags = ier.irv_flag(data, threshold=0.0)
+    # Rows 20-24 straight-line, so their IRV equals the cutoff exactly.
+    np.testing.assert_array_equal(scores[20:25], 0.0)
+    np.testing.assert_array_equal(flags, scores <= 0.0)
+    assert flags[20:25].all()
+    split_scores = ier.irv(data, split=True, split_points=[0, 4, 12])
+    assert not np.array_equal(split_scores, ier.irv(data, na_rm=False))
+
+
+def test_run_length_thresholds_include_ties_and_score_empty_rows_zero() -> None:
+    data = _responses()
+    data[0] = np.nan
+    for helper in (ier.longstring_flag, ier.longstring_pattern_flag):
+        scores, flags = helper(data, threshold=4)
+        assert scores[0] == 0 and not flags[0]
+        np.testing.assert_array_equal(flags, scores >= 4)
+
+
+@pytest.mark.parametrize(
+    ("name", "helper", "options"),
+    [
+        ("avgstr", partial(ier.longstring_flag, avg=True), IndexOptions()),
+        (
+            "evenodd",
+            partial(ier.evenodd_flag, factors=[6, 6]),
+            IndexOptions(evenodd_factors=[6, 6]),
+        ),
+        (
+            "evenodd",
+            # Six factors keep the 5th percentile above the tied -1 clamp.
+            partial(ier.evenodd_flag, factors=[2] * 6, method="halves"),
+            IndexOptions(evenodd_factors=[2] * 6, evenodd_method="halves"),
+        ),
+    ],
+    ids=["avgstr", "evenodd-item-pairs", "evenodd-halves"],
+)
+def test_configured_helpers_match_screen(
+    name: str, helper: FlagHelper, options: IndexOptions
+) -> None:
+    data = _responses()
+    scores, flags = helper(data)
+    result = screen(data, indices=[name], options=options)
+    np.testing.assert_array_equal(scores, result["scores"][name])
+    np.testing.assert_array_equal(flags, result["flags"][name])
+    assert 0 < np.count_nonzero(flags) < len(data)
+    assert INDEX_REGISTRY[name].flag_direction == ("high" if name == "avgstr" else "low")
+
+
+def test_evenodd_flag_skips_unavailable_halves() -> None:
+    # Straight-lined half means do not vary, so classic even-odd is unavailable.
+    data = _responses()
+    scores, flags = ier.evenodd_flag(data, [3, 3, 3, 3], threshold=1.0, method="halves")
+    assert np.isnan(scores[20:25]).all() and not flags[20:25].any()
+    np.testing.assert_array_equal(flags, scores <= 1.0)
+
+
+def test_every_registry_index_has_a_standalone_flag() -> None:
+    # mahad(flag=True) applies the chi-squared, IQR, or z-score outlier rules instead.
+    helpers = {
+        "avgstr": "longstring_flag",
+        "mahad": None,
+        "missing_rate": "missing_rate_flag",
+        "midpoint": "midpoint_responding_flag",
+        "u3poly_fit": "u3poly_flag",
+    }
+    for name in INDEX_REGISTRY:
+        helper = helpers.get(name, f"{name}_flag")
+        if helper is not None:
+            assert helper in ier.__all__, name
+            assert callable(getattr(ier, helper))
