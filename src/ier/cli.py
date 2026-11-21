@@ -826,11 +826,30 @@ def _add_shared_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     group.add_argument(
+        "--autocorrelation-min-lag",
+        type=_integer_at_least(1),
+        default=_INDEX_DEFAULTS.autocorrelation_min_lag,
+        metavar="N",
+        help=(
+            "Smallest lag for the autocorrelation index, at least 1; raise it to skip "
+            "short lags such as adjacent-item agreement (default: %(default)s)"
+        ),
+    )
+    group.add_argument(
         "--autocorrelation-statistic",
         choices=["max_abs", "sum_abs"],
         default=_INDEX_DEFAULTS.autocorrelation_statistic,
         help=(
             "Score the largest or the summed absolute lag autocorrelation (default: %(default)s)"
+        ),
+    )
+    group.add_argument(
+        "--lz-model",
+        choices=["1pl", "2pl"],
+        default=_INDEX_DEFAULTS.lz_model,
+        help=(
+            "Item response model for the lz index: '1pl' (Rasch) fixes every "
+            "discrimination at 1; '2pl' estimates them (default: %(default)s)"
         ),
     )
     group.add_argument(

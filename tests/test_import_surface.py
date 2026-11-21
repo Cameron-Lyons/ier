@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 
 import pytest
 
@@ -194,3 +195,10 @@ def test_version_option_output_and_help_are_unchanged() -> None:
     assert _run_python("-m", "ier.cli", "--version") == f"ier {expected}\n"
     help_text = _run_python("-m", "ier.cli", "--help")
     assert re.search(r"^  --version +show program's version number and exit$", help_text, re.M)
+
+
+def test_api_reference_documents_every_public_name_once() -> None:
+    reference = Path(__file__).resolve().parents[1] / "docs" / "api.md"
+    members = re.findall(r"^ {8}- (\w+)$", reference.read_text(encoding="utf-8"), re.M)
+    assert len(members) == len(set(members))
+    assert set(members) == set(ier.__all__)

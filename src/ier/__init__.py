@@ -17,14 +17,18 @@ from .composite import composite_scores as composite_scores
 from .composite import composite_scores_summary as composite_scores_summary
 from .composite import composite_summary as composite_summary
 from .evenodd import evenodd as evenodd
+from .evenodd import evenodd_flag as evenodd_flag
 from .guttman import guttman as guttman
 from .guttman import guttman_flag as guttman_flag
 from .infrequency import infrequency as infrequency
 from .infrequency import infrequency_flag as infrequency_flag
 from .irv import irv as irv
+from .irv import irv_flag as irv_flag
 from .keying import reverse_score as reverse_score
 from .longstring import longstring as longstring
+from .longstring import longstring_flag as longstring_flag
 from .longstring import longstring_pattern as longstring_pattern
+from .longstring import longstring_pattern_flag as longstring_pattern_flag
 from .longstring import longstring_scores as longstring_scores
 from .lz import lz as lz
 from .lz import lz_flag as lz_flag
@@ -144,6 +148,7 @@ __all__ = [
     "CompositeSummary",
     "composite_table",
     "evenodd",
+    "evenodd_flag",
     "EvenOddMethod",
     "FlagDirection",
     "FlagMode",
@@ -173,8 +178,11 @@ __all__ = [
     "IntArray",
     "ItemCorrelationMode",
     "irv",
+    "irv_flag",
     "longstring",
+    "longstring_flag",
     "longstring_pattern",
+    "longstring_pattern_flag",
     "longstring_scores",
     "load_score_archive",
     "load_response_time_archive",

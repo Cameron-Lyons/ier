@@ -24,7 +24,9 @@ For a comprehensive methods review, see
   diligence items with one expected answer or inclusive acceptable ranges
 - Response times: row summaries, consistency, Gaussian mixtures, and item-level
   response time effort with normative NT10 thresholds
-- `*_flag()` helpers for every index, plus `reverse_score()` for reverse-keyed items
+- `*_flag()` helpers for every index whose defaults reproduce `screen()`, plus
+  `reverse_score()` for reverse-keyed items (`mahad(flag=True)` applies
+  chi-squared, IQR, or z-score outlier cutoffs instead)
 
 **Screening and composites**
 
@@ -91,7 +93,7 @@ compatibility alias.
 
 ```python
 import numpy as np
-from ier import IndexOptions, composite, composite_probability, irv, screen
+from ier import IndexOptions, composite, composite_probability, irv, irv_flag, screen
 
 data = np.array([
     [1, 2, 3, 4, 5, 4],
@@ -101,6 +103,10 @@ data = np.array([
 ], dtype=float)
 
 print("IRV:", irv(data))
+
+# Standalone helpers return (scores, flags); fixed cutoffs include ties.
+scores, straightlined = irv_flag(data, threshold=0.5)
+print("Straightlined:", straightlined)
 
 result = screen(data, options=IndexOptions(scale_min=1, scale_max=5))
 print("Indices:", result["indices_used"])

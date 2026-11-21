@@ -632,3 +632,30 @@ def test_person_fit_matches_scalar_item_calibration(
         actual, actual_flags = lz_flag(data, na_rm=na_rm)
     np.testing.assert_allclose(actual, expected, atol=1e-12, rtol=1e-12)
     np.testing.assert_array_equal(actual_flags, expected_flags)
+
+
+def test_lz_model_reaches_screen_composites_and_the_cli() -> None:
+    from ier import IndexOptions, composite_summary, screen
+    from ier.cli import _build_parser, _options_from_args
+
+    rng = np.random.default_rng(1126)
+    data = (rng.random((120, 12)) < np.linspace(0.2, 0.8, 12)).astype(float)
+    data[:10] = rng.integers(0, 2, size=(10, 12))
+    rasch = lz(data, model="1pl")
+    assert not np.allclose(rasch, lz(data), equal_nan=True)
+    assert IndexOptions().lz_model == "2pl"
+
+    options = IndexOptions(lz_model="1pl")
+    np.testing.assert_array_equal(screen(data, indices=["lz"])["scores"]["lz"], lz(data))
+    result = screen(data, indices=["lz"], options=options)
+    np.testing.assert_array_equal(result["scores"]["lz"], rasch)
+    details = composite_summary(data, indices=["lz", "irv"], options=options, standardize=False)
+    np.testing.assert_array_equal(details["indices"]["lz"], rasch)
+
+    failed = screen(data, indices=["lz"], options=IndexOptions(lz_model="3pl"))  # type: ignore[arg-type]
+    assert failed["errors"] == {"lz": "model must be '1pl' or '2pl'"}
+
+    args = _build_parser().parse_args(["screen", "responses.csv", "--lz-model", "1pl"])
+    assert _options_from_args(args) == options
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["screen", "responses.csv", "--lz-model", "3pl"])

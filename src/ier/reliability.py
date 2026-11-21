@@ -7,13 +7,14 @@ responses using split-half or bootstrap approaches.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from ier._correlation import row_correlations, selected_row_correlations
 from ier._flagging import validate_threshold
-from ier._row_statistics import row_slices
+from ier._row_statistics import _ROW_BATCH_ELEMENTS, row_slices
 from ier._scale_halves import (
     HalfMeans,
     constant_rows,
@@ -171,6 +172,17 @@ def individual_reliability(
     return result
 
 
+# Float64 represents every integer up to this magnitude, so sums below it are exact.
+_EXACT_INTEGER_LIMIT = 2**53
+# Matrix products of at most this many multiply-adds stay on one OpenBLAS thread
+# (its default threshold). Threading these thin products gains nothing and can
+# stall when the cores are busy, as when screen() scores indices concurrently.
+_SINGLE_THREAD_PRODUCT = 2**18
+
+# One random split: each factor's first-half and second-half column positions.
+_Split = tuple[list[np.ndarray], list[np.ndarray]]
+
+
 def _half_scale_reliability(
     x: np.ndarray,
     factor_sizes: list[int],
@@ -180,7 +192,8 @@ def _half_scale_reliability(
     """Average across-scale correlations of random within-scale half means."""
     bounds = factor_bounds(factor_sizes)
     n_factors = len(bounds)
-    splits: list[list[tuple[np.ndarray, np.ndarray]]] = []
+    # Draw every split first; the random stream is the same for either scorer.
+    splits: list[_Split] = []
     for _ in range(n_splits):
         first_groups: list[np.ndarray] = []
         second_groups: list[np.ndarray] = []
@@ -189,14 +202,24 @@ def _half_scale_reliability(
             order = start + permutation(stop - start)
             first_groups.append(order[:half])
             second_groups.append(order[half : 2 * half])
-        splits.append(group_batches(first_groups + second_groups))
+        splits.append((first_groups, second_groups))
+
+    scorer: Callable[[np.ndarray, np.ndarray, np.ndarray], None]
+    half_sizes = [(stop - start) // 2 for start, stop in bounds]
+    scale = _exact_half_scale(x, half_sizes)
+    if scale is not None:
+        scorer = _ExactSplitCorrelations(splits, bounds, scale)
+        row_columns = 2 * x.shape[1]
+    else:
+        scorer = _RoundedSplitCorrelations(splits, n_factors)
+        # Budget the source rows, their split halves, both half-mean matrices, and
+        # the correlation workspace.
+        row_columns = 2 * x.shape[1] + 4 * n_factors
 
     n_persons = len(x)
     correlation_sum = np.zeros(n_persons)
     valid_split_counts = np.zeros(n_persons, dtype=np.intp)
-    # Budget the source rows, their split halves, both half-mean matrices, and the
-    # correlation workspace.
-    for start, stop in row_slices(n_persons, 2 * x.shape[1] + 4 * n_factors):
+    for start, stop in row_slices(n_persons, row_columns):
         block = x[start:stop]
         missing = np.isnan(block)
         # Constant profiles have equal correctly rounded half means in every split, so
@@ -212,15 +235,7 @@ def _half_scale_reliability(
             positions = start + active
         block_sum = correlation_sum[positions]
         block_counts = valid_split_counts[positions]
-        half_means = HalfMeans(block)
-        for batches in splits:
-            means = half_means(batches, 2 * n_factors)
-            split_corr = row_correlations(
-                means[:, :n_factors], means[:, n_factors:], zero_variance=np.nan
-            )
-            usable = ~np.isnan(split_corr)
-            np.add(block_sum, split_corr, out=block_sum, where=usable)
-            block_counts += usable
+        scorer(block, block_sum, block_counts)
         correlation_sum[positions] = block_sum
         valid_split_counts[positions] = block_counts
 
@@ -231,6 +246,179 @@ def _half_scale_reliability(
         where=valid_split_counts > 0,
     )
     return spearman_brown(reliability)
+
+
+class _RoundedSplitCorrelations:
+    """Correlate correctly rounded half means, one split at a time."""
+
+    def __init__(self, splits: Sequence[_Split], n_factors: int) -> None:
+        self._batches = [group_batches(first + second) for first, second in splits]
+        self._n_factors = n_factors
+
+    def __call__(self, block: np.ndarray, block_sum: np.ndarray, block_counts: np.ndarray) -> None:
+        """Add each usable split correlation of ``block`` rows to the running totals."""
+        n_factors = self._n_factors
+        half_means = HalfMeans(block)
+        for batches in self._batches:
+            means = half_means(batches, 2 * n_factors)
+            split_corr = row_correlations(
+                means[:, :n_factors], means[:, n_factors:], zero_variance=np.nan
+            )
+            usable = ~np.isnan(split_corr)
+            np.add(block_sum, split_corr, out=block_sum, where=usable)
+            block_counts += usable
+
+
+def _exact_half_scale(x: np.ndarray, half_sizes: Sequence[int]) -> int | None:
+    """Return a scale that makes every half mean of ``x`` an exact integer, or None.
+
+    Half means of integer responses are fractions whose denominators are observed
+    half sizes, so multiplying them by their least common multiple ``L`` gives
+    integers. Correlations do not depend on that common scale, and with ``n``
+    contributing factors their moments ``n * sum(a * b) - sum(a) * sum(b)`` are
+    exact when ``(n * L * max|response|)**2`` fits in a float64 integer. Complete
+    data use the half sizes themselves; missing responses can leave any count from
+    1 to the half size. The scale depends only on the whole matrix, never on how
+    its rows are batched.
+    """
+    contributing = [size for size in half_sizes if size > 0]
+    if len(contributing) < 2 or x.size == 0:
+        return None
+    largest = 0
+    has_missing = False
+    if x.dtype.kind == "b":
+        largest = int(np.any(x))
+    elif x.dtype.kind in "iu":
+        largest = max(abs(int(np.min(x))), abs(int(np.max(x))))
+    else:  # Validated responses are otherwise floating point.
+        for start, stop in row_slices(len(x), 2 * x.shape[1]):
+            block = x[start:stop]
+            missing = np.isnan(block)
+            # Fractional or infinite responses need the correctly rounded means.
+            if np.isinf(block).any() or not np.all(np.trunc(block) == block, where=~missing):
+                return None
+            has_missing = has_missing or bool(missing.any())
+            # NaN only when every response in the block is missing.
+            magnitude = float(np.fmax.reduce(np.abs(block), axis=None))
+            if not math.isnan(magnitude):
+                largest = max(largest, int(magnitude))
+    scale = math.lcm(*(range(1, max(contributing) + 1) if has_missing else contributing))
+    if (len(contributing) * scale * largest) ** 2 > _EXACT_INTEGER_LIMIT:
+        return None
+    return scale
+
+
+class _ExactSplitCorrelations:
+    """Correlate scaled integer half means of many splits with exact moments.
+
+    Each half total is one row of a 0/1 selection matrix applied to the factor's
+    responses, computed for many splits by one matrix product per factor. Every
+    partial sum is an integer below 2**53, so the totals, and the moments built from
+    them, are exact; only the final square roots and quotient round. Half means
+    equal exactly when their integers do, so splits whose half means do not vary are
+    unusable, and two available factors correlate at exactly -1 or 1, as in the
+    rounded scorer.
+    """
+
+    def __init__(
+        self,
+        splits: Sequence[_Split],
+        bounds: Sequence[tuple[int, int]],
+        scale: int,
+    ) -> None:
+        self._n_splits = len(splits)
+        self._scale = float(scale)
+        # Per contributing factor: its columns, its (split, half) by item 0/1
+        # selections, and those selections weighted by the scale over the half size,
+        # which give complete halves their scaled means directly.
+        self._factors: list[tuple[slice, np.ndarray, np.ndarray]] = []
+        for factor, (start, stop) in enumerate(bounds):
+            half_size = (stop - start) // 2
+            if half_size == 0:
+                continue  # A one-item scale has no halves in any split.
+            selection = np.zeros((self._n_splits, 2, stop - start))
+            for split, halves in enumerate(splits):
+                for half, groups in enumerate(halves):
+                    selection[split, half, groups[factor] - start] = 1.0
+            weighted = selection * float(scale // half_size)
+            self._factors.append((slice(start, stop), selection, weighted))
+
+    def _totals(
+        self, responses: np.ndarray, first: int, last: int, *, weighted: bool
+    ) -> np.ndarray:
+        """Sum item-major ``responses`` over each half of splits ``first`` to ``last``.
+
+        Returns factor-major totals shaped (factor, split, half, respondent).
+        """
+        n_rows = responses.shape[1]
+        totals = np.empty((len(self._factors), last - first, 2, n_rows))
+        for position, (columns, selection, scaled) in enumerate(self._factors):
+            chosen = (scaled if weighted else selection)[first:last]
+            chosen = chosen.reshape(-1, chosen.shape[-1])
+            factor_totals = totals[position].reshape(-1, n_rows)
+            step = max(1, _SINGLE_THREAD_PRODUCT // chosen.size)
+            for start in range(0, n_rows, step):
+                rows = slice(start, start + step)
+                np.matmul(chosen, responses[columns, rows], out=factor_totals[:, rows])
+        return totals
+
+    def __call__(self, block: np.ndarray, block_sum: np.ndarray, block_counts: np.ndarray) -> None:
+        """Add each usable split correlation of ``block`` rows to the running totals."""
+        n_rows = len(block)
+        n_factors = len(self._factors)
+        # Item-major rows make each factor's responses one contiguous matrix.
+        values = np.array(block.T, dtype=float, order="C")
+        missing = np.isnan(values)
+        observed: np.ndarray | None = None
+        if missing.any():
+            np.copyto(values, 0.0, where=missing)
+            observed = np.logical_not(missing, out=missing).astype(float)
+        del missing
+        chunk = max(1, _ROW_BATCH_ELEMENTS // (2 * n_factors * n_rows))
+        for first in range(0, self._n_splits, chunk):
+            last = min(first + chunk, self._n_splits)
+            # Every response of a complete block is observed, so weighted totals
+            # are already the scaled half means.
+            scaled = self._totals(values, first, last, weighted=observed is None)
+            counts: np.ndarray | int = n_factors
+            if observed is not None:
+                sizes = self._totals(observed, first, last, weighted=False)
+                # Each observed size divides the scale, so total * scale / size is an
+                # exact integer; empty halves give 0 / 0 and are cleared below.
+                scaled *= self._scale
+                with np.errstate(invalid="ignore"):
+                    scaled /= sizes
+                paired = sizes[:, :, 0] > 0
+                paired &= sizes[:, :, 1] > 0
+                np.copyto(scaled, 0.0, where=~paired[:, :, np.newaxis])
+                counts = np.count_nonzero(paired, axis=0)
+            correlations, usable = _exact_correlations(scaled[:, :, 0], scaled[:, :, 1], counts)
+            # Accumulate in split order, as the rounded scorer does.
+            for split_correlations, split_usable in zip(correlations, usable, strict=True):
+                np.add(block_sum, split_correlations, out=block_sum, where=split_usable)
+                block_counts += split_usable
+
+
+def _exact_correlations(
+    left: np.ndarray, right: np.ndarray, counts: np.ndarray | int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Correlate integer-valued vectors along their first axis from exact moments.
+
+    Unavailable pairs hold zeros and are excluded by ``counts``. Returns the
+    correlations and a mask of the defined ones; the rest are NaN.
+    """
+    left_total = left.sum(axis=0)
+    right_total = right.sum(axis=0)
+    left_spread = counts * np.einsum("f...,f...->...", left, left) - left_total * left_total
+    right_spread = counts * np.einsum("f...,f...->...", right, right) - right_total * right_total
+    covariance = counts * np.einsum("f...,f...->...", left, right) - left_total * right_total
+    usable = (left_spread > 0) & (right_spread > 0)
+    correlations = np.divide(
+        covariance, np.sqrt(left_spread), out=np.full(usable.shape, np.nan), where=usable
+    )
+    np.divide(correlations, np.sqrt(right_spread), out=correlations, where=usable)
+    np.clip(correlations, -1.0, 1.0, out=correlations)
+    return correlations, usable
 
 
 def individual_reliability_flag(

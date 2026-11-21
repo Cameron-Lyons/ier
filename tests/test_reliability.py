@@ -19,6 +19,7 @@ from ier import (
     person_total,
     screen,
 )
+from ier import reliability as reliability_module
 from ier._correlation import selected_row_correlations
 from ier.cli import main
 
@@ -495,3 +496,119 @@ def test_registry_and_cli_pass_reliability_factors(tmp_path: Path) -> None:
     assert code == 0
     scores = json.loads(output.read_text(encoding="utf-8"))["scores"]["individual_reliability"]
     np.testing.assert_allclose(np.array(scores, dtype=float), expected, equal_nan=True)
+
+
+def _rounded_reliability(data: np.ndarray, factors: list[int], seed: int) -> np.ndarray:
+    """Score with the correctly rounded half means, bypassing the exact integer scorer."""
+    with patch("ier.reliability._exact_half_scale", return_value=None):
+        return individual_reliability(data, n_splits=40, random_seed=seed, factors=factors)
+
+
+def _survey(seed: int, shape: tuple[int, int], low: int, high: int, missing: float) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    latent = rng.normal(size=(shape[0], 1))
+    middle = (low + high) / 2
+    spread = (high - low) / 4
+    data = np.clip(np.rint(middle + spread * (latent + rng.normal(size=shape))), low, high)
+    data[: shape[0] // 5] = rng.integers(low, high + 1, size=(shape[0] // 5, shape[1]))
+    data[rng.random(shape) < missing] = np.nan
+    data[1] = low  # constant
+    data[2] = np.nan  # empty
+    data[3, ::2] = np.nan  # every second item
+    return data
+
+
+@pytest.mark.parametrize("missing", [0.0, 0.02, 0.3])
+@pytest.mark.parametrize(
+    ("factors", "low", "high"),
+    [
+        ([10, 10, 10, 10], 1, 5),
+        ([2, 2, 2, 2, 2, 2], 1, 7),
+        ([7, 4, 9], -3, 3),
+        ([1, 6, 5], 0, 100),
+        ([3, 3], 1, 5),
+    ],
+    ids=["four-scales", "pairs", "signed-odd", "one-item-scale", "two-scales"],
+)
+def test_exact_integer_scorer_matches_rounded_half_means(
+    factors: list[int], low: int, high: int, missing: float
+) -> None:
+    data = _survey(sum(factors) + int(missing * 100), (240, sum(factors)), low, high, missing)
+    scales: list[int | None] = []
+    exact_half_scale = reliability_module._exact_half_scale
+
+    def recorded_scale(x: np.ndarray, half_sizes: list[int]) -> int | None:
+        scales.append(exact_half_scale(x, half_sizes))
+        return scales[-1]
+
+    with patch("ier.reliability._exact_half_scale", side_effect=recorded_scale):
+        exact = individual_reliability(data, n_splits=40, random_seed=8, factors=factors)
+    assert len(scales) == 1 and scales[0] is not None  # the exact scorer ran
+    expected = _rounded_reliability(data, factors, seed=8)
+    np.testing.assert_array_equal(np.isnan(exact), np.isnan(expected))
+    np.testing.assert_allclose(exact, expected, rtol=1e-13, atol=1e-13)
+    assert np.isnan(exact[1:3]).all()
+
+
+def test_exact_correlations_of_two_scales_are_exactly_signed() -> None:
+    rng = np.random.default_rng(14)
+    left = rng.integers(-9, 10, size=(2, 3, 500)).astype(float) * 2520
+    right = rng.integers(-9, 10, size=(2, 3, 500)).astype(float) * 2520
+    correlations, usable = reliability_module._exact_correlations(left, right, 2)
+    tied = (left[0] == left[1]) | (right[0] == right[1])
+    np.testing.assert_array_equal(usable, ~tied)
+    expected = np.sign(left[1] - left[0]) * np.sign(right[1] - right[0])
+    np.testing.assert_array_equal(correlations[usable], expected[usable])
+    assert np.isnan(correlations[tied]).all()
+
+
+@pytest.mark.parametrize("dtype", [np.int8, np.uint16, np.int64, np.float32, bool])
+def test_exact_integer_scorer_accepts_integer_like_dtypes(dtype: type) -> None:
+    data = np.nan_to_num(_survey(5, (120, 12), 0, 1 if dtype is bool else 6, 0.0), nan=1.0)
+    data[2] = 0
+    typed = data.astype(dtype)
+    exact = individual_reliability(typed, n_splits=40, random_seed=3, factors=[4, 4, 4])
+    expected = _rounded_reliability(typed, [4, 4, 4], seed=3)
+    np.testing.assert_array_equal(np.isnan(exact), np.isnan(expected))
+    np.testing.assert_allclose(exact, expected, rtol=1e-13, atol=1e-13)
+
+
+@pytest.mark.parametrize(
+    ("change", "half_sizes"),
+    [
+        (lambda data: data + 0.5, [5, 5]),
+        (lambda data: np.where(data == 3, np.inf, data), [5, 5]),
+        (lambda data: data * 2.0**40, [5, 5]),
+        (lambda data: data, [5, 0]),
+        (lambda data: np.nan_to_num(data).astype(np.int64) * 2**60, [5, 5]),
+    ],
+    ids=["fractional", "infinite", "too-large", "one-scale", "int64-extremes"],
+)
+def test_exact_scale_falls_back_for_unsafe_responses(
+    change: Callable[[np.ndarray], np.ndarray], half_sizes: list[int]
+) -> None:
+    data = change(_survey(9, (60, 20), 1, 5, 0.1))
+    assert reliability_module._exact_half_scale(data, half_sizes) is None
+
+
+def test_exact_scale_covers_every_possible_missing_half_size() -> None:
+    complete = np.ones((4, 20))
+    assert reliability_module._exact_half_scale(complete, [4, 6, 0]) == 12
+    complete[0, 0] = np.nan
+    assert reliability_module._exact_half_scale(complete, [4, 6, 0]) == 60
+
+
+def test_exact_scores_do_not_depend_on_row_batches() -> None:
+    data = _survey(21, (300, 24), 1, 5, 0.05)
+    data[100:150] = np.nan_to_num(data[100:150], nan=3.0)  # a complete batch
+    data[200:260] = np.nan  # an empty batch
+    expected = individual_reliability(data, n_splits=30, random_seed=4, factors=[8, 8, 8])
+    with (
+        patch("ier.reliability._ROW_BATCH_ELEMENTS", 997),
+        patch("ier._row_statistics._ROW_BATCH_ELEMENTS", 997),
+    ):
+        batched = individual_reliability(data, n_splits=30, random_seed=4, factors=[8, 8, 8])
+    np.testing.assert_array_equal(batched, expected)
+    with patch("ier.reliability._SINGLE_THREAD_PRODUCT", 50):
+        stepped = individual_reliability(data, n_splits=30, random_seed=4, factors=[8, 8, 8])
+    np.testing.assert_array_equal(stepped, expected)

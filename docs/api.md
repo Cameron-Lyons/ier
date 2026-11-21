@@ -4,14 +4,36 @@
     options:
       members:
         - AgreementKind
+        - BoolArray
+        - CombineMethod
+        - CompositeMethod
+        - CompositeSummary
         - EvenOddMethod
+        - FlagDirection
+        - FlagMode
+        - FloatArray
+        - IndexCatalog
+        - IndexErrorMap
+        - IndexFlagMap
+        - IndexMetadata
         - IndexOptions
+        - IndexPercentileMap
+        - IndexScoreMap
+        - IndexThresholdMap
+        - IndexThresholdSource
+        - IndexThresholdSourceMap
+        - InfrequencyMissingPolicy
+        - IntArray
         - ItemCorrelationMode
+        - MatrixLike
         - ResponseTimeArchive
         - ResponseTimeFlagDirection
         - ResponseTimeMetric
         - ScoreArchive
+        - ScoreArchiveResultType
         - ScreenArchive
+        - ScreenIndexSummary
+        - ScreenResult
         - __version__
         - index_catalog
         - load_score_archive
@@ -32,10 +54,14 @@
         - composite_table
         - index_agreement
         - irv
+        - irv_flag
         - longstring_scores
+        - longstring_flag
         - longstring
         - longstring_pattern
+        - longstring_pattern_flag
         - mahad
+        - mahad_qqplot
         - mahad_summary
         - psychsyn
         - psychant
@@ -46,6 +72,8 @@
         - person_total
         - person_total_flag
         - markov
+        - markov_flag
+        - markov_summary
         - autocorrelation
         - autocorrelation_flag
         - missing_rate
@@ -54,8 +82,11 @@
         - u3_poly_flag
         - midpoint_responding
         - midpoint_responding_flag
+        - response_pattern
         - acquiescence
+        - acquiescence_flag
         - guttman
+        - guttman_flag
         - gpoly
         - gpoly_flag
         - u3poly
@@ -63,12 +94,16 @@
         - ht
         - ht_flag
         - individual_reliability
+        - individual_reliability_flag
         - onset
+        - onset_flag
         - evenodd
+        - evenodd_flag
         - reverse_score
         - mad
         - mad_flag
         - lz
+        - lz_flag
         - semantic_syn
         - semantic_syn_flag
         - semantic_ant

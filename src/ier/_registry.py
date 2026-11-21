@@ -87,6 +87,8 @@ class IndexOptions:
     autocorrelation_statistic: Literal["max_abs", "sum_abs"] = "max_abs"
     reverse_keyed_items: list[int] | None = None
     person_fit_ncat: int | None = None
+    lz_model: Literal["1pl", "2pl"] = "2pl"
+    autocorrelation_min_lag: int = 1
 
 
 def resolve_index_options(options: IndexOptions | None = None) -> IndexOptions:
@@ -250,6 +252,7 @@ def _autocorrelation_scores(x: np.ndarray, options: IndexOptions) -> np.ndarray:
     return autocorrelation(
         x,
         max_lag=options.autocorrelation_max_lag,
+        min_lag=options.autocorrelation_min_lag,
         statistic=options.autocorrelation_statistic,
         na_rm=options.na_rm,
     )
@@ -414,7 +417,7 @@ INDEX_REGISTRY: dict[str, IndexSpec] = {
     ),
     "lz": IndexSpec(
         name="lz",
-        scorer=lambda x, options: lz(x, na_rm=options.na_rm),
+        scorer=lambda x, options: lz(x, model=options.lz_model, na_rm=options.na_rm),
         flag_direction="low",
         composite_multiplier=-1.0,
         # Item response models assume responses increase with one latent trait.

@@ -48,12 +48,12 @@ text, JSON, and CSV layouts.
 | `onset` | Carelessness onset item index | present | no | no | `onset_window_size`, `onset_min_items` |
 | `evenodd` | Even-odd consistency | low | no | yes | `evenodd_factors`, `evenodd_method` |
 | `mad` | Mean absolute paired difference | high | no | yes | MAD item lists / optional scale bounds |
-| `lz` | lz person-fit | low | no | yes | optional IRT params via direct API; overflow-safe logistic kernel |
+| `lz` | lz person-fit | low | no | yes | `lz_model` (`"1pl"` or `"2pl"`); item and person parameters via direct API |
 | `semantic_syn` | Predefined synonym consistency | low | no | yes | `semantic_item_pairs` |
 | `semantic_ant` | Predefined antonym consistency | low | no | yes | `semantic_item_pairs`, optional scale bounds |
 | `infrequency` | Failed attention / bogus items | high | no | yes | item indices, expected responses or acceptable ranges, missing policy |
 | `avgstr` | Mean length of identical-response runs | high | no | yes | — |
-| `autocorrelation` | Strongest lagged autocorrelation (cyclic patterns) | high | no | yes | `autocorrelation_max_lag`, `autocorrelation_statistic` |
+| `autocorrelation` | Strongest lagged autocorrelation (cyclic patterns) | high | no | yes | `autocorrelation_max_lag`, `autocorrelation_min_lag`, `autocorrelation_statistic` |
 | `gpoly` | Normalized polytomous Guttman errors over item steps (PerFit `Gnormed.poly`) | high | no | yes | optional `person_fit_ncat`, `scale_min` / `scale_max` |
 | `u3poly_fit` | Polytomous U3 person fit over item steps (PerFit `U3poly`) | high | no | yes | optional `person_fit_ncat`, `scale_min` / `scale_max` |
 | `ht` | Transposed scalability Ht for 0/1 items (PerFit `Ht`) | low | no | yes | dichotomous responses |
@@ -104,6 +104,12 @@ correlated across scales, valid correlations are averaged over resamples, and
 the Spearman–Brown correction `2r / (1 + r)` is applied and clamped below at -1.
 Each half mean is its exact mean rounded once, as in `evenodd`, so a split whose
 half means do not vary is unusable rather than scored from rounding noise.
+For integer-coded responses, the usual survey case, every half mean is scaled to
+an exact integer and many resamples are scored at once from exact moments, so
+only the final square roots and quotient round; this is two to five times
+faster. Fractional or very large responses, whose scaled moments would exceed
+2^53, use the correctly rounded half means instead, and both agree to within a
+few units in the last place.
 At least two scales are required, single-item scales contribute no halves, and
 respondents with fewer than two complete half-mean pairs in every resample
 receive `NaN`. This scale-aware form is recommended whenever the scale structure
@@ -215,10 +221,14 @@ Integer item discovery preserves small differences at large baselines. Person-to
 profiles retain variation between nearly identical integer item means, while
 Guttman scoring preserves exact integer difficulty rankings and response categories.
 
-`psychsyn_flag()`, `psychant_flag()`, `person_total_flag()`, `u3_poly_flag()`, and
+`irv_flag()`, `longstring_flag()` (`avg=True` for `avgstr`),
+`longstring_pattern_flag()`, `evenodd_flag()`, `psychsyn_flag()`,
+`psychant_flag()`, `person_total_flag()`, `u3_poly_flag()`, and
 `midpoint_responding_flag()` return `(scores, flags)` in each index's registry
-flag direction (low for `psychsyn` and `person_total`, high for `psychant` and
-the response-style indices). Attentive respondents give strongly negative
+flag direction (low for `irv`, `evenodd`, `psychsyn`, and `person_total`, high
+for the run-length indices, `psychant`, and the response-style indices).
+`mahad(..., flag=True)` applies the chi-squared, IQR, or z-score outlier rules
+instead of a sample percentile. Attentive respondents give strongly negative
 antonym correlations, so `psychant` flags scores near zero or above.
 Their default tail percentiles (5 for low, 95 for high) reproduce the per-index
 flags of `screen()` at its default `percentile=95`. Fixed thresholds include
@@ -338,10 +348,12 @@ the lag with the largest absolute correlation, with ties going to the smallest
 lag. Exact ties can differ by floating-point rounding, so correlations within a
 relative `2**-42` of 1 score exactly 1 and lags within that tolerance of the
 largest correlation count as tied: a perfect 1-2-3-4-5-4-3-2 zigzag reports lag
-4, not 8. Registry scoring uses `IndexOptions.autocorrelation_max_lag` and
+4, not 8. Registry scoring uses `IndexOptions.autocorrelation_max_lag`,
+`IndexOptions.autocorrelation_min_lag`, and
 `IndexOptions.autocorrelation_statistic`, and the CLI accepts
-`--autocorrelation-max-lag` (`none` for the R default) and
-`--autocorrelation-statistic`. `autocorrelation_flag()` flags the high tail.
+`--autocorrelation-max-lag` (`none` for the R default),
+`--autocorrelation-min-lag`, and `--autocorrelation-statistic`. A minimum lag
+above the maximum is a failure of the `autocorrelation` index only. `autocorrelation_flag()` flags the high tail.
 Window moments come from prefix sums of centered responses in bounded batches.
 Nearly constant windows are recomputed from their own centered responses, so
 very large offsets, tiny or huge response scales, and large integers keep
@@ -418,6 +430,14 @@ uniform random responders on 30 five-category items, normalized `gpoly`
 separated the groups with AUCs of 0.93–0.99, raw counts 0.97–0.99, and `u3poly`
 0.92–0.98. On 20 two-parameter logistic items, `ht` reached 0.98–1.00, beside
 0.98–1.00 for `lz`.
+
+`lz` dichotomizes polytomous responses at the observed midpoint and, without
+calibrated parameters, estimates item difficulties, discriminations, and person
+abilities from the same matrix. `IndexOptions.lz_model = "1pl"` (CLI
+`--lz-model 1pl`) fixes every discrimination at 1 for a Rasch-type model, which
+is steadier for short scales and small samples; the default `"2pl"` estimates
+them. Pass calibrated `difficulty`, `discrimination`, and `theta` vectors to
+`lz()` or `lz_flag()` directly.
 
 `u3_poly` is unrelated to PerFit's U3 despite its name: it is the proportion of
 extreme (endpoint) responses, a response-style index. Use `u3poly()` or the

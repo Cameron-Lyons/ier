@@ -5,6 +5,44 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `irv_flag()`, `longstring_flag()`, `longstring_pattern_flag()`, and
+  `evenodd_flag()` complete the standalone flag helpers: every registry index
+  now has one, with `longstring_flag(avg=True)` for `avgstr` and
+  `mahad(flag=True)` for distance outlier rules. Each returns `(scores, flags)`
+  in its registry flag direction, and its default percentile (5 for low, 95 for
+  high) reproduces `screen()`. Fixed thresholds include ties, percentile cutoffs
+  exclude them, and unavailable scores are never flagged.
+- `IndexOptions.lz_model` (`"2pl"` by default, or `"1pl"`) and `--lz-model`
+  choose the item response model of the registry `lz` index.
+- `IndexOptions.autocorrelation_min_lag` (default 1) and
+  `--autocorrelation-min-lag` skip short lags in the registry `autocorrelation`
+  index. A minimum above the maximum lag fails that index only.
+
+### Changed
+
+- Scale-aware `individual_reliability(..., factors=...)` scores integer-coded
+  responses two to five times faster. Half totals of many resamples come from
+  one exact matrix product per scale, half means are scaled to exact integers,
+  and correlations are formed from exact moments, so only the final square roots
+  and quotient round. Scores agree with the correctly rounded half-mean scorer,
+  still used for fractional or very large responses, to within a few units in
+  the last place, and the random split sequence is unchanged. On 20,000
+  respondents by 40 items in four scales with 100 splits, scoring took about
+  55 ms instead of 270 ms with complete responses and 100 ms instead of 310 ms
+  with 1% missing.
+
+### Documentation
+
+- The API reference now documents every public name, including
+  `acquiescence_flag()`, `guttman_flag()`, `individual_reliability_flag()`,
+  `lz_flag()`, `markov_flag()`, `markov_summary()`, `mahad_qqplot()`,
+  `onset_flag()`, `response_pattern()`, and the result types, and a test keeps
+  it in step with `ier.__all__`.
+
 ## [1.13.3] - 2026-10-19
 
 ### Fixed
