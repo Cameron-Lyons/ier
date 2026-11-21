@@ -143,7 +143,7 @@ def u3_poly(
     Raises:
     - ValueError: If inputs are invalid
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 5, 5, 3], [3, 3, 3, 3, 3], [1, 5, 1, 5, 1]]
         >>> u3_poly(data, scale_min=1, scale_max=5).tolist()  # Third person is most extreme
         [0.8, 0.0, 1.0]
@@ -186,7 +186,7 @@ def midpoint_responding(
     Raises:
     - ValueError: If scale bounds are inverted or tolerance is negative or nonfinite.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 5, 4, 3], [3, 3, 3, 3, 3], [1, 5, 1, 5, 1]]
         >>> midpoint_responding(data, scale_min=1, scale_max=5).tolist()  # Second is all midpoint
         [0.2, 1.0, 0.0]
@@ -233,7 +233,7 @@ def u3_poly_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 5, 5, 3], [3, 3, 3, 3, 3], [1, 5, 1, 5, 1]]
         >>> scores, flags = u3_poly_flag(data, 1, 5, threshold=0.8)
         >>> flags.tolist()
@@ -275,7 +275,7 @@ def midpoint_responding_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 5, 4, 3], [3, 3, 3, 3, 3], [1, 5, 1, 5, 1]]
         >>> scores, flags = midpoint_responding_flag(data, 1, 5, threshold=0.5)
         >>> flags.tolist()
@@ -311,7 +311,7 @@ def response_pattern(
         - "acquiescence": mean response (higher = more agreement bias)
         - "variability": response variability (SD)
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 5, 4, 3], [3, 3, 3, 3, 3], [5, 5, 5, 5, 5]]
         >>> patterns = response_pattern(data, scale_min=1, scale_max=5)
     """

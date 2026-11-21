@@ -118,7 +118,7 @@ def evenodd(
                   is empty, if method is unknown, or if ``method="halves"`` receives
                   fewer than two factors.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 3, 4, 5, 6], [2, 3, 4, 5, 6, 7]]
         >>> factors = [6]
         >>> scores = evenodd(data, factors)
@@ -202,7 +202,7 @@ def evenodd_flag(
       Unavailable (``NaN``) scores, such as straight-lined profiles with
       ``method="halves"``, are never flagged.
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 3, 3, 5, 5], [1, 5, 5, 1, 2, 4], [2, 2, 4, 4, 3, 3]]
         >>> scores, flags = evenodd_flag(data, [2, 2, 2], threshold=0.0, method="halves")
         >>> np.round(scores, 2).tolist(), flags.tolist()

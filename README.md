@@ -24,9 +24,11 @@ For a comprehensive methods review, see
   diligence items with one expected answer or inclusive acceptable ranges
 - Response times: row summaries, consistency, Gaussian mixtures, and item-level
   response time effort with normative NT10 thresholds
-- `*_flag()` helpers for every index whose defaults reproduce `screen()`, plus
-  `reverse_score()` for reverse-keyed items (`mahad(flag=True)` applies
-  chi-squared, IQR, or z-score outlier cutoffs instead)
+- `*_flag()` helpers for every index, plus `reverse_score()` for reverse-keyed
+  items; percentile-based helpers default to the tails `screen()` flags, while
+  `guttman_flag()`, `lz_flag()`, `individual_reliability_flag()`, and
+  `infrequency_flag()` apply fixed conventional cutoffs and `mahad(flag=True)`
+  chi-squared, IQR, or z-score outlier rules
 
 **Screening and composites**
 

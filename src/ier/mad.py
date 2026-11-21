@@ -63,7 +63,7 @@ def mad(
     - ValueError: If inputs are invalid, paired lists differ in length, or item
                   indices are not integers within the matrix bounds.
 
-    Example:
+    Examples:
         >>> data = [[5, 1, 4, 2], [3, 3, 3, 3], [5, 2, 4, 1]]
         >>> mad_scores = mad(data, positive_items=[0, 2], negative_items=[1, 3], scale_max=5)
         >>> mad_scores.tolist()
@@ -160,7 +160,7 @@ def mad_flag(
     Returns:
     - Tuple of (mad_scores, flags) where flags is True for suspected careless responders.
 
-    Example:
+    Examples:
         >>> data = [[5, 1, 4, 2], [5, 5, 5, 5], [5, 2, 4, 1]]
         >>> scores, flags = mad_flag(data, positive_items=[0, 2], negative_items=[1, 3])
         >>> flags.tolist()

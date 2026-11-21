@@ -93,7 +93,7 @@ def longstring(
     - TypeError: If input is not a string or contains non-string values
     - ValueError: If input is empty or a numpy array is not one-dimensional
 
-    Example:
+    Examples:
         >>> longstring("aaabbbcc")
         ('a', 3)
 
@@ -182,7 +182,7 @@ def longstring_pattern(
     - ValueError: If inputs are invalid, including a Boolean, non-integer, or
                   smaller ``max_pattern_length``.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 3, 4, 5, 6]]
         >>> longstring_pattern(data).tolist()
         [6.0, 0.0]
@@ -227,7 +227,7 @@ def longstring_scores(
     Raises:
     - ValueError: If inputs are invalid or ``avg`` is not a boolean.
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 2, 2, 2, 3], [4, 4, 4, 4, 4, 4]]
         >>> longstring_scores(data).tolist()
         [3.0, 6.0]
@@ -283,7 +283,7 @@ def longstring_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 3, 4, 5, 4], [3, 3, 3, 3, 3, 3], [1, 1, 2, 2, 1, 1]]
         >>> scores, flags = longstring_flag(data, threshold=5)
         >>> scores.tolist(), flags.tolist()
@@ -317,7 +317,7 @@ def longstring_pattern_flag(
     Returns:
     - Tuple of (scores, flags) where flags is True for flagged respondents.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 3, 4, 5, 6], [2, 4, 3, 5, 1, 2]]
         >>> scores, flags = longstring_pattern_flag(data, threshold=4)
         >>> scores.tolist(), flags.tolist()

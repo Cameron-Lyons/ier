@@ -57,7 +57,7 @@ def markov(
     Raises:
     - ValueError: If data has fewer than 3 columns.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 1, 3, 1, 2]]
         >>> np.round(markov(data), 2).tolist()
         [0.0, 0.55]
@@ -229,7 +229,7 @@ def markov_flag(
     Returns:
     - Tuple of (entropy_scores, flags) where flags is True for flagged respondents.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 1, 3, 1, 2]]
         >>> scores, flags = markov_flag(data, threshold=0.1)
         >>> flags.tolist()
@@ -256,7 +256,7 @@ def markov_summary(
     Returns:
     - Dictionary with summary statistics.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 1, 2, 1, 2], [1, 2, 1, 3, 1, 2]]
         >>> summary = markov_summary(data)
         >>> summary["n_valid"], round(summary["max"], 2)

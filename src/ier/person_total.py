@@ -39,7 +39,7 @@ def person_total(
     Raises:
     - ValueError: If inputs are invalid
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1], [1, 2, 3, 4, 5]]
         >>> np.round(person_total(data), 2).tolist()
         [1.0, -1.0, 1.0]
@@ -99,7 +99,7 @@ def person_total_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 3, 4, 5], [5, 4, 3, 2, 1], [1, 2, 3, 4, 5], [1, 2, 3, 5, 4]]
         >>> scores, flags = person_total_flag(data, threshold=0.0)
         >>> flags.tolist()

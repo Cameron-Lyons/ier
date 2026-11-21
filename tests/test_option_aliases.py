@@ -32,7 +32,7 @@ def test_option_aliases_are_exported_literals(name: str, values: tuple[str, ...]
 
 def test_option_aliases_are_listed_in_the_api_reference() -> None:
     api = (_ROOT / "docs" / "api.md").read_text(encoding="utf-8")
-    members = set(re.findall(r"^\s+- (\S+)$", api, re.MULTILINE))
+    members = set(re.findall(r"^::: ier\.(\w+)$", api, re.MULTILINE))
     assert set(_ALIASES) <= members
 
 

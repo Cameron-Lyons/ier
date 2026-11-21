@@ -254,7 +254,7 @@ def screen_scores(
     - The same structured ``ScreenResult`` contract as :func:`screen`, with an
       ``errors`` mapping containing any supplied failure provenance.
 
-    Example:
+    Examples:
         >>> from ier import screen, screen_scores
         >>> data = [
         ...     [1, 2, 3, 4, 5, 4],
@@ -368,7 +368,7 @@ def screen(
     - TypeError: If ``thresholds`` or ``percentiles`` is neither a mapping nor a
                  mapping-like object with ``items()``, such as a pandas Series.
 
-    Example:
+    Examples:
         >>> from ier import IndexOptions, screen
         >>> data = [
         ...     [1, 2, 3, 4, 5, 4],

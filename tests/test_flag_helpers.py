@@ -111,8 +111,8 @@ def test_fixed_thresholds_include_ties_and_skip_unavailable_scores(
         ),
         (
             ier.irv_flag,
-            {"na_rm": False, "split_points": [0, 4, 12]},
-            lambda x: ier.irv(x, na_rm=False, split_points=[0, 4, 12]),
+            {"na_rm": False, "split": True, "split_points": [0, 4, 12]},
+            lambda x: ier.irv(x, na_rm=False, split=True, split_points=[0, 4, 12]),
         ),
         (
             ier.irv_flag,
@@ -219,6 +219,17 @@ def test_new_helpers_and_psychsyn_tools_are_exported() -> None:
     assert ier.psychsyn_critval is psychsyn_critval
     assert ier.psychsyn_summary is psychsyn_summary
     assert all(callable(getattr(ier, name)) for name in names)
+
+
+def test_irv_threshold_includes_tied_straightliners() -> None:
+    data = _responses()
+    scores, flags = ier.irv_flag(data, threshold=0.0)
+    # Rows 20-24 straight-line, so their IRV equals the cutoff exactly.
+    np.testing.assert_array_equal(scores[20:25], 0.0)
+    np.testing.assert_array_equal(flags, scores <= 0.0)
+    assert flags[20:25].all()
+    split_scores = ier.irv(data, split=True, split_points=[0, 4, 12])
+    assert not np.array_equal(split_scores, ier.irv(data, na_rm=False))
 
 
 def test_run_length_thresholds_include_ties_and_score_empty_rows_zero() -> None:

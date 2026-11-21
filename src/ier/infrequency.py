@@ -219,7 +219,7 @@ def infrequency(
     - ValueError: If the policy, item selection, expected responses, acceptable
                   ranges, or proportion control is invalid.
 
-    Example:
+    Examples:
         >>> data = [[5, 3, 1], [5, 5, 5], [1, 3, 5]]
         >>> scores = infrequency(data, item_indices=[0, 2], expected_responses=[5, 1])
         >>> print(scores)
@@ -319,7 +319,7 @@ def infrequency_flag(
     Returns:
     - Tuple of (failure_scores, flags) where flags is True for flagged respondents.
 
-    Example:
+    Examples:
         >>> data = [[5, 3, 1], [5, 5, 5], [1, 3, 5]]
         >>> scores, flags = infrequency_flag(data, [0, 2], [5, 1], threshold=2)
         >>> print(flags)

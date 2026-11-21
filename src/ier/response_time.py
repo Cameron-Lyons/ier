@@ -70,7 +70,7 @@ def response_time(
     Raises:
     - ValueError: If inputs are invalid or metric is unknown
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> times = [[2.1, 3.4, 2.8], [0.5, 0.4, 0.6], [2.5, 2.3, 2.7]]
         >>> avg_times = response_time(times, metric="mean")
@@ -119,7 +119,7 @@ def response_time_score_flags(
     Returns:
     - Boolean array where ``True`` indicates a suspicious score.
 
-    Example:
+    Examples:
         >>> times = [[2.1, 3.4, 2.8], [0.5, 0.4, 0.6], [2.5, 2.3, 2.7]]
         >>> medians = response_time(times, metric="median")
         >>> strict = response_time_score_flags(medians, cutoff_percentile=1)
@@ -164,7 +164,7 @@ def response_time_flag(
     Returns:
     - Boolean array where True indicates potentially careless responding.
 
-    Example:
+    Examples:
         >>> times = [[2.1, 3.4, 2.8], [0.5, 0.4, 0.6], [2.5, 2.3, 2.7]]
         >>> flags = response_time_flag(times, threshold=1.0)
     """
@@ -193,7 +193,7 @@ def response_time_consistency(
     - A numpy array of coefficient of variation values for each individual.
       Lower values indicate more uniform (potentially suspicious) timing.
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> times = [[2.1, 3.4, 2.8], [1.0, 1.0, 1.0], [2.5, 2.3, 2.7]]
         >>> cv = response_time_consistency(times)
@@ -298,7 +298,7 @@ def response_time_effort(
     - ValueError: If inputs are invalid, thresholds do not match the items, or
                   ``normative_fraction`` or ``max_threshold`` is out of range.
 
-    Example:
+    Examples:
         >>> times = [[12, 30, 18], [0.5, 1.5, 20], [14, 28, np.nan], [13.5, 20.5, 22]]
         >>> np.round(response_time_effort(times), 2).tolist()  # thresholds 1, 2, and 2
         [1.0, 0.33, 1.0, 1.0]
@@ -376,7 +376,7 @@ def response_time_effort_flag(
     - Tuple of (scores, flags) where flags is True for respondents whose RTE is
       below ``threshold``. Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> times = [[12, 30, 18], [0.5, 1.5, 20], [14, 28, np.nan], [13.5, 20.5, 22]]
         >>> scores, flags = response_time_effort_flag(times)
         >>> flags.tolist()
@@ -473,7 +473,7 @@ def response_time_mixture(
     Raises:
     - ValueError: If n_components < 2 or data is insufficient.
 
-    Example:
+    Examples:
         >>> times = [[5.0, 6.0, 4.0], [0.5, 0.6, 0.4], [4.5, 5.5, 5.0]]
         >>> probs = response_time_mixture(times, random_seed=42)
     """

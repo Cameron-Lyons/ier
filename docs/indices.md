@@ -104,12 +104,21 @@ correlated across scales, valid correlations are averaged over resamples, and
 the Spearman–Brown correction `2r / (1 + r)` is applied and clamped below at -1.
 Each half mean is its exact mean rounded once, as in `evenodd`, so a split whose
 half means do not vary is unusable rather than scored from rounding noise.
-For integer-coded responses, the usual survey case, every half mean is scaled to
-an exact integer and many resamples are scored at once from exact moments, so
-only the final square roots and quotient round; this is two to five times
-faster. Fractional or very large responses, whose scaled moments would exceed
-2^53, use the correctly rounded half means instead, and both agree to within a
-few units in the last place.
+A respondent whose responses are integers, the usual survey case, is scored from
+their exact half means: each is scaled to an integer by a common multiple `L` of
+the possible half sizes (their least common multiple for a complete respondent,
+and that of 1 to the largest half size for one with missing responses), and many
+resamples are correlated at once from exact moments, so only the final square
+roots and quotient round. This takes 1.5 to 2 times less time than correlating
+rounded half means with two scales and 2 to 6 times less with three or more.
+Respondents with fractional or infinite responses, or whose scaled moments could
+exceed 2^53 (`n * L * max|response|` above 2^26.5 for `n` scales, as for long
+scales with missing responses), are scored from the correctly rounded half means
+instead. The choice depends only on the respondent's own responses, so one
+respondent's answers never change another's score. Both scorers agree to about
+1e-15 for ordinary rating scales; far from zero, where rounding half means to
+double precision is coarse relative to their spread, the exact scorer matches the
+exact half means while the rounded ones can differ by up to about 1e-9.
 At least two scales are required, single-item scales contribute no halves, and
 respondents with fewer than two complete half-mean pairs in every resample
 receive `NaN`. This scale-aware form is recommended whenever the scale structure

@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.14.0] - 2026-11-20
 
 ### Added
 
@@ -24,24 +24,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Scale-aware `individual_reliability(..., factors=...)` scores integer-coded
-  responses two to five times faster. Half totals of many resamples come from
-  one exact matrix product per scale, half means are scaled to exact integers,
-  and correlations are formed from exact moments, so only the final square roots
-  and quotient round. Scores agree with the correctly rounded half-mean scorer,
-  still used for fractional or very large responses, to within a few units in
-  the last place, and the random split sequence is unchanged. On 20,000
-  respondents by 40 items in four scales with 100 splits, scoring took about
-  55 ms instead of 270 ms with complete responses and 100 ms instead of 310 ms
-  with 1% missing.
+- Scale-aware `individual_reliability(..., factors=...)` scores respondents
+  whose responses are integers from their exact half means. Half totals of many
+  resamples come from small exact matrix products per scale, half means are
+  scaled to exact integers, and correlations are formed from exact moments, so
+  only the final square roots and quotient round. This is 1.5 to 2 times faster
+  with two scales and 2 to 6 times faster with three or more: 20,000
+  respondents by 40 items in four scales with 100 splits took about 50 ms
+  instead of 250 ms with complete responses and 95 ms instead of 305 ms with 1%
+  missing. Respondents with fractional or infinite responses, or whose scaled
+  moments could exceed 2^53 (such as long scales with missing responses), keep
+  the correctly rounded half-mean scorer, chosen per respondent so that no
+  respondent's answers affect another's score. The random split sequence is
+  unchanged. Scores agree with the previous release to about 1e-15 for ordinary
+  rating scales; for integer responses far from zero they now match the exact
+  half means, where rounded half means could differ by up to about 1e-9.
 
 ### Documentation
 
-- The API reference now documents every public name, including
-  `acquiescence_flag()`, `guttman_flag()`, `individual_reliability_flag()`,
-  `lz_flag()`, `markov_flag()`, `markov_summary()`, `mahad_qqplot()`,
-  `onset_flag()`, `response_pattern()`, and the result types, and a test keeps
-  it in step with `ier.__all__`.
+- The API reference now renders every public name. Functions that share a name
+  with their module, such as `screen()`, `irv()`, and `mahad()`, were previously
+  missing from the rendered page, as were `acquiescence_flag()`,
+  `guttman_flag()`, `individual_reliability_flag()`, `lz_flag()`,
+  `markov_flag()`, `markov_summary()`, `mahad_qqplot()`, `onset_flag()`,
+  `response_pattern()`, and the result types. A test keeps the reference in
+  step with `ier.__all__`.
 
 ## [1.13.3] - 2026-10-19
 

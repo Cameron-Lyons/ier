@@ -135,7 +135,7 @@ def gpoly(
                   the scale has more than 1024 categories, or ``na_rm=False``
                   and responses are missing.
 
-    Example:
+    Examples:
         >>> data = [[2, 2, 1, 0], [2, 1, 1, 0], [1, 1, 0, 0],
         ...         [2, 2, 2, 1], [2, 0, 2, 0], [0, 0, 1, 2]]
         >>> gpoly(data, normalize=False).tolist()  # the last respondent reverses the order
@@ -223,7 +223,7 @@ def u3poly(
                   the scale has more than 1024 categories, or ``na_rm=False``
                   and responses are missing.
 
-    Example:
+    Examples:
         >>> data = [[2, 2, 1, 0], [2, 1, 1, 0], [1, 1, 0, 0],
         ...         [2, 2, 2, 1], [2, 0, 2, 0], [0, 0, 1, 2]]
         >>> np.round(u3poly(data), 2).tolist()
@@ -280,7 +280,7 @@ def ht(x: MatrixLike, na_rm: bool = True) -> np.ndarray:
     - ValueError: If responses are not 0 or 1, or ``na_rm=False`` and responses
                   are missing.
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 1, 0], [1, 1, 0, 0], [1, 0, 0, 0],
         ...         [1, 1, 1, 0], [1, 1, 0, 0], [0, 0, 1, 1]]
         >>> np.round(ht(data), 2).tolist()  # the last respondent reverses the order
@@ -342,7 +342,7 @@ def gpoly_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [[2, 2, 1, 0], [2, 1, 1, 0], [1, 1, 0, 0],
         ...         [2, 2, 2, 1], [2, 0, 2, 0], [0, 0, 1, 2]]
         >>> scores, flags = gpoly_flag(data, threshold=0.5)
@@ -391,7 +391,7 @@ def u3poly_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [[2, 2, 1, 0], [2, 1, 1, 0], [1, 1, 0, 0],
         ...         [2, 2, 2, 1], [2, 0, 2, 0], [0, 0, 1, 2]]
         >>> scores, flags = u3poly_flag(data, threshold=0.5)
@@ -426,7 +426,7 @@ def ht_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [[1, 1, 1, 0], [1, 1, 0, 0], [1, 0, 0, 0],
         ...         [1, 1, 1, 0], [1, 1, 0, 0], [0, 0, 1, 1]]
         >>> scores, flags = ht_flag(data, threshold=0.0)

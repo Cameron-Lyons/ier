@@ -48,6 +48,10 @@ plugins:
             docstring_style: google
             show_source: false
             members_order: source
+            # Each object is its own block under a topic heading on the API page.
+            heading_level: 3
+            show_root_heading: true
+            show_root_full_path: false
 
 markdown_extensions:
   - admonition

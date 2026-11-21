@@ -1,138 +1,179 @@
 # API Reference
 
-::: ier
-    options:
-      members:
-        - AgreementKind
-        - BoolArray
-        - CombineMethod
-        - CompositeMethod
-        - CompositeSummary
-        - EvenOddMethod
-        - FlagDirection
-        - FlagMode
-        - FloatArray
-        - IndexCatalog
-        - IndexErrorMap
-        - IndexFlagMap
-        - IndexMetadata
-        - IndexOptions
-        - IndexPercentileMap
-        - IndexScoreMap
-        - IndexThresholdMap
-        - IndexThresholdSource
-        - IndexThresholdSourceMap
-        - InfrequencyMissingPolicy
-        - IntArray
-        - ItemCorrelationMode
-        - MatrixLike
-        - ResponseTimeArchive
-        - ResponseTimeFlagDirection
-        - ResponseTimeMetric
-        - ScoreArchive
-        - ScoreArchiveResultType
-        - ScreenArchive
-        - ScreenIndexSummary
-        - ScreenResult
-        - __version__
-        - index_catalog
-        - load_score_archive
-        - load_response_time_archive
-        - load_screen_archive
-        - save_response_time_archive
-        - save_score_archive
-        - save_screen_archive
-        - screen
-        - screen_scores
-        - composite
-        - composite_flag
-        - composite_probability
-        - composite_scores
-        - composite_scores_summary
-        - composite_summary
-        - screen_table
-        - composite_table
-        - index_agreement
-        - irv
-        - irv_flag
-        - longstring_scores
-        - longstring_flag
-        - longstring
-        - longstring_pattern
-        - longstring_pattern_flag
-        - mahad
-        - mahad_qqplot
-        - mahad_summary
-        - psychsyn
-        - psychant
-        - psychsyn_flag
-        - psychant_flag
-        - psychsyn_critval
-        - psychsyn_summary
-        - person_total
-        - person_total_flag
-        - markov
-        - markov_flag
-        - markov_summary
-        - autocorrelation
-        - autocorrelation_flag
-        - missing_rate
-        - missing_rate_flag
-        - u3_poly
-        - u3_poly_flag
-        - midpoint_responding
-        - midpoint_responding_flag
-        - response_pattern
-        - acquiescence
-        - acquiescence_flag
-        - guttman
-        - guttman_flag
-        - gpoly
-        - gpoly_flag
-        - u3poly
-        - u3poly_flag
-        - ht
-        - ht_flag
-        - individual_reliability
-        - individual_reliability_flag
-        - onset
-        - onset_flag
-        - evenodd
-        - evenodd_flag
-        - reverse_score
-        - mad
-        - mad_flag
-        - lz
-        - lz_flag
-        - semantic_syn
-        - semantic_syn_flag
-        - semantic_ant
-        - semantic_ant_flag
-        - infrequency
-        - infrequency_flag
-        - response_time
-        - response_time_consistency
-        - response_time_effort
-        - response_time_effort_flag
-        - response_time_flag
-        - response_time_mixture
-        - response_time_score_flags
-        - plot_distributions
-        - plot_flag_counts
-        - plot_flagged_heatmap
-        - plot_composite
-        - plot_index_agreement
+Every name below is importable from the package root, for example
+`from ier import screen, irv_flag`.
 
-## Return-shape controls
+## Screening and composites
 
-Boolean options that select a documented return type are strict Python
-Booleans. This includes `diag`, `flag`, `avg`, `return_lags`,
-`return_item_flags`, and `return_diagnostics`. Passing `0` or `1`, a string,
-an array, or a NumPy Boolean scalar raises `ValueError` before the input matrix
-is converted or scored. This keeps runtime return types aligned with the
-published overloads.
+::: ier.screen.screen
 
-## Persisting screening results
+::: ier.screen_scores
+
+::: ier.composite.composite
+
+::: ier.composite_flag
+
+::: ier.composite_probability
+
+::: ier.composite_scores
+
+::: ier.composite_scores_summary
+
+::: ier.composite_summary
+
+::: ier.IndexOptions
+
+::: ier.index_catalog
+
+## Result tables and agreement
+
+::: ier.screen_table
+
+::: ier.composite_table
+
+::: ier.index_agreement
+
+## Consistency indices
+
+::: ier.irv.irv
+
+::: ier.irv_flag
+
+::: ier.evenodd.evenodd
+
+::: ier.evenodd_flag
+
+::: ier.psychsyn.psychsyn
+
+::: ier.psychsyn_flag
+
+::: ier.psychant
+
+::: ier.psychant_flag
+
+::: ier.psychsyn_critval
+
+::: ier.psychsyn_summary
+
+::: ier.person_total.person_total
+
+::: ier.person_total_flag
+
+::: ier.individual_reliability
+
+::: ier.individual_reliability_flag
+
+::: ier.semantic_syn
+
+::: ier.semantic_syn_flag
+
+::: ier.semantic_ant
+
+::: ier.semantic_ant_flag
+
+::: ier.mad.mad
+
+::: ier.mad_flag
+
+::: ier.reverse_score
+
+## Response patterns
+
+::: ier.longstring_scores
+
+::: ier.longstring_flag
+
+::: ier.longstring.longstring
+
+::: ier.longstring_pattern
+
+::: ier.longstring_pattern_flag
+
+::: ier.markov.markov
+
+::: ier.markov_flag
+
+::: ier.markov_summary
+
+::: ier.autocorrelation.autocorrelation
+
+::: ier.autocorrelation_flag
+
+::: ier.onset.onset
+
+::: ier.onset_flag
+
+::: ier.response_pattern
+
+## Response styles
+
+::: ier.u3_poly.u3_poly
+
+::: ier.u3_poly_flag
+
+::: ier.midpoint_responding
+
+::: ier.midpoint_responding_flag
+
+::: ier.acquiescence.acquiescence
+
+::: ier.acquiescence_flag
+
+## Outliers and person fit
+
+::: ier.mahad.mahad
+
+::: ier.mahad_summary
+
+::: ier.mahad_qqplot
+
+::: ier.guttman.guttman
+
+::: ier.guttman_flag
+
+::: ier.lz.lz
+
+::: ier.lz_flag
+
+::: ier.gpoly
+
+::: ier.gpoly_flag
+
+::: ier.u3poly
+
+::: ier.u3poly_flag
+
+::: ier.ht
+
+::: ier.ht_flag
+
+## Omissions and attention checks
+
+::: ier.missing_rate
+
+::: ier.missing_rate_flag
+
+::: ier.infrequency.infrequency
+
+::: ier.infrequency_flag
+
+## Response times
+
+::: ier.response_time.response_time
+
+::: ier.response_time_flag
+
+::: ier.response_time_consistency
+
+::: ier.response_time_mixture
+
+::: ier.response_time_effort
+
+::: ier.response_time_effort_flag
+
+::: ier.response_time_score_flags
+
+## Persisting results
 
 `save_screen_archive()` and `load_screen_archive()` persist a complete
 `ScreenResult`: scores, per-index flags, recorded thresholds and their sources,
@@ -163,3 +204,104 @@ exclude them.
 All archive writers accept `compressed=True` and an optional
 `compression_level` from 1 (fastest, the default) to 9 (smallest). Any level
 loads through the same functions.
+
+::: ier.save_screen_archive
+
+::: ier.load_screen_archive
+
+::: ier.save_score_archive
+
+::: ier.load_score_archive
+
+::: ier.save_response_time_archive
+
+::: ier.load_response_time_archive
+
+## Plotting
+
+::: ier.plot_distributions
+
+::: ier.plot_flag_counts
+
+::: ier.plot_flagged_heatmap
+
+::: ier.plot_composite
+
+::: ier.plot_index_agreement
+
+## Result types
+
+::: ier.ScreenResult
+
+::: ier.ScreenIndexSummary
+
+::: ier.CompositeSummary
+
+::: ier.ScoreArchive
+
+::: ier.ScreenArchive
+
+::: ier.ResponseTimeArchive
+
+::: ier.IndexMetadata
+
+::: ier.IndexCatalog
+
+## Type aliases
+
+::: ier.MatrixLike
+
+::: ier.FloatArray
+
+::: ier.BoolArray
+
+::: ier.IntArray
+
+::: ier.IndexScoreMap
+
+::: ier.IndexFlagMap
+
+::: ier.IndexErrorMap
+
+::: ier.IndexThresholdMap
+
+::: ier.IndexPercentileMap
+
+::: ier.IndexThresholdSource
+
+::: ier.IndexThresholdSourceMap
+
+::: ier.ScoreArchiveResultType
+
+::: ier.AgreementKind
+
+::: ier.CombineMethod
+
+::: ier.CompositeMethod
+
+::: ier.EvenOddMethod
+
+::: ier.FlagDirection
+
+::: ier.FlagMode
+
+::: ier.InfrequencyMissingPolicy
+
+::: ier.ItemCorrelationMode
+
+::: ier.ResponseTimeFlagDirection
+
+::: ier.ResponseTimeMetric
+
+## Package version
+
+::: ier.__version__
+
+## Return-shape controls
+
+Boolean options that select a documented return type are strict Python
+Booleans. This includes `diag`, `flag`, `avg`, `return_lags`,
+`return_item_flags`, and `return_diagnostics`. Passing `0` or `1`, a string,
+an array, or a NumPy Boolean scalar raises `ValueError` before the input matrix
+is converted or scored. This keeps runtime return types aligned with the
+published overloads.

@@ -57,7 +57,7 @@ def missing_rate(
     Raises:
     - ValueError: If the matrix, item selection, or applicability mask is invalid.
 
-    Example:
+    Examples:
         >>> import numpy as np
         >>> missing_rate([[1, np.nan, 3], [np.nan, np.nan, 2]])
         array([0.33333333, 0.66666667])

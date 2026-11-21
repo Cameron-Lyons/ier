@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import pkgutil
 import re
 import subprocess
 import sys
@@ -197,8 +199,19 @@ def test_version_option_output_and_help_are_unchanged() -> None:
     assert re.search(r"^  --version +show program's version number and exit$", help_text, re.M)
 
 
-def test_api_reference_documents_every_public_name_once() -> None:
+def test_api_reference_renders_every_public_name_once() -> None:
     reference = Path(__file__).resolve().parents[1] / "docs" / "api.md"
-    members = re.findall(r"^ {8}- (\w+)$", reference.read_text(encoding="utf-8"), re.M)
-    assert len(members) == len(set(members))
-    assert set(members) == set(ier.__all__)
+    paths = re.findall(r"^::: (ier(?:\.\w+)+)$", reference.read_text(encoding="utf-8"), re.M)
+    names = [path.rsplit(".", 1)[1] for path in paths]
+    assert len(names) == len(set(names))
+    assert set(names) == set(ier.__all__)
+    submodules = {module.name for module in pkgutil.iter_modules(ier.__path__)}
+    for path in paths:
+        *module_path, name = path.split(".")
+        if module_path == ["ier"]:
+            # mkdocstrings resolves ier.<name> to a same-named submodule, which would
+            # leave the re-exported function off the rendered page.
+            assert name not in submodules, path
+        else:
+            module = importlib.import_module(".".join(module_path))
+            assert getattr(module, name) is getattr(ier, name), path

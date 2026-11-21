@@ -53,7 +53,7 @@ def irv(
     Raises:
     - ValueError: If inputs are invalid (empty data, invalid split parameters, etc.)
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 3, 4, 5, 6], [1, 1, 1, 4, 5, 6]]
         >>> irv_scores = irv(data)
         >>> print(irv_scores)
@@ -118,7 +118,7 @@ def irv_flag(
     - Tuple of (scores, flags) where flags is True for flagged respondents.
       Unavailable (``NaN``) scores are never flagged.
 
-    Example:
+    Examples:
         >>> data = [[1, 2, 3, 4, 5, 4], [3, 3, 3, 3, 3, 3], [1, 5, 1, 5, 1, 5]]
         >>> scores, flags = irv_flag(data, threshold=0.5)
         >>> flags.tolist()
