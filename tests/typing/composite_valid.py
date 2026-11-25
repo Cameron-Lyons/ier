@@ -77,12 +77,12 @@ def combine_with_runtime_setting(responses: MatrixLike, diagnostics: bool) -> No
     )
     result = composite_probability(responses, return_diagnostics=diagnostics)
     assert_type(result, FloatArray | tuple[FloatArray, dict[str, str]])
-    if isinstance(result, tuple):
+    if isinstance(result, np.ndarray):
+        scores: FloatArray = result
+    else:
         scores, errors = result
         assert_type(scores, FloatArray)
         assert_type(errors, dict[str, str])
-    else:
-        assert_type(result, FloatArray)
 
 
 def reuse_components(responses: MatrixLike) -> np.ndarray:

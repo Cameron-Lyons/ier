@@ -11,20 +11,24 @@ from scripts.check_public_typing import _expected_errors, _verify_negative_resul
 def invalid_consumer(tmp_path: Path) -> Path:
     fixture = tmp_path / "consumer.py"
     fixture.write_text(
-        "value: str = 3  # expect: assignment\nother: str = (\n    4\n)  # expect: assignment\n",
+        "value: str = 3  # expect: invalid-assignment\n"
+        "other: str = (\n    4\n)  # expect: invalid-assignment\n",
         encoding="utf-8",
     )
     return fixture
 
 
-def _diagnostic(fixture: Path, line: int, code: str = "assignment") -> str:
-    return f"{fixture}:{line}: error: Incorrect consumer return type  [{code}]\n"
+def _diagnostic(fixture: Path, line: int, code: str = "invalid-assignment") -> str:
+    return f"{fixture}:{line}:6: error[{code}] Incorrect consumer return type\n"
 
 
 def test_negative_gate_accepts_only_declared_errors_and_statement_locations(
     invalid_consumer: Path,
 ) -> None:
-    assert _expected_errors(invalid_consumer) == {(1, "assignment"), (2, "assignment")}
+    assert _expected_errors(invalid_consumer) == {
+        (1, "invalid-assignment"),
+        (2, "invalid-assignment"),
+    }
     result = subprocess.CompletedProcess(
         [], 1, _diagnostic(invalid_consumer, 1) + _diagnostic(invalid_consumer, 2), ""
     )
@@ -70,7 +74,7 @@ def test_negative_gate_rejects_false_success_and_unrelated_failures(
     elif failure == "other-file":
         output += _diagnostic(invalid_consumer.parent / "unrelated.py", 1)
     elif failure == "malformed":
-        output += f"{invalid_consumer}:5: error: No diagnostic code\n"
+        output += f"{invalid_consumer}:5:6: error: No diagnostic code\n"
     else:
         output += _diagnostic(invalid_consumer, 5)
     result = subprocess.CompletedProcess([], returncode, output, stderr)
@@ -78,7 +82,7 @@ def test_negative_gate_rejects_false_success_and_unrelated_failures(
         _verify_negative_result(invalid_consumer, result)
 
 
-@pytest.mark.parametrize("content", ["value = 3\n", "# expect: assignment\nvalue = 3\n"])
+@pytest.mark.parametrize("content", ["value = 3\n", "# expect: invalid-assignment\nvalue = 3\n"])
 def test_negative_gate_requires_expected_errors_attached_to_statements(
     tmp_path: Path, content: str
 ) -> None:

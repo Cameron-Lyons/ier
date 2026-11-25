@@ -90,10 +90,6 @@ venv.bak/
 
 /site
 
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
 .pyre/
 
 .pytype/

@@ -593,7 +593,7 @@ def numeric_override(
         if isinstance(value, (bool, np.bool_)):
             raise ValueError(message)
         try:
-            number = float(value)  # type: ignore[arg-type]
+            number = float(value)  # ty: ignore[invalid-argument-type]
         except (TypeError, ValueError, OverflowError) as error:
             raise ValueError(message) from error
         if not valid(number):

@@ -47,7 +47,7 @@ Or run checks individually:
 uv run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing
 uv run --no-sync ruff check .
 uv run --no-sync ruff format --check .
-uv run --no-sync mypy src/ier benchmarks scripts
+uv run --no-sync ty check
 uv run --no-sync python scripts/check_public_typing.py
 uv run --no-sync mkdocs build --strict
 ```
@@ -69,7 +69,8 @@ required jobs block it; the version comparison retains its explicit skip rule.
 - **Ruff** is the linter, formatter, and static security scanner. The selected
   rules include pycodestyle, Pyflakes, isort, pyupgrade, Bugbear, simplify,
   type-checking, flake8-bandit security checks, and Pylint error/convention/warning rules.
-- **mypy** performs strict static type checking for source, benchmarks, and
+  Ruff also requires annotations for source, benchmark, and release-script functions.
+- **ty** checks types for source, benchmarks, and
   release scripts. The public consumer gate checks valid calls in
   `tests/typing/composite_valid.py` and exact expected diagnostic codes and
   locations in `tests/typing/composite_invalid.py`; an unrelated failure cannot
@@ -79,8 +80,8 @@ required jobs block it; the version comparison retains its explicit skip rule.
   includes ShellCheck and pyflakes, and the reusable lint workflow makes this
   gate apply to pull requests and releases.
 
-Pre-commit hooks use isolated tool environments and do not need a project
-dependency. Install them with `uvx pre-commit install` when desired.
+Install the hooks with `uvx pre-commit install`. The ty hook uses uv to run
+the locked checker with the project's lint and artifact dependencies.
 
 Optional benchmarks:
 

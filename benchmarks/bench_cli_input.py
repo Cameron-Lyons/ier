@@ -63,8 +63,7 @@ def _write_mask_fixture(path: Path, n_respondents: int, n_items: int) -> None:
     """Write alternating binary rows without retaining a full in-memory mask."""
     even_items = np.arange(n_items) % 2 == 0
     if path.suffix == ".npy":
-        # NumPy's file-backed fixture writer lacks annotations in supported stubs.
-        mask = np.lib.format.open_memmap(  # type: ignore[no-untyped-call]
+        mask = np.lib.format.open_memmap(
             path, mode="w+", dtype=bool, shape=(n_respondents, n_items)
         )
         try:

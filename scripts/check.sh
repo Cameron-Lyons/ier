@@ -24,8 +24,8 @@ echo "==> ruff check"
 echo "==> ruff format"
 "${RUN[@]}" ruff format --check .
 
-echo "==> mypy"
-"${RUN[@]}" mypy src/ier benchmarks scripts
+echo "==> ty"
+"${RUN[@]}" ty check
 
 echo "==> public consumer typing"
 "${RUN[@]}" python scripts/check_public_typing.py

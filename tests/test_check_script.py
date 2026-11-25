@@ -75,7 +75,7 @@ class TestCheckScript(unittest.TestCase):
             "run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing",
             commands,
         )
-        self.assertIn("run --no-sync mypy src/ier benchmarks scripts", commands)
+        self.assertIn("run --no-sync ty check", commands)
         self.assertIn("run --no-sync python scripts/check_public_typing.py", commands)
         self.assertIn("run --no-sync mkdocs build --strict", commands)
 
@@ -85,7 +85,7 @@ class TestCheckScript(unittest.TestCase):
             "run --no-sync pytest tests/ -v --cov=ier --cov-report=term-missing",
             "run --no-sync ruff check .",
             "run --no-sync ruff format --check .",
-            "run --no-sync mypy src/ier benchmarks scripts",
+            "run --no-sync ty check",
             "run --no-sync python scripts/check_public_typing.py",
             "run --no-sync mkdocs build --strict",
         ):
@@ -108,6 +108,6 @@ class TestCheckScript(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(len(commands), 6)
-        self.assertEqual(commands[-2], "run --no-sync mypy src/ier benchmarks scripts")
+        self.assertEqual(commands[-2], "run --no-sync ty check")
         self.assertEqual(commands[-1], "run --no-sync python scripts/check_public_typing.py")
         self.assertNotIn("run --no-sync mkdocs build --strict", commands)

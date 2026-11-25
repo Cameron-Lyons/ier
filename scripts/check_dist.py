@@ -14,7 +14,7 @@ from collections import Counter
 from email.parser import BytesParser
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from packaging.markers import Marker
 from packaging.requirements import InvalidRequirement, Requirement
@@ -51,7 +51,7 @@ def _project_metadata() -> dict[str, object]:
     project = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     if not isinstance(project, dict):
         raise ValueError("pyproject.toml [project] table is invalid")
-    return project
+    return cast("dict[str, object]", project)
 
 
 def _project_value(project: dict[str, object], key: str) -> str:

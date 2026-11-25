@@ -213,7 +213,7 @@ def _exact_mean(values: np.ndarray) -> float:
     infinite = observed[np.isinf(observed)]
     if len(infinite):
         return float(infinite[0]) if np.all(infinite == infinite[0]) else np.nan
-    return float(sum(map(Fraction, observed.tolist()), Fraction(0)) / len(observed))
+    return float(sum(map(Fraction.from_float, observed.tolist()), Fraction(0)) / len(observed))
 
 
 def constant_rows(block: np.ndarray, missing: np.ndarray | None) -> np.ndarray:
