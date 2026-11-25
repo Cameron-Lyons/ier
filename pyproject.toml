@@ -103,7 +103,7 @@ line-length = 100
 src = ["src"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH", "S", "PLE", "PLC", "PLW", "ANN"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "TCH", "S", "PLE", "PLC", "PLW", "ANN", "RUF100"]
 ignore = ["S101", "ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
@@ -120,5 +120,8 @@ known-first-party = ["ier"]
 include = ["src/ier", "benchmarks", "scripts"]
 
 [tool.ty.rules]
+blanket-ignore-comment = "error"
+possibly-missing-attribute = "error"
+possibly-unresolved-reference = "error"
 missing-type-argument = "error"
 unsound-return = "error"

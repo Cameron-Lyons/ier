@@ -322,16 +322,19 @@ def response_pattern(
         name: np.full(len(x_array), np.nan)
         for name in ("extreme", "midpoint", "acquiescence", "variability")
     }
-    if bounds is not None:
-        extreme_matches = _endpoint_matcher(x_array.dtype, *bounds)
-        midpoint_matches = _midpoint_matcher(x_array.dtype, *bounds)
+    matchers = (
+        (_endpoint_matcher(x_array.dtype, *bounds), _midpoint_matcher(x_array.dtype, *bounds))
+        if bounds is not None
+        else None
+    )
     # Four retained outputs leave less room for temporaries than a single reduction.
     for start, stop in row_slices(len(x_array), 3 * x_array.shape[1]):
         block = x_array[start:stop]
         means, deviations, counts = _row_mean_std_counts_block(block)
         scores["acquiescence"][start:stop] = means
         scores["variability"][start:stop] = deviations
-        if bounds is not None:
+        if matchers is not None:
+            extreme_matches, midpoint_matches = matchers
             scores["extreme"][start:stop] = _proportion(extreme_matches(block), counts)
             scores["midpoint"][start:stop] = _proportion(midpoint_matches(block), counts)
     return scores

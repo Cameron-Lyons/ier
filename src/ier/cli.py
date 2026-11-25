@@ -1558,10 +1558,10 @@ def _run_response_time(args: argparse.Namespace) -> int:
         direction = saved["flag_direction"]
         metric = saved["metric"]
         respondent_ids = saved["respondent_ids"]
-        cutoff = saved["threshold"]
-        flags = saved["flags"]
+        saved_decision = saved["threshold"], saved["flags"]
         _check_effort_cutoff(metric, args.threshold)
     else:
+        saved_decision = None
         metric = args.metric
         # Reject an impossible effort cutoff before any input is read.
         _check_effort_cutoff(metric, args.threshold)
@@ -1578,7 +1578,9 @@ def _run_response_time(args: argparse.Namespace) -> int:
         )
 
     # Saved timing decisions are preserved unless a new cutoff is requested.
-    if args.command == "response-time" or args.threshold is not None or args.percentile is not None:
+    if saved_decision is not None and args.threshold is None and args.percentile is None:
+        cutoff, flags = saved_decision
+    else:
         threshold = args.threshold
         if metric == "effort" and threshold is None and args.percentile is None:
             threshold = _EFFORT_CUTOFF

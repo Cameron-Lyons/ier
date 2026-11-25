@@ -80,6 +80,7 @@ def semantic_syn(
         scaled = _scaled_subnormal_moment_rows(block, row_means, row_deviations)
         if bounds is not None and not np.isfinite(bounds).all():
             scaled = None
+        regular = None
         regular_block, regular_deviations = block, row_deviations
         if scaled is not None:
             positions, values, exponents = scaled
@@ -99,7 +100,7 @@ def semantic_syn(
             else np.empty(0)
         )
         differences = regular_differences
-        if scaled is not None:
+        if regular is not None:
             differences = np.full(len(block), np.nan)
             differences[regular] = regular_differences
         block_scores = scores[start:stop]

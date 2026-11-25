@@ -204,7 +204,7 @@ def test_positional_scale_bounds_match_the_scorers() -> None:
 
 
 def test_new_helpers_and_psychsyn_tools_are_exported() -> None:
-    from ier.psychsyn import psychsyn_critval, psychsyn_summary  # noqa: PLC0415
+    from ier.psychsyn import psychsyn_critval, psychsyn_summary
 
     names = [
         "psychsyn_flag",

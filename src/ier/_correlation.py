@@ -121,8 +121,8 @@ def _row_correlations_block(
     with np.errstate(invalid="ignore", divide="ignore", over="ignore", under="ignore"):
         if has_missing:
             valid = ~(np.isnan(left_values) | np.isnan(right_values))
-            valid_counts = valid.sum(axis=1)
-            two_pairs = valid_counts == 2
+            counts = valid.sum(axis=1)
+            two_pairs = counts == 2
             if np.any(two_pairs):
                 rows = np.flatnonzero(two_pairs)
                 first = np.argmax(valid[two_pairs], axis=1)
@@ -132,23 +132,25 @@ def _row_correlations_block(
                     np.column_stack((right_values[rows, first], right_values[rows, last])),
                     zero_variance=zero_variance,
                 )
-            nonempty = valid_counts > 0
+            nonempty = counts > 0
             left_mean = np.divide(
                 np.sum(left_values, axis=1, dtype=left_dtype, where=valid),
-                valid_counts,
+                counts,
                 out=np.zeros(n_rows),
                 where=nonempty,
             )
             right_mean = np.divide(
                 np.sum(right_values, axis=1, dtype=right_dtype, where=valid),
-                valid_counts,
+                counts,
                 out=np.zeros(n_rows),
                 where=nonempty,
             )
             left_mean = left_mean[:, np.newaxis]
             right_mean = right_mean[:, np.newaxis]
-            enough_values = valid_counts >= 2
+            enough_values = counts >= 2
         else:
+            valid = None
+            counts = left_values.shape[1]
             left_mean = (
                 np.sum(left_values, axis=1, dtype=left_dtype, keepdims=True) / left_values.shape[1]
             )
@@ -165,7 +167,7 @@ def _row_correlations_block(
             right_centered = np.asarray(right_values, dtype=float)
             left_centered -= left_mean
             right_centered -= right_mean
-        if has_missing:
+        if valid is not None:
             invalid = ~valid
             np.copyto(left_centered, 0.0, where=invalid)
             np.copyto(right_centered, 0.0, where=invalid)
@@ -184,7 +186,6 @@ def _row_correlations_block(
         np.divide(correlations, np.sqrt(right_squares), out=correlations, where=usable)
 
     if rescale:
-        counts = valid_counts if has_missing else left_values.shape[1]
         unstable = _unstable_moments(
             left_centered, left_squares, means=left_mean[:, 0], counts=counts
         )
