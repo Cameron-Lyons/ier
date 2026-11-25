@@ -47,6 +47,7 @@ def test_negative_gate_accepts_only_declared_errors_and_statement_locations(
         "wrong-line",
         "other-file",
         "malformed",
+        "warning",
         "additional-error",
     ],
 )
@@ -75,6 +76,8 @@ def test_negative_gate_rejects_false_success_and_unrelated_failures(
         output += _diagnostic(invalid_consumer.parent / "unrelated.py", 1)
     elif failure == "malformed":
         output += f"{invalid_consumer}:5:6: error: No diagnostic code\n"
+    elif failure == "warning":
+        output += f"{invalid_consumer}:5:6: warning[deprecated] Deprecated API\n"
     else:
         output += _diagnostic(invalid_consumer, 5)
     result = subprocess.CompletedProcess([], returncode, output, stderr)
