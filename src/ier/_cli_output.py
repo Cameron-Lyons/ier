@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import sys
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,7 +40,7 @@ def _write_output(text: str, path: Path | None) -> None:
 
 
 @contextmanager
-def _output_stream(path: Path | None) -> Iterator[TextIO]:
+def _output_stream(path: Path | None) -> Generator[TextIO, None, None]:
     """Stage result files for atomic replacement, or stream to standard output."""
     if path is None or path == Path("-"):
         yield sys.stdout

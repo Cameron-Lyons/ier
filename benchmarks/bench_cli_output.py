@@ -244,8 +244,9 @@ def main() -> None:
         if args.workflow == "composite"
         else None
     )
+    formats: list[OutputFormat]
     if args.format == "all":
-        formats: list[OutputFormat] = ["text", "csv", "json", "npz"]
+        formats = ["text", "csv", "json", "npz"]
     elif args.format == "both":
         formats = ["csv", "npz"]
     else:

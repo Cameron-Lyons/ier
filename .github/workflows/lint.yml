@@ -49,7 +49,7 @@ jobs:
       - name: Run Ruff formatter check
         run: uv run --no-sync ruff format --check .
 
-  mypy:
+  ty:
     name: Type Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -69,8 +69,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --group lint --group artifact --python 3.14
 
-      - name: Run mypy
-        run: uv run --no-sync mypy src/ier benchmarks scripts
+      - name: Run ty
+        run: uv run --no-sync ty check
 
       - name: Verify public consumer type contracts
         run: uv run --no-sync python scripts/check_public_typing.py

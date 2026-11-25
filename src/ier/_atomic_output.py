@@ -9,11 +9,11 @@ from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
 
 
 @contextmanager
-def atomic_output_path(path: Path) -> Iterator[Path]:
+def atomic_output_path(path: Path) -> Generator[Path, None, None]:
     """Stage regular files beside their destination until writing completes.
 
     Callers must close their streams before exiting the context. Existing

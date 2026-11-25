@@ -11,12 +11,12 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 _FIXTURES = _ROOT / "tests" / "typing"
 _EXPECTED = re.compile(r"# expect: ([a-z-]+)$")
-_DIAGNOSTIC = re.compile(r"^(.+?):([0-9]+): error: .* \[([a-z-]+)\]$")
+_DIAGNOSTIC = re.compile(r"^(.+?):([0-9]+):[0-9]+: error\[([a-z-]+)\] .+$")
 
 
 def _expected_errors(fixture: Path) -> set[tuple[int, str]]:
     """Read declared diagnostic positions from the deliberate-mistake fixture."""
-    expected = set()
+    expected: set[tuple[int, str]] = set()
     source = fixture.read_text(encoding="utf-8")
     statements = [
         node
@@ -52,7 +52,7 @@ def _verify_negative_result(fixture: Path, result: subprocess.CompletedProcess[s
             if reported.resolve() != fixture.resolve():
                 raise ValueError(f"unexpected diagnostic outside typing fixture: {line}")
             actual.append((int(match.group(2)), match.group(3)))
-        elif ": error:" in line:
+        elif not re.fullmatch(r"Found [0-9]+ diagnostics?", line):
             raise ValueError(f"unrecognized typing diagnostic: {line}")
     if (
         result.returncode != 1
@@ -67,19 +67,18 @@ def _verify_negative_result(fixture: Path, result: subprocess.CompletedProcess[s
         )
 
 
-def _run_mypy(fixture: Path) -> subprocess.CompletedProcess[str]:
-    """Use the active locked interpreter and the repository's strict configuration."""
+def _run_ty(fixture: Path) -> subprocess.CompletedProcess[str]:
+    """Run ty from the active environment with the repository configuration."""
     return subprocess.run(
         [
             sys.executable,
             "-m",
-            "mypy",
-            "--config-file",
-            str(_ROOT / "pyproject.toml"),
-            "--no-pretty",
-            "--no-error-summary",
-            "--show-error-codes",
-            "--hide-error-context",
+            "ty",
+            "check",
+            "--python",
+            sys.executable,
+            "--output-format",
+            "concise",
             fixture.relative_to(_ROOT).as_posix(),
         ],
         cwd=_ROOT,
@@ -92,13 +91,13 @@ def _run_mypy(fixture: Path) -> subprocess.CompletedProcess[str]:
 
 def main() -> int:
     """Validate public type inference and its rejection of incorrect consumers."""
-    positive = _run_mypy(_FIXTURES / "composite_valid.py")
+    positive = _run_ty(_FIXTURES / "composite_valid.py")
     if positive.returncode != 0 or positive.stderr:
         print(positive.stdout + positive.stderr, file=sys.stderr, end="")
         return 1
     negative_path = _FIXTURES / "composite_invalid.py"
     try:
-        _verify_negative_result(negative_path, _run_mypy(negative_path))
+        _verify_negative_result(negative_path, _run_ty(negative_path))
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

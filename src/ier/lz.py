@@ -341,6 +341,7 @@ def _ml_theta_batch(
                 with np.errstate(divide="ignore"):
                     tolerance = 1e-12 / np.minimum(step_scales, 1.0)
             else:
+                steps = step_scales = None
                 score = np.sum(a * (active_responses - probabilities), axis=1, where=valid)
                 tolerance = 1e-12
             score_converged = np.abs(score) <= tolerance
@@ -352,7 +353,7 @@ def _ml_theta_batch(
             lower[positive] = estimates[positive]
             upper[negative] = estimates[negative]
 
-            if not scaled:
+            if steps is None:
                 assert a_squared is not None
                 information = np.sum(
                     a_squared * probabilities * (1.0 - probabilities), axis=1, where=valid
@@ -368,7 +369,7 @@ def _ml_theta_batch(
             candidates[invalid] = (lower[invalid] + upper[invalid]) / 2.0
 
             changes = np.abs(candidates - estimates)
-            if scaled:
+            if step_scales is not None:
                 changes *= np.maximum(step_scales, 1.0)
             # Score-converged rows keep their current estimates; step-converged
             # rows keep their candidates. Float32 and float16 binary inputs start

@@ -38,7 +38,7 @@ def validate_integer(
     if isinstance(value, (bool, np.bool_)):
         raise ValueError(message)
     try:
-        integer = index(value)  # type: ignore[arg-type]
+        integer = index(value)  # ty: ignore[invalid-argument-type]
     except TypeError as error:
         raise ValueError(message) from error
     if minimum is not None and integer < minimum:
@@ -160,7 +160,7 @@ def resolve_scale_bounds(
         return None
     if resolved_max < resolved_min:
         raise ValueError("scale_max must be greater than or equal to scale_min")
-    return resolved_min, resolved_max
+    return cast("tuple[float, float]", (resolved_min, resolved_max))
 
 
 def validate_item_indices(
@@ -303,7 +303,7 @@ def _real_numeric_matrix(source: object, x_array: np.ndarray) -> np.ndarray:
         if not all(map(_is_response_type, value_types)):
             raise ValueError(message)
         if any(map(_is_pandas_missing_type, value_types)):
-            x_array = np.frompyfunc(_pandas_missing_to_nan, 1, 1)(x_array)
+            x_array = np.asarray(np.frompyfunc(_pandas_missing_to_nan, 1, 1)(x_array))
     elif kind not in "UST":
         raise ValueError(message)
     try:

@@ -257,19 +257,20 @@ def infrequency(
 
     if bounds is None:
         assert expected_responses is not None
-        expected, impossible = _prepare_expected_responses(expected_responses, x_array.dtype)
+        low_or_expected, impossible = _prepare_expected_responses(expected_responses, x_array.dtype)
+        highs = None
     else:
-        lows, highs, impossible = _prepare_acceptable_ranges(bounds, x_array.dtype)
+        low_or_expected, highs, impossible = _prepare_acceptable_ranges(bounds, x_array.dtype)
 
     failures = np.empty(len(x_array), dtype=float)
     for start, stop in row_slices(len(x_array), len(selected)):
         block = x_array[start:stop, selected]
-        if bounds is None:
-            mismatch = block != expected
+        if highs is None:
+            mismatch = block != low_or_expected
         else:
             # A missing response lies outside every range; the policy below
             # decides whether it counts.
-            mismatch = block >= lows
+            mismatch = block >= low_or_expected
             mismatch &= block <= highs
             np.logical_not(mismatch, out=mismatch)
         if impossible is not None:

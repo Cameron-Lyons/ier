@@ -11,7 +11,7 @@ from fnmatch import fnmatchcase
 from itertools import chain
 from operator import itemgetter
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TextIO
+from typing import TYPE_CHECKING, Literal, TextIO, cast
 
 import numpy as np
 
@@ -92,8 +92,10 @@ def _cell_selector(item_indices: list[int] | None) -> Callable[[list[str]], Sequ
         return None
     if len(item_indices) == 1:
         # A one-item getter returns a bare cell; a slice keeps a sequence.
-        return itemgetter(slice(item_indices[0], item_indices[0] + 1))
-    return itemgetter(*item_indices)
+        selector = itemgetter(slice(item_indices[0], item_indices[0] + 1))
+    else:
+        selector = itemgetter(*item_indices)
+    return cast("Callable[[list[str]], Sequence[str]]", selector)
 
 
 def _normalize_missing_values(missing_values: list[str] | None) -> frozenset[str]:

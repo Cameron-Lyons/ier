@@ -314,11 +314,11 @@ def _centered_unit_rows(
     complete = block.shape[1] == width and bool(np.all(lengths == width))
     values = _response_rows(block, slice(None), width)
     leading, trailing = _edge_runs(values, lengths, complete)
-    if complete:
+    observed = None if complete else np.arange(width) < lengths[:, None]
+    if observed is None:
         lower = np.min(values, axis=1)
         upper = np.max(values, axis=1)
     else:
-        observed = np.arange(width) < lengths[:, None]
         lower = np.min(values, axis=1, where=observed, initial=np.inf)
         upper = np.max(values, axis=1, where=observed, initial=-np.inf)
         np.copyto(values, 0.0, where=~observed)
@@ -340,7 +340,7 @@ def _centered_unit_rows(
         means = np.sum(values, axis=1) / lengths
     np.copyto(means, 0.0, where=lengths == 0)
     values -= means[:, None]
-    if not complete:
+    if observed is not None:
         np.copyto(values, 0.0, where=~observed)
 
     # Centered responses lie within the observed range, so one power of two

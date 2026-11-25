@@ -34,7 +34,7 @@ from ier.types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Generator, Sequence
 
     from numpy.lib.npyio import NpzFile
     from numpy.typing import ArrayLike
@@ -304,7 +304,7 @@ def _require_member(archive: NpzFile, name: str) -> np.ndarray:
 
 
 @contextmanager
-def _open_npz_archive(path: str | Path, *, label: str) -> Iterator[NpzFile]:
+def _open_npz_archive(path: str | Path, *, label: str) -> Generator[NpzFile, None, None]:
     """Own the input stream, even when NumPy fails while opening the ZIP container."""
     with Path(path).open("rb") as handle:
         # A wrong-format NPY matrix can be much larger than an archive's metadata.

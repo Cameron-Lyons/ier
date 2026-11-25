@@ -482,7 +482,8 @@ def combine_mean_scores(
                     counts += 1 if available is None else available
             except FloatingPointError:
                 failed = True
-    del values, weighted, available
+    # Release the last batch before allocating the repair workspace.
+    values = weighted = available = None
 
     if failed:
         _repair_reductions(components, result, denominator if weights is None else counts)
@@ -629,7 +630,8 @@ def combine_sum_max_scores(
                         presence = available.copy()
             except FloatingPointError:
                 failed = True
-    del values, weighted, available
+    # Release the last batch before allocating the repair workspace.
+    values = weighted = available = None
 
     if failed:
         _repair_reductions(

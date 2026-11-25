@@ -10,7 +10,7 @@ from contextlib import ExitStack, contextmanager
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
     from pathlib import Path
     from typing import TextIO
 
@@ -26,7 +26,7 @@ def _is_compressed_npy_path(path: Path) -> bool:
 
 
 @contextmanager
-def _open_text_path(path: Path, mode: Literal["r", "w"]) -> Iterator[TextIO]:
+def _open_text_path(path: Path, mode: Literal["r", "w"]) -> Generator[TextIO, None, None]:
     """Open a UTF-8 text path and report compressed transport failures by path."""
     text_mode: Literal["rt", "wt"] = "rt" if mode == "r" else "wt"
     suffix = path.suffix.casefold()

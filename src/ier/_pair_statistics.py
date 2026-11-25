@@ -178,8 +178,8 @@ def _subtract_reflected(
     """Preserve the residual of a rounded reflection before subtracting it."""
     if (
         not remainder
-        and reflection.is_integer()
         and abs(reflection) <= 2**51
+        and reflection == int(reflection)
         and _integral_reflection_is_exact(right, reflection)
     ):
         # Small integral responses and reflection subtract exactly in float64.
